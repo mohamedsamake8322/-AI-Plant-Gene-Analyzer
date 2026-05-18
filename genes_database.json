@@ -55,4 +55,40 @@
     "organism": "Arabidopsis thaliana",
     "accession": "AT5G10140"
   }
+  ,
+  "NCED3": {
+    "sequence": "ATGACGTGCTGCTGCTGCTGCTGCTGCTGCTGCTGCTGCTGCTG",
+    "trait": "Abscisic Acid Biosynthesis / Drought Response",
+    "description": "9-cis-epoxycarotenoid dioxygenase - key enzyme in ABA biosynthesis.",
+    "organism": "Arabidopsis thaliana",
+    "accession": "AT3G14440"
+  },
+  "ABI1": {
+    "sequence": "ATGGAGGAGGAGGAGGAGGAGGAGGAGGAGGAGGAGGAGGAGG",
+    "trait": "ABA Signaling / Stress Response",
+    "description": "Protein phosphatase 2C involved in ABA signal transduction.",
+    "organism": "Oryza sativa (Rice)",
+    "accession": "OsABI1"
+  },
+  "P5CS": {
+    "sequence": "ATGCTGCTGCTGCTGCTGCTGCTGCTGCTGCTGCTGCTGCTGC",
+    "trait": "Osmoprotectant Biosynthesis",
+    "description": "Delta-1-pyrroline-5-carboxylate synthetase involved in proline biosynthesis.",
+    "organism": "Zea mays (Maize)",
+    "accession": "ZmP5CS"
+  },
+  "SOD1": {
+    "sequence": "ATGGCCGCCGCCGCCGCCGCCGCCGCCGCCGCCGCCGCCGCCG",
+    "trait": "Oxidative Stress",
+    "description": "Superoxide dismutase - detoxifies reactive oxygen species.",
+    "organism": "Glycine max (Soybean)",
+    "accession": "GmSOD1"
+  },
+  "CAT": {
+    "sequence": "ATGCCGCCGCCGCCGCCGCCGCCGCCGCCGCCGCCGCCGCCGC",
+    "trait": "Oxidative Stress / Detoxification",
+    "description": "Catalase - breaks down hydrogen peroxide.",
+    "organism": "Triticum aestivum (Wheat)",
+    "accession": "TaCAT"
+  }
 }

@@ -1,3 +1,33 @@
+# AI-Powered Bioinformatics Analysis Platform
+
+This repository is an evolving bioinformatics platform focused on sequence alignment, evolutionary distance calculation, phylogeny, protein analysis, annotation, and intelligent result interpretation.
+
+Architecture (proposed):
+
+IA/
+├── Core Engines/
+│   ├── alignment_engine.py
+│   ├── distance_engine.py
++│   └── phylogeny_engine.py
+├── Legacy Modules/
+│   ├── bioinformatics.py
+│   ├── similarityengine.py
+│   ├── aiinterpreter.py
+│   ├── visualization.py
+│   ├── export_utils.py
+│   └── app.py
+├── Configuration/
+│   └── config.py
+├── Data/
+│   └── genes_database.json
+├── Tests/
+│   └── test_bioinformatics.py
+├── Logs/
+│   └── analyzer.log
+└── Documentation/
+    └── README.md
+
+See `Documentation/README.md` for the full project vision and next steps.
 # 🧬 AI-Powered Plant Gene Analyzer
 
 A comprehensive bioinformatics web application for analyzing plant DNA sequences with AI-powered interpretation and agricultural insights.
@@ -600,3 +630,6 @@ For issues or questions:
 
 **Version:** 2.0 (May 2026)
 **Built with:** Streamlit • Biopython • Plotly • Python 3.10+
+#   - A I - P l a n t - G e n e - A n a l y z e r 
+ 
+ 

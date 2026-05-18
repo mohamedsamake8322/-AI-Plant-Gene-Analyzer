@@ -523,6 +523,16 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
         "🔬 Translation",
         "🤖 AI Interpretation",
         "📋 Raw Sequence",
+        "📊 Statistics",
+        "🔍 Similarity",
+        "🧪 Mutations",
+        "🔬 Translation",
+        "🤖 AI Interpretation",
+        "📋 Raw Sequence",
+        "🧩 Alignments",
+        "📐 Distance Matrix",
+        "🌳 Phylogeny",
+        "🔬 Protein Analysis",
     ])
 
     # ── Tab 1: Statistics ──────────────────────────────────────────────────────
@@ -851,6 +861,111 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             file_name="gene_analysis_report.txt",
             mime="text/plain",
         )
+
+    # ── Tab 7: Alignments (MSA + pairwise) ─────────────────────────────────
+    with tabs[6]:
+        st.markdown("#### Multiple Sequence Alignment")
+        seqs_input = st.text_area("Paste multiple FASTA sequences or one per line:", height=160)
+        msa_btn = st.button("Run MSA", key="msa_run")
+        if msa_btn and seqs_input:
+            from alignment_engine import progressive_alignment, needleman_wunsch
+
+            # parse simple input (one sequence per line or FASTA)
+            from sequence_loader import parse_fasta
+            records_msa = parse_fasta(seqs_input)
+            sequences = [r['sequence'] for r in records_msa]
+            if len(sequences) < 2:
+                st.warning("Provide at least 2 sequences for MSA.")
+            else:
+                with st.spinner("Running progressive MSA..."):
+                    msa_result = progressive_alignment(sequences, seq_type="dna")
+                st.success(f"MSA complete — {msa_result.get('num_sequences')} sequences aligned")
+                for aseq in msa_result.get('aligned_sequences', []):
+                    st.code(aseq, language=None)
+
+        st.markdown("#### Pairwise Alignment")
+        col_a, col_b = st.columns(2)
+        with col_a:
+            p_seq1 = st.text_area("Sequence 1", height=80, key="pw1")
+        with col_b:
+            p_seq2 = st.text_area("Sequence 2", height=80, key="pw2")
+        if st.button("Align pairwise", key="pw_align"):
+            from alignment_engine import needleman_wunsch, smith_waterman
+            if not p_seq1 or not p_seq2:
+                st.warning("Provide two sequences for pairwise alignment.")
+            else:
+                nw = needleman_wunsch(p_seq1.strip(), p_seq2.strip())
+                sw = smith_waterman(p_seq1.strip(), p_seq2.strip())
+                st.markdown("**Needleman-Wunsch (global)**")
+                st.code(nw['seq1_aligned'] + "\n" + nw['seq2_aligned'])
+                st.markdown(f"Score: {nw['alignment_score']} — Matches: {nw['match_count']} — Gaps: {nw['gap_count']}")
+                st.markdown("**Smith-Waterman (local)**")
+                st.code(sw['seq1_aligned'] + "\n" + sw['seq2_aligned'])
+
+    # ── Tab 8: Distance Matrix ───────────────────────────────────────────────
+    with tabs[7]:
+        st.markdown("#### Compute Pairwise Distance Matrix")
+        dm_input = st.text_area("Paste FASTA or one sequence per line:", height=160)
+        dm_method = st.selectbox("Method", options=["hamming", "jukes_cantor", "kimura", "pam"], index=2)
+        if st.button("Compute Distance Matrix", key="dm_compute"):
+            from sequence_loader import parse_fasta
+            from distance_engine import distance_matrix
+            records_dm = parse_fasta(dm_input)
+            sequences = [{"name": r.get('header', f"Seq{i+1}"), "sequence": r['sequence']} for i, r in enumerate(records_dm)]
+            if len(sequences) < 2:
+                st.warning("Provide at least 2 sequences to build distance matrix.")
+            else:
+                with st.spinner("Calculating distances..."):
+                    dm_res = distance_matrix(sequences, method=dm_method)
+                st.write("**Sequence names**", dm_res['sequence_names'])
+                import pandas as pd
+                df = pd.DataFrame(dm_res['distance_matrix'], index=dm_res['sequence_names'], columns=dm_res['sequence_names'])
+                st.dataframe(df)
+                st.download_button("Download CSV", df.to_csv().encode('utf-8'), file_name="distance_matrix.csv")
+
+    # ── Tab 9: Phylogeny ─────────────────────────────────────────────────────
+    with tabs[8]:
+        st.markdown("#### Build Phylogenetic Tree")
+        ph_input = st.text_area("Paste sequences for phylogeny (FASTA or lines):", height=160)
+        ph_method = st.selectbox("Tree algorithm", options=["upgma", "neighbor_joining"], index=0)
+        if st.button("Build Tree", key="build_tree"):
+            from sequence_loader import parse_fasta
+            from distance_engine import distance_matrix
+            from phylogeny_engine import upgma, neighbor_joining, phylo_to_newick, newick_to_plotly_tree
+            records_ph = parse_fasta(ph_input)
+            seqs = [{"name": r.get('header', f"Seq{i+1}"), "sequence": r['sequence']} for i, r in enumerate(records_ph)]
+            if len(seqs) < 3:
+                st.warning("Provide at least 3 sequences for a meaningful tree.")
+            else:
+                with st.spinner("Computing distance matrix..."):
+                    dm = distance_matrix(seqs, method="kimura")
+                mat = dm['distance_matrix']
+                import numpy as np
+                mat_np = np.array(mat)
+                with st.spinner("Building tree..."):
+                    if ph_method == "upgma":
+                        tree = upgma(mat_np, dm['sequence_names'])
+                    else:
+                        tree = neighbor_joining(mat_np, dm['sequence_names'])
+                st.write("**Tree metadata**", {"algorithm": tree.get('algorithm'), "tree_type": tree.get('tree_type')})
+                # Show Newick if available
+                try:
+                    newick = phylo_to_newick({"name": "root", "children": []})
+                except Exception:
+                    newick = None
+                st.code(newick or "Newick not available")
+
+    # ── Tab 10: Protein Analysis ─────────────────────────────────────────────
+    with tabs[9]:
+        st.markdown("#### Protein properties (simple)")
+        prot_seq = st.text_area("Paste protein sequence:", height=120)
+        if st.button("Analyze protein", key="prot_analyze"):
+            from bioinformatics import generate_protein_statistics
+            if not prot_seq:
+                st.warning("Paste a protein sequence to analyze.")
+            else:
+                stats = generate_protein_statistics(prot_seq.strip())
+                st.json(stats)
 
 else:
     # ── Welcome screen ──────────────────────────────────────────────────────────

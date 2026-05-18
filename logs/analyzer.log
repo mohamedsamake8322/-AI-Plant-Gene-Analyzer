@@ -1,3 +1,4 @@
+2026-05-18 00:00:00 - analyzer - INFO - Log initialized
 2026-05-13 22:34:01,233 - app - INFO - CSS loaded successfully from style.css
 2026-05-13 22:34:01,244 - app - INFO - Loaded 8 genes from database
 2026-05-13 22:34:31,268 - app - INFO - CSS loaded successfully from style.css
@@ -72,3 +73,12 @@
 2026-05-16 11:15:17,944 - __main__ - INFO - CSS loaded successfully from style.css
 2026-05-16 11:15:18,000 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
 2026-05-16 11:15:18,020 - __main__ - INFO - Analysis session state saved
+2026-05-18 19:12:07,892 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-18 19:12:07,903 - __main__ - INFO - Loaded 8 genes from database
+2026-05-18 19:22:27,288 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-18 19:22:35,227 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-18 19:22:38,419 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-18 19:22:38,444 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-05-18 19:22:38,518 - __main__ - INFO - Analysis session state saved
+2026-05-18 20:50:27,097 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-18 20:50:27,148 - __main__ - INFO - Loaded 13 genes from database
