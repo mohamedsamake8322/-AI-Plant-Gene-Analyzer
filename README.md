@@ -1,33 +1,3 @@
-# AI-Powered Bioinformatics Analysis Platform
-
-This repository is an evolving bioinformatics platform focused on sequence alignment, evolutionary distance calculation, phylogeny, protein analysis, annotation, and intelligent result interpretation.
-
-Architecture (proposed):
-
-IA/
-├── Core Engines/
-│   ├── alignment_engine.py
-│   ├── distance_engine.py
-+│   └── phylogeny_engine.py
-├── Legacy Modules/
-│   ├── bioinformatics.py
-│   ├── similarityengine.py
-│   ├── aiinterpreter.py
-│   ├── visualization.py
-│   ├── export_utils.py
-│   └── app.py
-├── Configuration/
-│   └── config.py
-├── Data/
-│   └── genes_database.json
-├── Tests/
-│   └── test_bioinformatics.py
-├── Logs/
-│   └── analyzer.log
-└── Documentation/
-    └── README.md
-
-See `Documentation/README.md` for the full project vision and next steps.
 # 🧬 AI-Powered Plant Gene Analyzer
 
 A comprehensive bioinformatics web application for analyzing plant DNA sequences with AI-powered interpretation and agricultural insights.
@@ -148,6 +118,12 @@ The app will open in your default browser at `http://localhost:8501`
    - Paste raw DNA (ATGC...)
    - Upload FASTA file (.fasta, .fa, .txt)
    - Select demo sequence from sidebar
+
+### Example test data
+- `Data/sample_gene.fasta` — contains two DNA gene fragments (PR1 and RbcL) for testing **Raw Sequence**, **Alignments**, **Distance Matrix**, and **Phylogeny**.
+- `Data/sample_protein.fasta` — contains a protein sequence for testing **Protein Analysis**.
+
+To test: upload one of these files in the app, then use the corresponding tabs to verify the features.
 
 2. **Configure Analysis**
    - Adjust top database matches (1-8)
