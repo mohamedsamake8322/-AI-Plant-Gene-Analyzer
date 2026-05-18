@@ -523,12 +523,6 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
         "🔬 Translation",
         "🤖 AI Interpretation",
         "📋 Raw Sequence",
-        "📊 Statistics",
-        "🔍 Similarity",
-        "🧪 Mutations",
-        "🔬 Translation",
-        "🤖 AI Interpretation",
-        "📋 Raw Sequence",
         "🧩 Alignments",
         "📐 Distance Matrix",
         "🌳 Phylogeny",
@@ -861,6 +855,16 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             file_name="gene_analysis_report.txt",
             mime="text/plain",
         )
+        st.markdown("#### Biological Annotation")
+        if st.button("Run annotation", key="run_annotation"):
+            from core_engines.annotation_engine import annotate_sequence
+            try:
+                anns = annotate_sequence(sequence, db=db)
+                st.success("Annotation complete")
+                st.json(anns)
+            except Exception as e:
+                logger.error(f"Annotation failed: {e}")
+                st.error(f"Annotation failed: {e}")
 
     # ── Tab 7: Alignments (MSA + pairwise) ─────────────────────────────────
     with tabs[6]:
@@ -868,7 +872,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
         seqs_input = st.text_area("Paste multiple FASTA sequences or one per line:", height=160)
         msa_btn = st.button("Run MSA", key="msa_run")
         if msa_btn and seqs_input:
-            from alignment_engine import progressive_alignment, needleman_wunsch
+            from core_engines.alignment_engine import progressive_alignment, needleman_wunsch
 
             # parse simple input (one sequence per line or FASTA)
             from sequence_loader import parse_fasta
@@ -880,8 +884,14 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 with st.spinner("Running progressive MSA..."):
                     msa_result = progressive_alignment(sequences, seq_type="dna")
                 st.success(f"MSA complete — {msa_result.get('num_sequences')} sequences aligned")
-                for aseq in msa_result.get('aligned_sequences', []):
-                    st.code(aseq, language=None)
+                aligned = msa_result.get('aligned_sequences', [])
+                labels = [r.get('header', f"Seq{i+1}") for i, r in enumerate(records_msa)]
+                try:
+                    fig_msa = viz.plot_msa_table(aligned, labels=labels)
+                    st.plotly_chart(fig_msa, use_container_width=True)
+                except Exception:
+                    for aseq in aligned:
+                        st.code(aseq, language=None)
 
         st.markdown("#### Pairwise Alignment")
         col_a, col_b = st.columns(2)
@@ -890,17 +900,29 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
         with col_b:
             p_seq2 = st.text_area("Sequence 2", height=80, key="pw2")
         if st.button("Align pairwise", key="pw_align"):
-            from alignment_engine import needleman_wunsch, smith_waterman
+            from core_engines.alignment_engine import needleman_wunsch, smith_waterman
             if not p_seq1 or not p_seq2:
                 st.warning("Provide two sequences for pairwise alignment.")
             else:
                 nw = needleman_wunsch(p_seq1.strip(), p_seq2.strip())
                 sw = smith_waterman(p_seq1.strip(), p_seq2.strip())
                 st.markdown("**Needleman-Wunsch (global)**")
+                # Show aligned text and interactive alignment map
                 st.code(nw['seq1_aligned'] + "\n" + nw['seq2_aligned'])
+                # Build match line
+                match_line_nw = ''.join(['|' if a==b and a!='-' else ' ' for a,b in zip(nw['seq1_aligned'], nw['seq2_aligned'])])
+                try:
+                    st.plotly_chart(viz.plot_alignment({'query': nw['seq1_aligned'], 'reference': nw['seq2_aligned'], 'match_line': match_line_nw}), use_container_width=True)
+                except Exception:
+                    pass
                 st.markdown(f"Score: {nw['alignment_score']} — Matches: {nw['match_count']} — Gaps: {nw['gap_count']}")
                 st.markdown("**Smith-Waterman (local)**")
                 st.code(sw['seq1_aligned'] + "\n" + sw['seq2_aligned'])
+                match_line_sw = ''.join(['|' if a==b and a!='-' else ' ' for a,b in zip(sw['seq1_aligned'], sw['seq2_aligned'])])
+                try:
+                    st.plotly_chart(viz.plot_alignment({'query': sw['seq1_aligned'], 'reference': sw['seq2_aligned'], 'match_line': match_line_sw}), use_container_width=True)
+                except Exception:
+                    pass
 
     # ── Tab 8: Distance Matrix ───────────────────────────────────────────────
     with tabs[7]:
@@ -909,7 +931,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
         dm_method = st.selectbox("Method", options=["hamming", "jukes_cantor", "kimura", "pam"], index=2)
         if st.button("Compute Distance Matrix", key="dm_compute"):
             from sequence_loader import parse_fasta
-            from distance_engine import distance_matrix
+            from core_engines.distance_engine import distance_matrix
             records_dm = parse_fasta(dm_input)
             sequences = [{"name": r.get('header', f"Seq{i+1}"), "sequence": r['sequence']} for i, r in enumerate(records_dm)]
             if len(sequences) < 2:
@@ -930,8 +952,8 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
         ph_method = st.selectbox("Tree algorithm", options=["upgma", "neighbor_joining"], index=0)
         if st.button("Build Tree", key="build_tree"):
             from sequence_loader import parse_fasta
-            from distance_engine import distance_matrix
-            from phylogeny_engine import upgma, neighbor_joining, phylo_to_newick, newick_to_plotly_tree
+            from core_engines.distance_engine import distance_matrix
+            from core_engines.phylogeny_engine import upgma, neighbor_joining, phylo_to_newick, newick_to_plotly_tree
             records_ph = parse_fasta(ph_input)
             seqs = [{"name": r.get('header', f"Seq{i+1}"), "sequence": r['sequence']} for i, r in enumerate(records_ph)]
             if len(seqs) < 3:
@@ -948,9 +970,21 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                     else:
                         tree = neighbor_joining(mat_np, dm['sequence_names'])
                 st.write("**Tree metadata**", {"algorithm": tree.get('algorithm'), "tree_type": tree.get('tree_type')})
-                # Show Newick if available
+                # If dendrogram data available, plot interactive dendrogram
                 try:
-                    newick = phylo_to_newick({"name": "root", "children": []})
+                    if tree.get('dendrogram_data'):
+                        fig = viz.plot_dendrogram(tree['dendrogram_data'], labels=tree.get('sequence_names'))
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.info('Dendrogram data not available for this method; showing edge list instead.')
+                        if tree.get('edges'):
+                            st.table(tree['edges'])
+                except Exception as e:
+                    logger.warning(f"Failed to render dendrogram: {e}")
+
+                # Simple Newick fallback (leaf list)
+                try:
+                    newick = "(" + ",".join(tree.get('sequence_names', [])) + ");"
                 except Exception:
                     newick = None
                 st.code(newick or "Newick not available")

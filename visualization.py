@@ -413,3 +413,116 @@ def plot_gc_sliding_window(sequence: str, window: int = 20) -> go.Figure:
     layout["yaxis"]["ticksuffix"] = "%"
     fig.update_layout(**layout, height=300)
     return fig
+
+
+# ─── Multiple Sequence Alignment table (colored) ───────────────────────────
+def plot_msa_table(aligned_sequences: list, labels: list | None = None) -> go.Figure:
+    """
+    Render an MSA as a colorized table using Plotly `go.Table`.
+
+    Args:
+        aligned_sequences: list of aligned sequence strings (same length)
+        labels: optional list of row labels (sequence names)
+    """
+    if not aligned_sequences:
+        return go.Figure()
+
+    align_len = len(aligned_sequences[0])
+    # Normalize sequences to same length
+    rows = [list(s.ljust(align_len, '-')) for s in aligned_sequences]
+
+    # Build color map per cell
+    fill_colors = []
+    for row in rows:
+        colors = [NUCLEOTIDE_COLORS.get(base.upper(), "#eeeeee") for base in row]
+        fill_colors.append(colors)
+
+    # Build header and cell values: show columns as positions
+    header_values = [f"Pos {i+1}" for i in range(align_len)]
+    # transpose rows -> columns for go.Table cells expects list of columns
+    cell_values = list(map(list, zip(*rows)))
+    cell_colors = list(map(list, zip(*fill_colors)))
+
+    fig = go.Figure(
+        data=[
+            go.Table(
+                header=dict(
+                    values=["Sequence"] + header_values,
+                    fill_color="#dcedc8",
+                    align="center",
+                    font=dict(color=config.CHART_FONT_COLOR, size=12),
+                ),
+                cells=dict(
+                    values=[labels or [f"Seq {i+1}" for i in range(len(rows))]] + cell_values,
+                    fill_color=[["#ffffff"] * len(cell_values[0])] * 1 + cell_colors,
+                    align="center",
+                    font=dict(color=config.CHART_FONT_COLOR, size=11),
+                ),
+            )
+        ]
+    )
+    fig.update_layout(paper_bgcolor=config.CHART_PAPER, height= max(200, 40 * len(rows)))
+    return fig
+
+
+# ─── Dendrogram from scipy dendrogram-data ──────────────────────────────────
+def plot_dendrogram(dendro: dict, labels: list | None = None) -> go.Figure:
+    """
+    Build an interactive Plotly dendrogram from scipy-style dendrogram data.
+
+    Args:
+        dendro: dict containing 'icoord' and 'dcoord' lists (as returned by scipy.dendrogram)
+        labels: optional list of leaf labels in order
+    """
+    if not dendro or 'icoord' not in dendro:
+        return go.Figure()
+
+    icoord = dendro.get('icoord', [])
+    dcoord = dendro.get('dcoord', [])
+    color_list = dendro.get('color_list', [])
+
+    fig = go.Figure()
+
+    for xs, ys, col in zip(icoord, dcoord, color_list if color_list else ['#0f3d0f'] * len(icoord)):
+        fig.add_trace(
+            go.Scatter(
+                x=xs,
+                y=ys,
+                mode='lines',
+                line=dict(color=col, width=2),
+                hoverinfo='none',
+                showlegend=False,
+            )
+        )
+
+    # Attempt to place labels at leaf positions (y==0 points)
+    leaf_x = []
+    for ys, xs in zip(dcoord, icoord):
+        for y, x in zip(ys, xs):
+            if y == 0:
+                leaf_x.append(x)
+
+    # Deduplicate and sort
+    leaf_x_unique = sorted(set(leaf_x))
+    if labels and len(labels) == len(leaf_x_unique):
+        fig.add_trace(
+            go.Scatter(
+                x=leaf_x_unique,
+                y=[0] * len(leaf_x_unique),
+                mode='markers+text',
+                marker=dict(color='rgba(0,0,0,0)'),
+                text=labels,
+                textposition='bottom center',
+                textfont=dict(color=config.CHART_FONT_COLOR, size=11),
+                hoverinfo='text',
+                showlegend=False,
+            )
+        )
+
+    fig.update_layout(
+        **_base_layout("Phylogenetic Dendrogram"),
+        xaxis=dict(showticklabels=False),
+        yaxis=dict(title="Distance"),
+        height=400,
+    )
+    return fig
