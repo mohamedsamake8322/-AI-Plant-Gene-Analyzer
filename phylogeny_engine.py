@@ -45,9 +45,12 @@ def upgma(distance_matrix: np.ndarray, names: List[str]) -> Dict:
     """
     n = len(names)
     
-    # Ensure symmetric distance matrix
-    dm = distance_matrix.copy()
-    dm = (dm + dm.T) / 2  # Make symmetric
+# Ensure symmetric distance matrix and numeric values
+    dm = np.array(distance_matrix, dtype=float)
+    if dm.ndim != 2 or dm.shape[0] != dm.shape[1]:
+        raise ValueError("Distance matrix must be square.")
+    dm = (dm + dm.T) / 2.0  # Make symmetric
+    np.fill_diagonal(dm, 0.0)
     
     # Convert distance matrix to condensed form for scipy
     condensed_dist = squareform(dm)

@@ -226,12 +226,19 @@ def distance_matrix(sequences: List[Dict], method: str = "kimura") -> Dict:
     matrix = np.zeros((n, n))
     names = [seq["name"] for seq in sequences]
     
+    def _safe_distance(func, s1, s2, key):
+        res = func(s1, s2)
+        if isinstance(res, dict):
+            value = res.get(key, 0)
+            return float(value) if value is not None else 0.0
+        return float(res)
+
     distance_func = {
-        "hamming": lambda s1, s2: hamming_distance(s1, s2)["distance"],
-        "jukes_cantor": lambda s1, s2: jukes_cantor_distance(s1, s2).get("jukes_cantor_distance", 0),
-        "kimura": lambda s1, s2: kimura_distance(s1, s2).get("kimura_distance", 0),
-        "pam": lambda s1, s2: pam_distance(s1, s2).get("pam_distance", 0),
-    }.get(method.lower(), hamming_distance)
+        "hamming": lambda s1, s2: _safe_distance(hamming_distance, s1, s2, "distance"),
+        "jukes_cantor": lambda s1, s2: _safe_distance(jukes_cantor_distance, s1, s2, "jukes_cantor_distance"),
+        "kimura": lambda s1, s2: _safe_distance(kimura_distance, s1, s2, "kimura_distance"),
+        "pam": lambda s1, s2: _safe_distance(pam_distance, s1, s2, "pam_distance"),
+    }.get(method.lower(), lambda s1, s2: _safe_distance(hamming_distance, s1, s2, "distance"))
     
     for i in range(n):
         for j in range(n):
