@@ -956,8 +956,8 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             from core_engines.phylogeny_engine import upgma, neighbor_joining, phylo_to_newick, newick_to_plotly_tree
             records_ph = parse_fasta(ph_input)
             seqs = [{"name": r.get('header', f"Seq{i+1}"), "sequence": r['sequence']} for i, r in enumerate(records_ph)]
-            if len(seqs) < 3:
-                st.warning("Provide at least 3 sequences for a meaningful tree.")
+            if len(seqs) < 2:
+                st.warning("Provide at least 2 sequences for a simple tree; 3+ sequences are recommended for more meaningful phylogeny.")
             else:
                 with st.spinner("Computing distance matrix..."):
                     dm = distance_matrix(seqs, method="kimura")
@@ -987,6 +987,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                     newick = "(" + ",".join(tree.get('sequence_names', [])) + ");"
                 except Exception:
                     newick = None
+                st.markdown("#### Newick format")
                 st.code(newick or "Newick not available")
 
     # ── Tab 10: Protein Analysis ─────────────────────────────────────────────
