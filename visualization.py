@@ -489,7 +489,7 @@ def plot_msa_table(aligned_sequences: list, labels: list | None = None) -> go.Fi
 # ─── Dendrogram from scipy dendrogram-data ──────────────────────────────────
 def plot_dendrogram(dendro: dict, labels: list | None = None) -> go.Figure:
     """
-    Build an interactive Plotly dendrogram from scipy-style dendrogram data.
+    Build a simple interactive tree diagram from scipy-style dendrogram data.
 
     Args:
         dendro: dict containing 'icoord' and 'dcoord' lists (as returned by scipy.dendrogram)
@@ -503,47 +503,75 @@ def plot_dendrogram(dendro: dict, labels: list | None = None) -> go.Figure:
     color_list = dendro.get('color_list', [])
 
     fig = go.Figure()
+    node_points = set()
+    leaf_x = []
 
     for xs, ys, col in zip(icoord, dcoord, color_list if color_list else ['#0f3d0f'] * len(icoord)):
+        xs = list(xs)
+        ys = list(ys)
+        for x, y in zip(xs, ys):
+            node_points.add((x, y))
+            if y == 0:
+                leaf_x.append(x)
+
         fig.add_trace(
             go.Scatter(
                 x=xs,
                 y=ys,
                 mode='lines',
-                line=dict(color=_normalize_plotly_color(col), width=2),
+                line=dict(color=_normalize_plotly_color(col), width=3),
                 hoverinfo='none',
                 showlegend=False,
             )
         )
 
-    # Attempt to place labels at leaf positions (y==0 points)
-    leaf_x = []
-    for ys, xs in zip(dcoord, icoord):
-        for y, x in zip(ys, xs):
-            if y == 0:
-                leaf_x.append(x)
+    internal_nodes = sorted({(x, y) for x, y in node_points if y != 0}, key=lambda p: (p[1], p[0]))
+    leaves = sorted({(x, y) for x, y in node_points if y == 0}, key=lambda p: p[0])
 
-    # Deduplicate and sort
+    if internal_nodes:
+        fig.add_trace(
+            go.Scatter(
+                x=[x for x, _ in internal_nodes],
+                y=[y for _, y in internal_nodes],
+                mode='markers',
+                marker=dict(size=8, color='#0d1b2a', symbol='circle'),
+                hoverinfo='none',
+                showlegend=False,
+            )
+        )
+
+    if leaves:
+        fig.add_trace(
+            go.Scatter(
+                x=[x for x, _ in leaves],
+                y=[y for _, y in leaves],
+                mode='markers',
+                marker=dict(size=10, color='#69f0ae', symbol='circle'),
+                hoverinfo='none',
+                showlegend=False,
+            )
+
+        )
+
     leaf_x_unique = sorted(set(leaf_x))
     if labels and len(labels) == len(leaf_x_unique):
         fig.add_trace(
             go.Scatter(
                 x=leaf_x_unique,
                 y=[0] * len(leaf_x_unique),
-                mode='markers+text',
-                marker=dict(color='rgba(0,0,0,0)'),
+                mode='text',
                 text=labels,
                 textposition='bottom center',
                 textfont=dict(color=config.CHART_FONT_COLOR, size=11),
-                hoverinfo='text',
+                hoverinfo='skip',
                 showlegend=False,
             )
         )
 
     fig.update_layout(
-        **_base_layout("Phylogenetic Dendrogram"),
-        xaxis=dict(showticklabels=False),
-        yaxis=dict(title="Distance"),
-        height=400,
+        **_base_layout("Phylogenetic Tree"),
+        xaxis=dict(showticklabels=False, zeroline=False, showgrid=False),
+        yaxis=dict(title="Distance", zeroline=False, showgrid=True),
+        height=420,
     )
     return fig

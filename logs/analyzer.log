@@ -103,3 +103,21 @@
       - An hsl/hsla string (e.g. 'hsl(0,100%,50%)')
       - An hsv/hsva string (e.g. 'hsv(0,100%,100%)')
       - A named CSS color: see https://plotly.com/python/css-colors/ for a list
+2026-05-18 21:45:39,363 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-18 21:45:40,140 - __main__ - WARNING - Failed to render dendrogram: plotly.graph_objs._figure.Figure.update_layout() got multiple values for keyword argument 'xaxis'
+2026-05-18 21:45:42,886 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-18 21:45:43,324 - __main__ - WARNING - Failed to render dendrogram: plotly.graph_objs._figure.Figure.update_layout() got multiple values for keyword argument 'xaxis'
+2026-05-18 21:45:47,836 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-18 21:46:01,214 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-18 21:46:01,482 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-18 21:46:01,523 - __main__ - INFO - Starting analysis for record 1/1: PR1_Tomato | Pathogenesis-related protein 1
+2026-05-18 21:46:01,530 - __main__ - INFO - Analysis session state saved
+2026-05-18 21:46:08,565 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-18 21:46:08,932 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-18 21:46:57,513 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-18 21:46:57,922 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-18 21:47:06,884 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-18 21:47:07,338 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-18 21:47:11,448 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-18 21:47:11,866 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-18 21:47:12,363 - __main__ - WARNING - Failed to render dendrogram: plotly.graph_objs._figure.Figure.update_layout() got multiple values for keyword argument 'xaxis'
