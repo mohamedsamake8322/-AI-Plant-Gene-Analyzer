@@ -1,0 +1,10 @@
+[server]
+headless = true
+enableCORS = false
+enableXsrfProtection = true
+enableWebsocketCompression = true
+address = "localhost"
+port = 8501
+
+[runner]
+magicEnabled = false

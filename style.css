@@ -1,0 +1,195 @@
+/* ============================================================
+   AI-Powered Plant Gene Analyzer — Custom Streamlit Styles
+   ============================================================ */
+
+/* ── Main background ── */
+.stApp {
+    background: #ffffff;
+    color: #111111;
+}
+
+/* ── Body text ── */
+body, .css-1x0ubo2, .stText, .stMarkdown {
+    color: #111111 !important;
+    font-family: Arial, sans-serif !important;
+}
+
+/* ── Header title ── */
+h1 {
+    color: #0b6623 !important;
+    font-family: 'Arial', sans-serif;
+    font-size: 2.4rem !important;
+    letter-spacing: 0.5px;
+    text-align: center;
+    padding: 0.8rem 0;
+}
+
+h2, h3, h4, h5, h6 {
+    color: #0b6623 !important;
+    font-family: 'Arial', sans-serif !important;
+}
+
+/* ── Metric cards ── */
+[data-testid="metric-container"] {
+    background: #f7fff7;
+    border: 1px solid #c8e6c9;
+    border-radius: 12px;
+    padding: 1rem;
+    transition: all 0.2s ease;
+}
+
+[data-testid="metric-container"]:hover {
+    border-color: #80c783;
+    background: #edfff0;
+    transform: translateY(-1px);
+}
+
+[data-testid="stMetricValue"] {
+    color: #0b6623 !important;
+    font-family: Arial, sans-serif !important;
+    font-size: 1.7rem !important;
+}
+
+[data-testid="stMetricLabel"] {
+    color: #333333 !important;
+}
+
+/* ── Text area (sequence input) ── */
+textarea {
+    background: #ffffff !important;
+    border: 1px solid #0b6623 !important;
+    border-radius: 8px !important;
+    color: #111111 !important;
+    font-family: Arial, sans-serif !important;
+    font-size: 0.95rem !important;
+    letter-spacing: 0.2px;
+}
+
+textarea:focus {
+    border-color: #0b6623 !important;
+    box-shadow: 0 0 8px rgba(11, 102, 35, 0.15) !important;
+}
+
+/* ── Buttons ── */
+.stButton > button {
+    background: #0b6623 !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 8px !important;
+    padding: 0.6rem 2rem !important;
+    font-weight: 700 !important;
+    font-family: Arial, sans-serif !important;
+    letter-spacing: 0.5px;
+    transition: all 0.2s ease !important;
+    width: 100%;
+}
+
+.stButton > button:hover {
+    background: #138a36 !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(11, 102, 35, 0.2) !important;
+}
+
+/* ── Select boxes ── */
+.stSelectbox > div > div {
+    background: #ffffff !important;
+    border: 1px solid #0b6623 !important;
+    border-radius: 8px !important;
+    color: #111111 !important;
+}
+
+/* ── Sidebar ── */
+[data-testid="stSidebar"] {
+    background: #fafafa !important;
+    border-right: 1px solid #e0e0e0;
+}
+
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+    color: #0b6623 !important;
+}
+
+/* ── Expanders ── */
+.streamlit-expanderHeader {
+    background: #f1f8f1 !important;
+    border-radius: 8px !important;
+    color: #0b6623 !important;
+    font-family: Arial, sans-serif !important;
+}
+
+/* ── Tabs ── */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 8px;
+}
+
+.stTabs [data-baseweb="tab"] {
+    background: #f6fff6;
+    border-radius: 8px;
+    color: #0b6623;
+    font-family: Arial, sans-serif;
+}
+
+.stTabs [aria-selected="true"] {
+    background: #e6f7e6 !important;
+    color: #0b6623 !important;
+    border-bottom: 2px solid #0b6623 !important;
+}
+
+/* ── Code blocks (sequence display) ── */
+code,
+pre {
+    background: #f4f7f4 !important;
+    color: #111111 !important;
+    border: 1px solid #c8e6c9 !important;
+    border-radius: 6px !important;
+    font-family: Consolas, monospace !important;
+    font-size: 0.9rem !important;
+    letter-spacing: 0.2px;
+}
+
+/* ── Progress / spinner ── */
+.stProgress > div > div {
+    background: linear-gradient(90deg, #0b6623, #138a36) !important;
+}
+
+/* ── File uploader ── */
+[data-testid="stFileUploadDropzone"] {
+    background: #ffffff !important;
+    border: 2px dashed #0b6623 !important;
+    border-radius: 12px !important;
+}
+
+/* ── Divider ── */
+hr {
+    border-color: #e0e0e0 !important;
+    margin: 1.5rem 0 !important;
+}
+
+/* ── Result highlight box ── */
+.result-box {
+    background: #f4fff4;
+    border: 1px solid #c8e6c9;
+    border-left: 4px solid #0b6623;
+    border-radius: 8px;
+    padding: 1rem 1.5rem;
+    margin: 1rem 0;
+    font-family: Arial, sans-serif;
+}
+}
+
+/* ── Mutation highlight ── */
+.mutation-highlight {
+    color: #ff5252;
+    font-weight: bold;
+    font-family: 'Courier New', monospace;
+    background: rgba(255, 82, 82, 0.1);
+    padding: 0 2px;
+    border-radius: 2px;
+}
+
+/* ── Match highlight ── */
+.match-highlight {
+    color: #69f0ae;
+    font-family: 'Courier New', monospace;
+}

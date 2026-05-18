@@ -1,0 +1,74 @@
+2026-05-13 22:34:01,233 - app - INFO - CSS loaded successfully from style.css
+2026-05-13 22:34:01,244 - app - INFO - Loaded 8 genes from database
+2026-05-13 22:34:31,268 - app - INFO - CSS loaded successfully from style.css
+2026-05-13 22:34:31,276 - app - INFO - Loaded 8 genes from database
+2026-05-13 22:34:40,770 - app - INFO - CSS loaded successfully from style.css
+2026-05-13 22:34:40,776 - app - INFO - Loaded 8 genes from database
+2026-05-13 22:34:45,418 - app - INFO - CSS loaded successfully from style.css
+2026-05-13 22:34:45,428 - app - INFO - Loaded 8 genes from database
+2026-05-13 22:34:50,029 - app - INFO - CSS loaded successfully from style.css
+2026-05-13 22:34:50,032 - app - INFO - Loaded 8 genes from database
+2026-05-13 22:34:56,364 - app - INFO - CSS loaded successfully from style.css
+2026-05-13 22:34:56,371 - app - INFO - Loaded 8 genes from database
+2026-05-13 22:35:08,590 - app - INFO - CSS loaded successfully from style.css
+2026-05-13 22:35:08,592 - app - INFO - Loaded 8 genes from database
+2026-05-13 22:35:15,082 - app - INFO - CSS loaded successfully from style.css
+2026-05-13 22:35:15,090 - app - INFO - Loaded 8 genes from database
+2026-05-13 22:35:20,214 - app - INFO - CSS loaded successfully from style.css
+2026-05-13 22:35:20,229 - app - INFO - Loaded 8 genes from database
+2026-05-13 23:10:22,574 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-13 23:10:22,605 - __main__ - INFO - Loaded 8 genes from database
+2026-05-15 20:11:57,346 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-15 20:11:57,366 - __main__ - INFO - Loaded 8 genes from database
+2026-05-15 20:14:12,486 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-15 20:45:39,726 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-15 20:45:42,701 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-15 21:15:27,922 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-15 21:15:37,906 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-15 21:15:40,506 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-15 21:15:40,547 - __main__ - INFO - Starting analysis for sequence of length 886 bp
+2026-05-15 21:15:40,558 - __main__ - INFO - Database comparison completed: 3 matches
+2026-05-15 21:15:40,560 - __main__ - INFO - Mutation detection completed: 48 mutations found
+2026-05-15 21:15:40,560 - __main__ - INFO - AI interpretation completed successfully
+2026-05-15 21:15:40,563 - __main__ - INFO - Analysis session state saved
+2026-05-15 21:15:47,331 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-15 21:15:47,368 - __main__ - INFO - Starting analysis for sequence of length 886 bp
+2026-05-15 21:15:47,372 - __main__ - INFO - Database comparison completed: 3 matches
+2026-05-15 21:15:47,373 - __main__ - INFO - Mutation detection completed: 48 mutations found
+2026-05-15 21:15:47,373 - __main__ - INFO - AI interpretation completed successfully
+2026-05-15 21:15:47,373 - __main__ - INFO - Analysis session state saved
+2026-05-15 21:16:00,375 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-15 21:16:00,715 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-15 21:16:00,739 - __main__ - INFO - Starting analysis for sequence of length 886 bp
+2026-05-15 21:16:00,752 - __main__ - INFO - Database comparison completed: 3 matches
+2026-05-15 21:16:00,752 - __main__ - INFO - Mutation detection completed: 48 mutations found
+2026-05-15 21:16:00,752 - __main__ - INFO - AI interpretation completed successfully
+2026-05-15 21:16:00,756 - __main__ - INFO - Analysis session state saved
+2026-05-15 21:18:56,848 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-15 21:18:56,965 - __main__ - INFO - CSV export created: C:\Downloads\IA\results\analysis_20260515_211856.csv
+2026-05-15 21:18:59,683 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-15 23:19:23,547 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-15 23:19:38,513 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-15 23:19:41,931 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-15 23:19:41,969 - __main__ - INFO - Starting analysis for sequence of length 886 bp
+2026-05-15 23:19:41,975 - __main__ - ERROR - Database comparison failed: module 'bioinformatics' has no attribute 'detect_sequence_type'
+2026-05-15 23:19:41,979 - __main__ - INFO - AI interpretation completed successfully
+2026-05-15 23:19:41,984 - __main__ - INFO - Analysis session state saved
+2026-05-16 10:50:27,077 - app - INFO - CSS loaded successfully from style.css
+2026-05-16 10:50:27,100 - app - INFO - Loaded 8 genes from database
+2026-05-16 11:04:08,746 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-16 11:04:08,766 - __main__ - INFO - Loaded 8 genes from database
+2026-05-16 11:04:19,785 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-16 11:04:23,554 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-16 11:04:23,598 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-05-16 11:04:23,606 - __main__ - INFO - Analysis session state saved
+2026-05-16 11:11:23,226 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-16 11:11:32,922 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-16 11:11:40,070 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-16 11:11:40,110 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-05-16 11:11:40,133 - __main__ - INFO - Analysis session state saved
+2026-05-16 11:15:05,742 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-16 11:15:14,789 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-16 11:15:17,944 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-16 11:15:18,000 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-05-16 11:15:18,020 - __main__ - INFO - Analysis session state saved
