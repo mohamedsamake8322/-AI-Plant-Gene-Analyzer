@@ -30,6 +30,27 @@ def _base_layout(title: str = "") -> dict:
     )
 
 
+def _normalize_plotly_color(color_value: str) -> str:
+    """Normalize matplotlib-style color names for Plotly."""
+    named_colors = {
+        'C0': '#1f77b4',
+        'C1': '#ff7f0e',
+        'C2': '#2ca02c',
+        'C3': '#d62728',
+        'C4': '#9467bd',
+        'C5': '#8c564b',
+        'C6': '#e377c2',
+        'C7': '#7f7f7f',
+        'C8': '#bcbd22',
+        'C9': '#17becf',
+    }
+    if color_value in named_colors:
+        return named_colors[color_value]
+    if isinstance(color_value, str) and color_value.startswith('C') and color_value[1:].isdigit():
+        return named_colors.get(color_value, '#0f3d0f')
+    return color_value
+
+
 # ─── Nucleotide distribution ───────────────────────────────────────────────────
 
 def plot_nucleotide_pie(dist: dict) -> go.Figure:
@@ -489,7 +510,7 @@ def plot_dendrogram(dendro: dict, labels: list | None = None) -> go.Figure:
                 x=xs,
                 y=ys,
                 mode='lines',
-                line=dict(color=col, width=2),
+                line=dict(color=_normalize_plotly_color(col), width=2),
                 hoverinfo='none',
                 showlegend=False,
             )

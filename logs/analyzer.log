@@ -84,3 +84,22 @@
 2026-05-18 20:50:27,148 - __main__ - INFO - Loaded 13 genes from database
 2026-05-18 20:59:05,469 - __main__ - INFO - CSS loaded successfully from style.css
 2026-05-18 20:59:07,576 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-18 21:38:57,539 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-18 21:38:57,575 - __main__ - INFO - Loaded 13 genes from database
+2026-05-18 21:39:49,930 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-18 21:40:11,357 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-18 21:40:13,739 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-18 21:40:13,779 - __main__ - INFO - Starting analysis for record 1/1: PR1_Tomato | Pathogenesis-related protein 1
+2026-05-18 21:40:13,793 - __main__ - INFO - Analysis session state saved
+2026-05-18 21:40:40,654 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-18 21:40:41,076 - __main__ - INFO - CSS loaded successfully from style.css
+2026-05-18 21:40:50,449 - __main__ - WARNING - Failed to render dendrogram: 
+    Invalid value of type 'builtins.str' received for the 'color' property of scatter.line
+        Received value: 'C0'
+
+    The 'color' property is a color and may be specified as:
+      - A hex string (e.g. '#ff0000')
+      - An rgb/rgba string (e.g. 'rgb(255,0,0)')
+      - An hsl/hsla string (e.g. 'hsl(0,100%,50%)')
+      - An hsv/hsva string (e.g. 'hsv(0,100%,100%)')
+      - A named CSS color: see https://plotly.com/python/css-colors/ for a list
