@@ -129,3 +129,24 @@
 2026-06-03 11:49:02,722 - __main__ - INFO - CSS loaded successfully from style.css
 2026-06-03 11:49:02,732 - __main__ - INFO - Loaded 2 genes from database
 2026-06-03 11:49:08,471 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-03 11:50:58,497 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-03 11:51:12,765 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-03 11:51:27,198 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-03 11:51:28,901 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-03 11:51:28,925 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-06-03 11:51:28,936 - __main__ - WARNING - Database comparison failed: 'sequence'
+2026-06-03 11:51:28,938 - __main__ - INFO - Analysis session state saved
+2026-06-03 11:51:41,857 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-03 11:53:09,767 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-03 11:53:13,677 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-03 11:53:13,727 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-06-03 11:53:13,742 - __main__ - WARNING - Database comparison failed: 'sequence'
+2026-06-03 11:53:13,742 - __main__ - INFO - Analysis session state saved
+2026-06-03 12:03:04,433 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-03 12:07:50,146 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-03 12:07:50,977 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-03 12:07:51,942 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-03 12:07:55,562 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-03 12:07:59,767 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-03 12:08:00,299 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-03 12:08:01,905 - __main__ - INFO - CSS loaded successfully from style.css

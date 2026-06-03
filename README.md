@@ -141,10 +141,70 @@ To test: upload one of these files in the app, then use the corresponding tabs t
    - Read protein translation in "Translation" tab
    - Get AI insights in "AI Interpretation" tab
 
-5. **Export Results**
+6. **Export Results**
    - Download JSON report (full data)
    - Download CSV report (key metrics)
    - Download HTML report (formatted visualization)
+
+---
+
+## 🌱 Collecte de données végétales
+
+Un wrapper `scripts/collect_plant_data.py` regroupe les collecteurs existants et permet d'extraire des données plantées depuis :
+- GEO datasets (`scripts/collect_geo.py`)
+- Ensembl Plants (`scripts/collect_ensembl.py`)
+- Expression Atlas (`scripts/collect_expression_atlas.py`)
+- NCBI sequences (`scripts/collect_ncbi.py`)
+
+### Exemple d'utilisation
+
+```bash
+python scripts/collect_plant_data.py \
+  --geo-term "drought" \
+  --atlas-term "drought stress" \
+  --atlas-gene DREB1A \
+  --ensembl-symbol DREB1A \
+  --ncbi-term DREB1A \
+  --out plant_data.json
+```
+
+Options utiles :
+- `--merge-gene SYMBOL` : attache les résultats GEO/Expression Atlas à un gène existant dans `genes_database.json`
+- `--add-gene-records` : ajoute les enregistrements Ensembl/NCBI trouvés dans `genes_database.json`
+- `--ncbi-accession` : récupère un accès direct via accession NCBI
+- `--ncbi-db protein` : récupère des séquences protéiques au lieu d'ADN
+
+Le wrapper lit `NCBI_EMAIL` et `NCBI_API_KEY` depuis `.env` pour ne pas exposer les clés dans le dépôt.
+
+### PostgreSQL et liaison au projet
+
+Un nouveau script `scripts/load_to_postgres.py` permet de charger les données de `genes_database.json` ou d'un fichier JSON dans PostgreSQL.
+Le helper `scripts/postgres_utils.py` crée les tables nécessaires et insère les enregistrements de gènes.
+
+Exemple :
+```bash
+cp .env.example .env
+# modifier .env pour ajouter DATABASE_URL
+python scripts/load_to_postgres.py --create-tables --from-db
+```
+
+Ou pour charger un fichier JSON de collecte :
+```bash
+python scripts/load_to_postgres.py --create-tables --json-file plant_data.json
+```
+
+### Quand utiliser PostgreSQL ?
+
+`genes_database.json` est suffisant pour les prototypes et une base de quelques dizaines ou centaines de gènes.
+
+Passe à PostgreSQL lorsque :
+- le volume de données devient important (> quelques centaines de gènes/datasets)
+- tu veux des recherches plus rapides et des filtres complexes (`WHERE`, `JOIN`, `LIKE`, `FULL TEXT`)
+- tu veux partager les données entre plusieurs utilisateurs ou services
+- tu veux historiser, versionner ou mettre à jour des métadonnées plus facilement
+- tu souhaites transformer le projet en API ou application de production
+
+Dans ce projet, PostgreSQL devient intéressant quand tu as besoin d'un stockage stable, indexé et relationnel au lieu d'un simple fichier JSON.
 
 ---
 
