@@ -207,10 +207,13 @@ with st.sidebar:
     st.markdown("### Database")
     db = load_gene_database_cached("genes_database.json")
     if db:
-        st.success(f"✅ {len(db)} genes loaded")
+        genes = db.get("genes", []) if isinstance(db, dict) else db
+        st.success(f"✅ {len(genes)} genes loaded")
         with st.expander("View gene names"):
-            for gene_name, info in db.items():
-                st.markdown(f"- **{gene_name}** — {info.get('trait', '')}")
+            for gene in genes:
+                symbol = gene.get("symbol", "Unknown")
+                trait = gene.get("trait", "No trait specified")
+                st.markdown(f"- **{symbol}** — {trait}")
     else:
         st.error("❌ No genes available in database")
 
