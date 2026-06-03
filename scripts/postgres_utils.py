@@ -7,19 +7,31 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from urllib.parse import quote_plus
 
 from dotenv import load_dotenv
 import psycopg
 from psycopg import sql
-from psycopg.types import Json
 
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+DB_HOST = os.getenv("DB_HOST")
+DB_PORT = os.getenv("DB_PORT")
+DB_NAME = os.getenv("DB_NAME")
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
 
-if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL not set in .env or environment")
+if DB_HOST and DB_NAME and DB_USER and DB_PASSWORD:
+    DATABASE_URL = (
+        f"postgresql://{quote_plus(DB_USER)}:{quote_plus(DB_PASSWORD)}@{DB_HOST}"
+        f":{DB_PORT or 5432}/{quote_plus(DB_NAME)}"
+    )
+elif not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL not set and DB_HOST/DB_NAME/DB_USER/DB_PASSWORD are not all configured"
+    )
 
 
 def get_connection() -> psycopg.Connection:
@@ -104,15 +116,15 @@ def insert_gene_record(record: dict) -> None:
                     "description": record.get("description"),
                     "source": record.get("source"),
                     "source_url": record.get("source_url"),
-                    "external_links": Json(record.get("external_links", {})),
-                    "expression_profiles": Json(record.get("expression_profiles", [])),
-                    "pathways": Json(record.get("pathways", [])),
-                    "publications": Json(record.get("publications", [])),
-                    "annotations": Json(record.get("annotations", {})),
-                    "traits": Json(record.get("traits", [])),
+                    "external_links": record.get("external_links", {}),
+                    "expression_profiles": record.get("expression_profiles", []),
+                    "pathways": record.get("pathways", []),
+                    "publications": record.get("publications", []),
+                    "annotations": record.get("annotations", {}),
+                    "traits": record.get("traits", []),
                     "length": record.get("length") or (len(record.get("sequence", "")) if record.get("sequence") else None),
                     "date_added": record.get("date_added"),
-                    "record": Json(record),
+                    "record": record,
                 },
             )
 
