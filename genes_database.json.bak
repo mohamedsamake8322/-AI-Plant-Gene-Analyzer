@@ -1,0 +1,94 @@
+{
+  "DREB": {
+    "sequence": "ATGCGTAGCTAGCGATCGATCGATCGATCGAATTCGATCGATCGATCGATCGATCGATCG",
+    "trait": "Drought Resistance",
+    "description": "Dehydration-Responsive Element Binding protein, crucial for drought tolerance in plants.",
+    "organism": "Arabidopsis thaliana",
+    "accession": "AT1G12610"
+  },
+  "HSP70": {
+    "sequence": "GGCTAACCGTAGCTAGCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGAT",
+    "trait": "Heat Stress Tolerance",
+    "description": "Heat Shock Protein 70 - molecular chaperone involved in stress response.",
+    "organism": "Glycine max (Soybean)",
+    "accession": "GmHSP70"
+  },
+  "RbcL": {
+    "sequence": "ATGGCTTCAGAAACAGGTATTGATTTAGAGAAAGAAATGAAAGGTTATAAATTAGGTGGT",
+    "trait": "Photosynthesis (Carbon Fixation)",
+    "description": "RuBisCO large subunit - key enzyme in the Calvin cycle for CO2 fixation.",
+    "organism": "Nicotiana tabacum (Tobacco)",
+    "accession": "K00000"
+  },
+  "PR1": {
+    "sequence": "ATGAAGTTTTGGTTCTTCTTCGCTCTCTTCGTCGCCTCTTCAACATCAGCAGCTGCAGCA",
+    "trait": "Disease Resistance",
+    "description": "Pathogenesis-Related Protein 1 - marker for systemic acquired resistance.",
+    "organism": "Solanum lycopersicum (Tomato)",
+    "accession": "SlPR1"
+  },
+  "LEA": {
+    "sequence": "ATGGCAAGCAAGAAGAAGAAGAAGAACGAGCAGAAGAAGCAGCAGCAGAAGAAGAAGCAG",
+    "trait": "Late Embryogenesis Abundant / Desiccation Tolerance",
+    "description": "LEA proteins protect cellular structures during desiccation and osmotic stress.",
+    "organism": "Triticum aestivum (Wheat)",
+    "accession": "TaLEA3"
+  },
+  "CHS": {
+    "sequence": "ATGGTGATGACAGTGGAGGAGGTCGAGCAGCTCAAGAAGGAGCTCGAGCAGGAGATCGAG",
+    "trait": "UV Protection / Flavonoid Biosynthesis",
+    "description": "Chalcone Synthase - first committed step in flavonoid and anthocyanin biosynthesis.",
+    "organism": "Petunia hybrida",
+    "accession": "PhCHS"
+  },
+  "ACO1": {
+    "sequence": "ATGGCTGATTCACCAGCTCCACCTCCATCATCATCACCATCACCATCATCACCACCAGCA",
+    "trait": "Fruit Ripening / Ethylene Production",
+    "description": "1-aminocyclopropane-1-carboxylate oxidase - involved in ethylene biosynthesis.",
+    "organism": "Solanum lycopersicum (Tomato)",
+    "accession": "SlACO1"
+  },
+  "FLC": {
+    "sequence": "ATGGCAGAGAAAGAACTTGAGAGAGAGCTTCAAGAGAGGCTTCAGAAGCAGCTTCAGAAG",
+    "trait": "Flowering Time Regulation",
+    "description": "FLOWERING LOCUS C - major repressor of flowering, regulated by vernalization.",
+    "organism": "Arabidopsis thaliana",
+    "accession": "AT5G10140"
+  }
+  ,
+  "NCED3": {
+    "sequence": "ATGACGTGCTGCTGCTGCTGCTGCTGCTGCTGCTGCTGCTGCTG",
+    "trait": "Abscisic Acid Biosynthesis / Drought Response",
+    "description": "9-cis-epoxycarotenoid dioxygenase - key enzyme in ABA biosynthesis.",
+    "organism": "Arabidopsis thaliana",
+    "accession": "AT3G14440"
+  },
+  "ABI1": {
+    "sequence": "ATGGAGGAGGAGGAGGAGGAGGAGGAGGAGGAGGAGGAGGAGG",
+    "trait": "ABA Signaling / Stress Response",
+    "description": "Protein phosphatase 2C involved in ABA signal transduction.",
+    "organism": "Oryza sativa (Rice)",
+    "accession": "OsABI1"
+  },
+  "P5CS": {
+    "sequence": "ATGCTGCTGCTGCTGCTGCTGCTGCTGCTGCTGCTGCTGCTGC",
+    "trait": "Osmoprotectant Biosynthesis",
+    "description": "Delta-1-pyrroline-5-carboxylate synthetase involved in proline biosynthesis.",
+    "organism": "Zea mays (Maize)",
+    "accession": "ZmP5CS"
+  },
+  "SOD1": {
+    "sequence": "ATGGCCGCCGCCGCCGCCGCCGCCGCCGCCGCCGCCGCCGCCG",
+    "trait": "Oxidative Stress",
+    "description": "Superoxide dismutase - detoxifies reactive oxygen species.",
+    "organism": "Glycine max (Soybean)",
+    "accession": "GmSOD1"
+  },
+  "CAT": {
+    "sequence": "ATGCCGCCGCCGCCGCCGCCGCCGCCGCCGCCGCCGCCGCCGC",
+    "trait": "Oxidative Stress / Detoxification",
+    "description": "Catalase - breaks down hydrogen peroxide.",
+    "organism": "Triticum aestivum (Wheat)",
+    "accession": "TaCAT"
+  }
+}
