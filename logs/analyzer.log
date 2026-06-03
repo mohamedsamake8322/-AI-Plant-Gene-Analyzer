@@ -121,3 +121,5 @@
 2026-05-18 21:47:11,448 - __main__ - INFO - CSS loaded successfully from style.css
 2026-05-18 21:47:11,866 - __main__ - INFO - CSS loaded successfully from style.css
 2026-05-18 21:47:12,363 - __main__ - WARNING - Failed to render dendrogram: plotly.graph_objs._figure.Figure.update_layout() got multiple values for keyword argument 'xaxis'
+2026-06-02 22:57:39,582 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-02 22:57:39,595 - __main__ - INFO - Loaded 13 genes from database
