@@ -5,6 +5,7 @@ PostgreSQL helper utilities for the plant gene project.
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from urllib.parse import quote_plus
@@ -116,15 +117,15 @@ def insert_gene_record(record: dict) -> None:
                     "description": record.get("description"),
                     "source": record.get("source"),
                     "source_url": record.get("source_url"),
-                    "external_links": record.get("external_links", {}),
-                    "expression_profiles": record.get("expression_profiles", []),
-                    "pathways": record.get("pathways", []),
-                    "publications": record.get("publications", []),
-                    "annotations": record.get("annotations", {}),
-                    "traits": record.get("traits", []),
+                    "external_links": json.dumps(record.get("external_links", {})),
+                    "expression_profiles": json.dumps(record.get("expression_profiles", [])),
+                    "pathways": json.dumps(record.get("pathways", [])),
+                    "publications": json.dumps(record.get("publications", [])),
+                    "annotations": json.dumps(record.get("annotations", {})),
+                    "traits": json.dumps(record.get("traits", [])),
                     "length": record.get("length") or (len(record.get("sequence", "")) if record.get("sequence") else None),
                     "date_added": record.get("date_added"),
-                    "record": record,
+                    "record": json.dumps(record),
                 },
             )
 
