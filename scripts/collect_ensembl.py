@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Fetch plant gene data from the Ensembl REST API (no API key required).
+Fetch plant gene and protein data from the Ensembl REST API (no API key required).
 Docs: https://rest.ensembl.org
 """
 
@@ -59,7 +59,7 @@ def pick_transcript_id(info: dict) -> str | None:
     return canonical.get("id")
 
 
-def make_gene_record(info: dict, sequence: str, species: str) -> dict:
+def make_gene_record(info: dict, sequence: str, species: str, sequence_type: str) -> dict:
     symbol = info.get("display_name") or info.get("name") or info.get("id")
     gene_id = info.get("id") or symbol
     desc = info.get("description") or info.get("biotype") or ""
@@ -69,7 +69,7 @@ def make_gene_record(info: dict, sequence: str, species: str) -> dict:
         "organism": species.replace("_", " ").title(),
         "traits": [],
         "sequence": sequence,
-        "sequence_type": "dna",
+        "sequence_type": sequence_type,
         "description": desc,
         "external_links": {
             "ensembl": f"https://plants.ensembl.org/{species}/Gene/Summary?g={gene_id}",
@@ -104,7 +104,8 @@ def fetch_gene(species: str, symbol: str | None, feature_id: str | None, seq_typ
     sequence = fetch_sequence(transcript_id, seq_type=seq_type)
     if not sequence:
         raise RuntimeError(f"Empty sequence for {transcript_id}")
-    return make_gene_record(info, sequence, species)
+    sequence_type = "protein" if seq_type == "protein" else "dna"
+    return make_gene_record(info, sequence, species, sequence_type)
 
 
 def main(argv: list[str]) -> None:
@@ -112,7 +113,12 @@ def main(argv: list[str]) -> None:
     p.add_argument("--symbol", "-s", help="Gene symbol, e.g. DREB1A")
     p.add_argument("--id", help="Ensembl stable ID (e.g. AT1G01010 or ENSG...)")
     p.add_argument("--species", default=DEFAULT_SPECIES, help=f"Ensembl species (default: {DEFAULT_SPECIES})")
-    p.add_argument("--seq-type", default="cdna", choices=["cdna", "cds", "genomic"], help="Sequence type")
+    p.add_argument(
+        "--seq-type",
+        default="cdna",
+        choices=["cdna", "cds", "genomic", "protein"],
+        help="Sequence type (cdna, cds, genomic, or protein)",
+    )
     p.add_argument("--add", action="store_true", help="Insert into genes_database.json")
     p.add_argument("--out", help="Write gene JSON to file")
     p.add_argument("--dbpath", default=str(DEFAULT_DB))
