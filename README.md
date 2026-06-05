@@ -168,7 +168,73 @@ python scripts/collect_plant_data.py \
   --out plant_data.json
 ```
 
+Nouveau script d'automatisation :
+
+```bash
+python scripts/download_data.py \
+  --geo-term "drought" \
+  --atlas-term "drought stress" \
+  --atlas-gene DREB1A \
+  --ensembl-symbol DREB1A \
+  --ncbi-term DREB1A \
+  --max-data \
+  --out-dir data/raw
+```
+
+Les fichiers sont écrits dans `data/raw/geo.json`, `data/raw/ensembl.json`, `data/raw/atlas.json`, `data/raw/ncbi.json`.
+
+Pipeline recommandée (collecte → nettoyage → import PostgreSQL)
+
+1) Collecte brute depuis les APIs dans un fichier JSON :
+
+```bash
+python scripts/collect_plant_data.py --geo-term "drought" --max-data --out raw_collect.json
+```
+
+2) Nettoyage et normalisation :
+
+```bash
+python scripts/clean_data.py --in raw_collect.json --out data/clean/plant_data_clean.json
+```
+
+3) Import dans PostgreSQL :
+
+```bash
+# créer les tables (une seule fois)
+python scripts/load_to_postgres.py --create-tables
+
+# importer le fichier nettoyé
+python scripts/load_to_postgres.py --json-file data/clean/plant_data_clean.json
+```
+
+Remarque: assure-toi d'avoir configuré `DATABASE_URL` ou les variables `DB_HOST/DB_USER/DB_PASSWORD/...` dans `.env`.
+
+### Commande unique pour la pipeline complète
+
+Le script `scripts/run_pipeline.py` exécute la collecte, le nettoyage et l’import PostgreSQL en une seule commande.
+
+```bash
+python scripts/run_pipeline.py \
+  --geo-term "drought" \
+  --atlas-term "drought stress" \
+  --atlas-gene DREB1A \
+  --ensembl-symbol DREB1A \
+  --ncbi-term DREB1A \
+  --out-raw raw_collect.json \
+  --out-clean data/clean/plant_data_clean.json \
+  --create-tables
+```
+
 Options utiles :
+- `--skip-clean` : sauter l’étape de normalisation
+- `--skip-load` : sauter l’import PostgreSQL
+- `--out-raw` : chemin du JSON brut de collecte
+- `--out-clean` : chemin du JSON normalisé
+
+---
+
+Options utiles :
+- `--max-data` : active une collecte plus large via plus de résultats API pour GEO/Expression Atlas/NCBI
 - `--merge-gene SYMBOL` : attache les résultats GEO/Expression Atlas à un gène existant dans `genes_database.json`
 - `--add-gene-records` : ajoute les enregistrements Ensembl/NCBI trouvés dans `genes_database.json`
 - `--ncbi-accession` : récupère un accès direct via accession NCBI
@@ -176,6 +242,35 @@ Options utiles :
 
 Le wrapper lit `NCBI_EMAIL` et `NCBI_API_KEY` depuis `.env` pour ne pas exposer les clés dans le dépôt.
 
+> Note : les résultats GEO et Expression Atlas sont des métadonnées de séries/expériences. Seuls les enregistrements contenant une séquence réelle sont conservés pour l’import PostgreSQL.
+## 🧪 Advanced analysis suite
+
+Un nouveau script `scripts/run_analysis_suite.py` réalise une analyse intégrée de bout en bout sur les enregistrements nettoyés ou chargés depuis PostgreSQL.
+
+### Fonctionnalités
+- Chargement depuis `data/clean/plant_data_clean.json` ou depuis PostgreSQL
+- Classification automatique des séquences DNA / RNA / protein
+- Statistiques protéiques : masse moléculaire, pI, hydrophobicité
+- Traduction en 3 cadres et recherche d'ORF pour l'ADN
+- Alignements globaux (`Needleman-Wunsch`) et locaux (`Smith-Waterman`)
+- Phylogénie UPGMA / Neighbor-Joining
+- Export JSON + résumé Markdown
+
+### Exemple d'utilisation
+
+```bash
+python scripts/run_analysis_suite.py \
+  --json-file data/clean/plant_data_clean.json \
+  --output-json results/analysis_suite.json \
+  --output-md results/analysis_suite.md \
+  --top-alignments 6 \
+  --phylogeny \
+  --phylogeny-method upgma
+```
+
+### Notes
+- Le résumé Markdown est utile pour partager rapidement les résultats avec l’équipe.
+- Si vous utilisez PostgreSQL, ajoutez `--db` et retirez `--json-file`.
 ### PostgreSQL et liaison au projet
 
 Un nouveau script `scripts/load_to_postgres.py` permet de charger les données de `genes_database.json` ou d'un fichier JSON dans PostgreSQL.

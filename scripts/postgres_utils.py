@@ -130,6 +130,84 @@ def insert_gene_record(record: dict) -> None:
             )
 
 
+def load_gene_database_from_postgres() -> dict:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT gene_id, symbol, organism, sequence, sequence_type,
+                       description, source, source_url, external_links,
+                       expression_profiles, pathways, publications,
+                       annotations, traits, length, date_added, record
+                FROM genes;
+                """
+            )
+            rows = cur.fetchall()
+
+    records: dict[str, dict] = {}
+    for row in rows:
+        (
+            gene_id,
+            symbol,
+            organism,
+            sequence,
+            sequence_type,
+            description,
+            source,
+            source_url,
+            external_links,
+            expression_profiles,
+            pathways,
+            publications,
+            annotations,
+            traits,
+            length,
+            date_added,
+            record,
+        ) = row
+
+        if isinstance(external_links, str):
+            external_links = json.loads(external_links)
+        if isinstance(expression_profiles, str):
+            expression_profiles = json.loads(expression_profiles)
+        if isinstance(pathways, str):
+            pathways = json.loads(pathways)
+        if isinstance(publications, str):
+            publications = json.loads(publications)
+        if isinstance(annotations, str):
+            annotations = json.loads(annotations)
+        if isinstance(traits, str):
+            traits = json.loads(traits)
+        if isinstance(record, str):
+            record = json.loads(record)
+
+        key = gene_id or symbol
+        if not key:
+            continue
+
+        records[key] = {
+            "gene_id": gene_id,
+            "symbol": symbol,
+            "organism": organism,
+            "sequence": sequence,
+            "sequence_type": sequence_type,
+            "description": description,
+            "source": source,
+            "source_url": source_url,
+            "external_links": external_links or {},
+            "expression_profiles": expression_profiles or [],
+            "pathways": pathways or [],
+            "publications": publications or [],
+            "annotations": annotations or {},
+            "traits": traits or [],
+            "length": length,
+            "date_added": date_added,
+            "record": record,
+        }
+
+    return records
+
+
 def load_json_records(path: Path) -> list[dict]:
     import json
 

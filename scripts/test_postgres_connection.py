@@ -74,7 +74,7 @@ try:
     )
     print(f"Connection string: postgresql://{DB_USER}:***@{DB_HOST}:{DB_PORT}/{DB_NAME}")
     
-    conn = psycopg.connect(database_url, autocommit=True, timeout=5)
+    conn = psycopg.connect(database_url, autocommit=True, connect_timeout=5)
     print(f"✅ PostgreSQL connection successful")
     print(f"   Database version: {conn.info.server_version}")
     conn.close()

@@ -1,0 +1,156 @@
+{
+  "metadata": {
+    "generated_at": "2026-06-04T09:16:06.307524Z",
+    "sources": [
+      "GEO",
+      "Ensembl",
+      "Expression Atlas"
+    ]
+  },
+  "geo": [
+    {
+      "source": "GEO",
+      "accession": "GSE200609",
+      "title": "Assesing the Impact on Soybean Root Gene Expression of Inoculation with Hub microbes",
+      "organism": "Glycine max",
+      "platform": "",
+      "samples": 30,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE200609",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE200nnn/GSE200609/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE268439",
+      "title": "Small RNA sequencing reveals important miRNA function in Arabidopsis thaliana calli in response to combine drought and nitrogen deficiency",
+      "organism": "Arabidopsis thaliana",
+      "platform": "",
+      "samples": 4,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE268439",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE268nnn/GSE268439/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE332733",
+      "title": "Expression profiling of wild-type and XVE:PP2CABA-dHA rice roots",
+      "organism": "Oryza sativa",
+      "platform": "",
+      "samples": 2,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE332733",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE332nnn/GSE332733/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE315654",
+      "title": "Integrated Multi-omics Analysis Reveals that Hybrid Rice Reprograms Carbon Metabolism to Confer Drought Resistance",
+      "organism": "Oryza sativa",
+      "platform": "",
+      "samples": 18,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE315654",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE315nnn/GSE315654/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE326317",
+      "title": "A GPS2-like protein interacts with HOS15 and HDA6 to form a repressor complex that regulates ABA signaling and drought adaptation in Arabidopsis",
+      "organism": "Arabidopsis thaliana",
+      "platform": "",
+      "samples": 12,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE326317",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE326nnn/GSE326317/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE310570",
+      "title": "Transcriptome and Hormone Regulations Shape Drought Stress-Dependent Fusarium Head Blight Susceptibility in Different Barley Genotypes",
+      "organism": "Hordeum vulgare",
+      "platform": "",
+      "samples": 128,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE310570",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE310nnn/GSE310570/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE319218",
+      "title": "SlMYB60 regulates cuticle formation in tomato",
+      "organism": "Solanum lycopersicum",
+      "platform": "",
+      "samples": 12,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE319218",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE319nnn/GSE319218/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE244759",
+      "title": "An ERF-CEP5 Induced Root Hair Formation module: A Drought Adaptation Mechanism Unveiled by Flavobacterium",
+      "organism": "Arabidopsis thaliana",
+      "platform": "",
+      "samples": 36,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE244759",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE244nnn/GSE244759/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE244750",
+      "title": "Arabidopsis transcriptomic response to Flavobacterium sp. 98 inoculation",
+      "organism": "Arabidopsis thaliana",
+      "platform": "",
+      "samples": 24,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE244750",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE244nnn/GSE244750/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE244749",
+      "title": "Identification of ERF115 and ERF114 downstream genes",
+      "organism": "Arabidopsis thaliana",
+      "platform": "",
+      "samples": 12,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE244749",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE244nnn/GSE244749/"
+    }
+  ],
+  "ensembl": [
+    {
+      "gene_id": "AT4G25480",
+      "symbol": "DREB1A",
+      "organism": "Arabidopsis Thaliana",
+      "traits": [],
+      "sequence": "GCCACACATTCATACGCAAAGAGTTTATAAAACTCATAAAGGTATAATAATAACGAGTGAATAAGTCAAAAAAAGTCTTCTCTGGACACATGGCAGATCTTAATGAGTGAATCCTTAAACTACTCATTTTACAATTGCTTCGCTGTGTATAGTTTACGTGGCATTACCAGAGACACAAACTCCGTCTTCGCCTTTTCTTTTGCCTCTAAAATATCTTCCGCCATTATAAAACAGCATGCTCTCACTCCAACTTTTATTTATCTACAAACATTAAATCCACCTGAACTAGAACAGAAAGAGAGAGAAACTATTATTTCAGCAAACCATACCAACAAAAAAGACAGAGATCTTTTAGTTACCTTATCCAGTTTCTTGAAACAGAGTACTCTTCTGATCAATGAACTCATTTTCTGCTTTTTCTGAAATGTTTGGCTCCGATTACGAGTCTTCGGTTTCCTCAGGCGGTGATTATATTCCGACGCTTGCGAGCAGCTGCCCCAAGAAACCGGCGGGTCGTAAGAAGTTTCGTGAGACTCGTCACCCAATATACAGAGGAGTTCGTCGGAGAAACTCCGGTAAGTGGGTTTGTGAGGTTAGAGAACCAAACAAGAAAACAAGGATTTGGCTCGGAACATTTCAAACCGCTGAGATGGCAGCTCGAGCTCACGACGTTGCCGCTTTAGCCCTTCGTGGCCGATCAGCCTGTCTCAATTTCGCTGACTCGGCTTGGAGACTCCGAATCCCGGAATCAACTTGCGCTAAGGACATCCAAAAGGCGGCGGCTGAAGCTGCGTTGGCGTTTCAGGATGAGATGTGTGATGCGACGACGGATCATGGCTTCGACATGGAGGAGACGTTGGTGGAGGCTATTTACACGGCGGAACAGAGCGAAAATGCGTTTTATATGCACGATGAGGCGATGTTTGAGATGCCGAGTTTGTTGGCTAATATGGCAGAAGGGATGCTTTTGCCGCTTCCGTCCGTACAGTGGAATCATAATCATGAAGTCGACGGCGATGATGACGACGTATCGTTATGGAGTTATTAAAACTCAGATTATTATTTCCATTTTTAGTACGATACTTTTTATTTTATTATTATTTTTAGATCCTTTTTTAGAATGGAATCTTCATTATGTTTGTAAAACTGAGAAACGAGTGTAAATTAAATTGATTCAGTTTCAGTATAAGTGTGGGCTATTCTTAAATGCAAGTATTTTTAGAGCAGTAACAAAAAAATGTTGTTTAAATTAGAGTATAAAACCGAAACAACCGATTCAGCAAAACCTCCAATAATAGACCGTACACCATAAACAGAAATATGGGTCCCACAAGAGAGCACTGTCCGTAGCTTCCCCTTCATTGGCCCTCTACGTGGCTCCTCTTGTAACC",
+      "sequence_type": "dna",
+      "description": "dehydration response element B1A [Source:NCBI gene (formerly Entrezgene);Acc:828652]",
+      "external_links": {
+        "ensembl": "https://plants.ensembl.org/arabidopsis_thaliana/Gene/Summary?g=AT4G25480"
+      },
+      "expression_profiles": [],
+      "pathways": [],
+      "publications": [],
+      "source": "Ensembl",
+      "source_url": "https://rest.ensembl.org/lookup/id/AT4G25480",
+      "annotations": {
+        "biotype": "protein_coding",
+        "assembly": "TAIR10",
+        "start": 13018010,
+        "end": 13019400,
+        "strand": -1
+      }
+    }
+  ],
+  "expression_atlas": [
+    {
+      "source": "Expression Atlas",
+      "gene_query": "DREB1A",
+      "species": "Arabidopsis thaliana",
+      "url": "https://www.ebi.ac.uk/gxa/search?geneQuery=%5B%7B%22value%22%3A%20%22DREB1A%22%2C%20%22category%22%3A%20%22symbol%22%7D%5D&organism=Arabidopsis%20thaliana",
+      "note": "Atlas gene search URL (baseline + differential expression heatmaps)"
+    },
+    {
+      "source": "Expression Atlas",
+      "experiment_id": "E-MEXP-2435",
+      "title": "",
+      "species": "",
+      "url": "https://www.ebi.ac.uk/gxa/experiments/E-MEXP-2435",
+      "api_url": "https://www.ebi.ac.uk/gxa/json/experiments/E-MEXP-2435"
+    }
+  ],
+  "ncbi": []
+}

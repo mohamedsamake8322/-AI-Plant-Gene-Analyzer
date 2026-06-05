@@ -12,6 +12,8 @@ import json
 import os
 import io
 import logging
+import sys
+from pathlib import Path
 
 # ── Local modules ──────────────────────────────────────────────────────────────
 import bioinformatics as bio
@@ -21,6 +23,13 @@ import visualization as viz
 import export_utils as export_util
 import sequence_loader as loader
 import config
+
+SCRIPT_ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_ROOT / "scripts"))
+try:
+    from scripts.postgres_utils import load_gene_database_from_postgres
+except ImportError:
+    load_gene_database_from_postgres = None
 
 # ─── Configure logging ─────────────────────────────────────────────────────────
 logger = config.get_logger(__name__)
@@ -82,7 +91,7 @@ def analyze_sequence_record(record: dict[str, str], input_type: str, reading_fra
     mutation_report = None
 
     try:
-        similarity_results = sim.compare_with_database(sequence, top_n=top_n_matches)
+        similarity_results = sim.compare_with_database(sequence, db, top_n=top_n_matches)
         best_match = similarity_results[0] if similarity_results else None
     except Exception as e:
         logger.warning(f"Database comparison failed: {e}")
@@ -130,19 +139,27 @@ def get_alignment_map(match: dict) -> dict[str, str] | None:
 def load_gene_database_cached(db_path: str = "genes_database.json") -> dict:
     """
     Load gene database with Streamlit caching to improve performance.
-    Caches the result to avoid reloading on every rerun.
+    Prefer PostgreSQL if the helper is available and configured.
     """
     try:
+        if load_gene_database_from_postgres is not None:
+            try:
+                db = load_gene_database_from_postgres()
+                if db:
+                    logger.info(f"Loaded {len(db)} genes from PostgreSQL")
+                    return db
+                logger.warning("PostgreSQL database returned no records, falling back to JSON")
+            except Exception as e:
+                logger.warning(f"PostgreSQL load failed: {e}")
+
         if not os.path.exists(db_path):
             logger.warning(f"Database not found at {db_path}")
             return {}
-        
-        with open(db_path, "r", encoding="utf-8") as f:
-            db = json.load(f)
-        
+
+        db = sim.load_gene_database(db_path)
         logger.info(f"Loaded {len(db)} genes from database")
         return db
-    
+
     except json.JSONDecodeError as e:
         logger.error(f"JSON parsing error: {e}")
         st.error("❌ Error parsing genes_database.json")
@@ -207,7 +224,7 @@ with st.sidebar:
     st.markdown("### Database")
     db = load_gene_database_cached("genes_database.json")
     if db:
-        genes = db.get("genes", []) if isinstance(db, dict) else db
+        genes = list(db.values()) if isinstance(db, dict) else db
         st.success(f"✅ {len(genes)} genes loaded")
         with st.expander("View gene names"):
             for gene in genes:
@@ -315,11 +332,12 @@ st.markdown("---")
 # ─── Analysis pipeline ─────────────────────────────────────────────────────────
 if analyze_btn or (raw_sequence and "last_result" in st.session_state):
 
-    if analyze_btn and not raw_sequence:
+    if analyze_btn and not raw_sequence and not records:
         st.warning("⚠️ Please enter or paste a DNA sequence before analyzing.")
         st.stop()
 
-    if analyze_btn and raw_sequence:
+    if analyze_btn and (raw_sequence or records):
+
         try:
             analysis_targets: list[dict[str, str]] = []
             if records and len(records) > 1:

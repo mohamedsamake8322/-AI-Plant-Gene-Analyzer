@@ -147,6 +147,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--retmax", type=int, default=10, help="Maximum records for GEO and NCBI search")
     parser.add_argument("--size", type=int, default=10, help="Maximum Expression Atlas results")
     parser.add_argument("--max-length", type=int, default=500000, help="Max sequence length for NCBI fetch (0 = no limit)")
+    parser.add_argument("--max-data", action="store_true", help="Use broader API result windows for GEO/Atlas/NCBI without changing other behavior")
     parser.add_argument("--mrna-only", action="store_true", help="Restrict NCBI search to mRNA sequences")
     parser.add_argument("--no-plants-only", dest="plants_only", action="store_false", help="Disable plant-only filtering for GEO/NCBI")
     parser.add_argument("--out", help="Write combined JSON to file")
@@ -156,10 +157,16 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     max_length = args.max_length if args.max_length > 0 else None
-    geo_records = collect_geo_data(args.geo_term, args.geo_accession, args.organism, args.retmax, args.plants_only)
+    retmax = args.retmax
+    size = args.size
+    if args.max_data:
+        retmax = max(retmax, 100)
+        size = max(size, 100)
+
+    geo_records = collect_geo_data(args.geo_term, args.geo_accession, args.organism, retmax, args.plants_only)
     ensembl_records = collect_ensembl_data(args.ensembl_symbol, args.ensembl_id, args.ensembl_species, args.ensembl_seq_type)
-    atlas_records = collect_atlas_data(args.atlas_term, args.atlas_gene, args.atlas_species, args.size)
-    ncbi_records = collect_ncbi_data(args.ncbi_accession, args.ncbi_term, args.ncbi_db, args.retmax, args.organism, args.plants_only, max_length, args.mrna_only)
+    atlas_records = collect_atlas_data(args.atlas_term, args.atlas_gene, args.atlas_species, size)
+    ncbi_records = collect_ncbi_data(args.ncbi_accession, args.ncbi_term, args.ncbi_db, retmax, args.organism, args.plants_only, max_length, args.mrna_only)
 
     combined = {
         "metadata": {
