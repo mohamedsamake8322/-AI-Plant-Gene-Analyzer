@@ -15,8 +15,50 @@ import bioinformatics as bio
 
 # ─── Load gene database ────────────────────────────────────────────────────────
 
+def _normalize_database(raw: object) -> dict:
+    if isinstance(raw, dict):
+        if "genes" in raw and isinstance(raw["genes"], list):
+            entries = raw["genes"]
+        elif all(isinstance(v, dict) for v in raw.values()):
+            return raw
+        else:
+            entries = [raw] if raw.get("gene_id") or raw.get("symbol") else []
+    elif isinstance(raw, list):
+        entries = raw
+    else:
+        entries = []
+
+    records: dict[str, dict] = {}
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        key = item.get("gene_id") or item.get("symbol") or item.get("accession")
+        if not key:
+            continue
+        records[key] = item
+    return records
+
+
 def load_gene_database(db_path: str = "genes_database.json") -> dict:
     """Load the gene database JSON file."""
+    # Support PostgreSQL backend
+    if isinstance(db_path, str) and (db_path == "postgres" or db_path.startswith("postgresql")):
+        try:
+            # import helper dynamically to avoid adding scripts/ to sys.path at import time
+            import sys
+            from pathlib import Path
+
+            script_root = Path(__file__).resolve().parent
+            scripts_path = script_root / "scripts"
+            if str(scripts_path) not in sys.path:
+                sys.path.insert(0, str(scripts_path))
+            from postgres_utils import load_gene_database_from_postgres
+
+            return load_gene_database_from_postgres()
+        except Exception:
+            # fall back to existing behavior
+            pass
+
     if not os.path.exists(db_path):
         raise FileNotFoundError(
             f"Gene database not found at: {db_path}"
@@ -25,7 +67,8 @@ def load_gene_database(db_path: str = "genes_database.json") -> dict:
         return _load_database_from_fasta(db_path)
 
     with open(db_path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        raw = json.load(f)
+    return _normalize_database(raw)
 
 
 def _load_database_from_fasta(db_path: str) -> dict:
@@ -214,7 +257,7 @@ def _compare_dna_query_to_protein_reference(query_dna: str, reference_protein: s
 
 def compare_with_database(
     query: str,
-    db_path: str = "genes_database.json",
+    db_source: str | dict = "genes_database.json",
     top_n: int = 3,
 ) -> list[dict]:
     """
@@ -225,7 +268,11 @@ def compare_with_database(
         gene_name, trait, description, organism, accession,
         similarity_score, alignment, reference_length, query_length
     """
-    database = load_gene_database(db_path)
+    if isinstance(db_source, dict):
+        database = db_source
+    else:
+        database = load_gene_database(db_source)
+
     results: list[dict] = []
 
     query_type = bio.detect_sequence_type(query)
