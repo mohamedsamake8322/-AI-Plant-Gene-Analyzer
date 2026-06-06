@@ -177,3 +177,33 @@
 2026-06-05 22:53:34,324 - __main__ - INFO - Starting analysis for record 3/4: PR1_Pathogenesis_related_protein_Arabidopsis | GC=58% | trait=disease-resistance
 2026-06-05 22:53:34,345 - __main__ - INFO - Starting analysis for record 4/4: RbcL_Ribulose_bisphosphate_carboxylase_photosynthesis | GC=55% | trait=photosynthesis
 2026-06-05 22:53:34,368 - __main__ - INFO - Analysis session state saved
+2026-06-06 09:42:26,974 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-06 09:43:49,210 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-06 09:46:48,539 - __main__ - WARNING - PostgreSQL load failed: connection timeout expired
+Multiple connection attempts failed. All failures were:
+- host: 'aws-1-ap-northeast-1.pooler.supabase.com', port: '6543', hostaddr: '13.114.6.6': connection timeout expired
+- host: 'aws-1-ap-northeast-1.pooler.supabase.com', port: '6543', hostaddr: '57.182.231.186': connection timeout expired
+2026-06-06 09:46:48,587 - __main__ - INFO - Loaded 13 genes from database
+2026-06-06 10:05:41,933 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-06 10:06:54,315 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-06 10:09:20,291 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-06 10:09:29,684 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-06 10:09:41,201 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-06 10:09:42,032 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-06 10:09:42,566 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-06 10:11:48,218 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-06 10:17:44,487 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-06 10:18:01,629 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-06 10:18:05,565 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-06 10:18:05,607 - __main__ - INFO - Starting analysis for record 1/4: DREB1A_Arabidopsis_drought_resistance | GC=62% | trait=drought-stress
+2026-06-06 10:18:05,619 - __main__ - INFO - Starting analysis for record 2/4: HSP70_Heat_shock_protein_Arabidopsis | GC=65% | trait=heat-stress
+2026-06-06 10:18:05,623 - __main__ - INFO - Starting analysis for record 3/4: PR1_Pathogenesis_related_protein_Arabidopsis | GC=58% | trait=disease-resistance
+2026-06-06 10:18:05,629 - __main__ - INFO - Starting analysis for record 4/4: RbcL_Ribulose_bisphosphate_carboxylase_photosynthesis | GC=55% | trait=photosynthesis
+2026-06-06 10:18:05,636 - __main__ - INFO - Analysis session state saved
+2026-06-06 10:19:05,560 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-06 10:20:35,458 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-06 10:20:35,483 - __main__ - INFO - Starting analysis for record 1/4: DREB1A_Arabidopsis_drought_resistance | GC=62% | trait=drought-stress
+2026-06-06 10:20:35,487 - __main__ - INFO - Starting analysis for record 2/4: HSP70_Heat_shock_protein_Arabidopsis | GC=65% | trait=heat-stress
+2026-06-06 10:20:35,492 - __main__ - INFO - Starting analysis for record 3/4: PR1_Pathogenesis_related_protein_Arabidopsis | GC=58% | trait=disease-resistance
+2026-06-06 10:20:35,500 - __main__ - INFO - Starting analysis for record 4/4: RbcL_Ribulose_bisphosphate_carboxylase_photosynthesis | GC=55% | trait=photosynthesis
+2026-06-06 10:20:35,505 - __main__ - INFO - Analysis session state saved

@@ -371,8 +371,18 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
     if not last_results:
         st.stop()
 
-    result = last_results[0]
     batch_mode = len(last_results) > 1
+    selected_batch_index = 0
+    if batch_mode:
+        record_options = [f"{idx + 1}. {item['header']}" for idx, item in enumerate(last_results)]
+        selected_batch_index = st.selectbox(
+            "Select a sequence to inspect in this batch:",
+            options=list(range(len(last_results))),
+            format_func=lambda i: record_options[i],
+            help="Choisissez une séquence pour afficher ses statistiques détaillées et ses graphiques.",
+        )
+
+    result = last_results[selected_batch_index]
     sequence = result["sequence"]
     stats = result["stats"]
     protein_stats = result.get("protein_stats")
