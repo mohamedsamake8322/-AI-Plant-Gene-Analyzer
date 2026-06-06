@@ -168,3 +168,12 @@
 2026-06-05 22:49:45,545 - __main__ - INFO - CSS loaded successfully from style.css
 2026-06-05 22:49:55,298 - __main__ - INFO - CSS loaded successfully from style.css
 2026-06-05 22:49:57,755 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-05 22:53:24,845 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-05 22:53:31,057 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-05 22:53:33,520 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-05 22:53:34,224 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-05 22:53:34,283 - __main__ - INFO - Starting analysis for record 1/4: DREB1A_Arabidopsis_drought_resistance | GC=62% | trait=drought-stress
+2026-06-05 22:53:34,306 - __main__ - INFO - Starting analysis for record 2/4: HSP70_Heat_shock_protein_Arabidopsis | GC=65% | trait=heat-stress
+2026-06-05 22:53:34,324 - __main__ - INFO - Starting analysis for record 3/4: PR1_Pathogenesis_related_protein_Arabidopsis | GC=58% | trait=disease-resistance
+2026-06-05 22:53:34,345 - __main__ - INFO - Starting analysis for record 4/4: RbcL_Ribulose_bisphosphate_carboxylase_photosynthesis | GC=55% | trait=photosynthesis
+2026-06-05 22:53:34,368 - __main__ - INFO - Analysis session state saved
