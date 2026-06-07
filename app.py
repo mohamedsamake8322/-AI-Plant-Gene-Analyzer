@@ -12,6 +12,7 @@ import json
 import os
 import io
 import logging
+import re
 import sys
 from pathlib import Path
 
@@ -90,6 +91,30 @@ def analyze_sequence_record(record: dict[str, str], input_type: str, reading_fra
     best_match = None
     mutation_report = None
 
+    header_metadata = record.get("metadata", {}) or {}
+    metadata_warnings: list[str] = []
+    if seq_type == "dna" and header_metadata.get("gc"):
+        try:
+            annotated_gc = float(header_metadata["gc"].rstrip("%"))
+            if abs(annotated_gc - stats["gc_content"]) > 0.2:
+                metadata_warnings.append(
+                    f"FASTA header GC annotation {header_metadata['gc']} does not match computed GC {stats['gc_content']}%."
+                )
+        except ValueError:
+            metadata_warnings.append(
+                f"FASTA header GC annotation '{header_metadata['gc']}' is not a valid percentage."
+            )
+
+    if header_metadata.get("length"):
+        try:
+            annotated_length = int(re.sub(r"[^0-9]", "", header_metadata["length"]))
+            if annotated_length != stats["length"]:
+                metadata_warnings.append(
+                    f"FASTA header length annotation {annotated_length} does not match actual length {stats['length']} bp."
+                )
+        except ValueError:
+            pass
+
     try:
         similarity_results = sim.compare_with_database(sequence, db, top_n=top_n_matches)
         best_match = similarity_results[0] if similarity_results else None
@@ -125,6 +150,8 @@ def analyze_sequence_record(record: dict[str, str], input_type: str, reading_fra
         "interpretation": interpretation,
         "sequence_type": seq_type,
         "orfs": orfs,
+        "header_metadata": header_metadata,
+        "metadata_warnings": metadata_warnings,
     }
 
 
@@ -288,7 +315,10 @@ with col_input:
     
     if records:
         if len(records) > 1:
-            record_options = [f"{idx + 1}. {r['header']}" for idx, r in enumerate(records)]
+            record_options = [
+                f"{idx + 1}. {r.get('metadata', {}).get('name', r['header'])}"
+                for idx, r in enumerate(records)
+            ]
             selected_index = st.selectbox(
                 "Choose a sequence to analyze",
                 options=list(range(len(records))),
@@ -374,7 +404,10 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
     batch_mode = len(last_results) > 1
     selected_batch_index = 0
     if batch_mode:
-        record_options = [f"{idx + 1}. {item['header']}" for idx, item in enumerate(last_results)]
+        record_options = [
+            f"{idx + 1}. {item.get('header_metadata', {}).get('name', item['header'])}"
+            for idx, item in enumerate(last_results)
+        ]
         selected_batch_index = st.selectbox(
             "Select a sequence to inspect in this batch:",
             options=list(range(len(last_results))),
@@ -543,6 +576,20 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             "Mutations",
             mutation_report["total_mutations"] if mutation_report else "—",
         )
+
+    if result.get("header_metadata"):
+        header_meta = result["header_metadata"]
+        header_notes = []
+        if header_meta.get("gc"):
+            header_notes.append(f"Header GC: {header_meta['gc']}")
+        if header_meta.get("trait"):
+            header_notes.append(f"Header trait: {header_meta['trait']}")
+        if header_notes:
+            st.info("**Header annotations:** " + ", ".join(header_notes))
+
+    if result.get("metadata_warnings"):
+        for warning_msg in result["metadata_warnings"]:
+            st.warning(warning_msg)
 
     st.markdown("---")
 

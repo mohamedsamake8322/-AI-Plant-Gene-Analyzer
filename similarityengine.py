@@ -11,6 +11,7 @@ import os
 from typing import Optional
 
 import bioinformatics as bio
+import sequence_loader
 
 
 # ─── Load gene database ────────────────────────────────────────────────────────
@@ -74,35 +75,41 @@ def load_gene_database(db_path: str = "genes_database.json") -> dict:
 def _load_database_from_fasta(db_path: str) -> dict:
     records: dict[str, dict] = {}
     with open(db_path, "r", encoding="utf-8") as f:
-        header = None
+        header_text = None
+        header_metadata: dict[str, str] = {}
         sequence_parts: list[str] = []
         for line in f:
             line = line.strip()
             if not line:
                 continue
             if line.startswith(">"):
-                if header is not None:
+                if header_text is not None:
                     seq = "".join(sequence_parts).upper()
-                    records[header] = {
+                    entry_key = header_metadata.get("name", header_text)
+                    records[entry_key] = {
                         "sequence": seq,
-                        "trait": "Unknown",
-                        "description": "FASTA reference sequence",
-                        "organism": "Unknown",
-                        "accession": "N/A",
+                        "trait": header_metadata.get("trait", "Unknown"),
+                        "description": header_text,
+                        "organism": header_metadata.get("organism", "Unknown"),
+                        "accession": header_metadata.get("accession", "N/A"),
+                        "symbol": header_metadata.get("name", entry_key),
                         "sequence_type": bio.detect_sequence_type(seq),
                     }
-                header = line[1:].split()[0] or f"sequence_{len(records)+1}"
+                header_text = line[1:].strip()
+                header_metadata = sequence_loader._parse_header_metadata(header_text)
                 sequence_parts = []
             else:
                 sequence_parts.append(line)
-        if header is not None:
+        if header_text is not None:
             seq = "".join(sequence_parts).upper()
-            records[header] = {
+            entry_key = header_metadata.get("name", header_text)
+            records[entry_key] = {
                 "sequence": seq,
-                "trait": "Unknown",
-                "description": "FASTA reference sequence",
-                "organism": "Unknown",
-                "accession": "N/A",
+                "trait": header_metadata.get("trait", "Unknown"),
+                "description": header_text,
+                "organism": header_metadata.get("organism", "Unknown"),
+                "accession": header_metadata.get("accession", "N/A"),
+                "symbol": header_metadata.get("name", entry_key),
                 "sequence_type": bio.detect_sequence_type(seq),
             }
     return records
