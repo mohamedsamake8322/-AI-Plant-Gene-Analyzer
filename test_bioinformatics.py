@@ -7,6 +7,7 @@ Run with: pytest test_bioinformatics.py -v
 
 import pytest
 import bioinformatics as bio
+import sequence_loader as loader
 
 
 class TestSequenceCleaning:
@@ -206,12 +207,33 @@ class TestSequenceStatistics:
         assert "gc_content" in stats
         assert "at_content" in stats
         assert "has_start_codon" in stats
-    
+
     def test_sequence_statistics_with_start_codon(self):
         """Test statistics for sequence with ATG start."""
         seq = "ATGCATGC"
         stats = bio.sequence_statistics(seq)
         assert stats["has_start_codon"] is True
+
+
+class TestSequenceLoader:
+    """Test FASTA parsing and header metadata extraction."""
+
+    def test_parse_fasta_header_metadata(self):
+        fasta = ">geneX | GC=50% | trait=drought\nATGCGC"
+        records = loader.parse_fasta(fasta)
+        assert len(records) == 1
+        assert records[0]["header"] == "geneX | GC=50% | trait=drought"
+        assert records[0]["sequence"] == "ATGCGC"
+        assert records[0]["metadata"]["name"] == "geneX"
+        assert records[0]["metadata"]["gc"] == "50%"
+        assert records[0]["metadata"]["trait"] == "drought"
+
+    def test_parse_fasta_without_header(self):
+        records = loader.parse_fasta("ATGCATGC")
+        assert len(records) == 1
+        assert records[0]["header"] == "Sequence 1"
+        assert records[0]["sequence"] == "ATGCATGC"
+        assert records[0]["metadata"] == {}
 
 
 class TestMotifSearch:
