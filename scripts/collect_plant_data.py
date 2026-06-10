@@ -149,7 +149,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--max-length", type=int, default=0, help="Max sequence length for NCBI fetch (0 = no limit)")
     parser.add_argument("--max-data", action="store_true", help="Use broader API result windows for GEO/Atlas/NCBI without changing other behavior")
     parser.add_argument("--mrna-only", action="store_true", help="Restrict NCBI search to mRNA sequences")
-    parser.add_argument("--no-plants-only", dest="plants_only", action="store_false", help="Disable plant-only filtering for GEO/NCBI")
+    parser.add_argument("--no-plants-only", dest="plants_only", action="store_false", default=False, help="Disable plant-only filtering for GEO/NCBI")
     parser.add_argument("--out", help="Write combined JSON to file")
     parser.add_argument("--dbpath", default=str(DEFAULT_DB), help="Path to genes_database.json")
     parser.add_argument("--merge-gene", help="Attach GEO/Atlas results to an existing gene record")

@@ -88,7 +88,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--size", type=int, default=100, help="Maximum Expression Atlas results")
     parser.add_argument("--max-length", type=int, default=0, help="Max sequence length for NCBI fetch (0 = no limit)")
     parser.add_argument("--mrna-only", action="store_true", help="Restrict NCBI search to mRNA sequences")
-    parser.add_argument("--no-plants-only", dest="plants_only", action="store_false", help="Disable plant-only filtering for GEO/NCBI")
+    parser.add_argument("--no-plants-only", dest="plants_only", action="store_false", default=False, help="Disable plant-only filtering for GEO/NCBI")
     parser.add_argument("--out-raw", default=str(ROOT / "raw_collect.json"), help="Raw collected JSON output path")
     parser.add_argument("--out-clean", default=str(ROOT / "data" / "clean" / "plant_data_clean.json"), help="Normalized JSON output path")
     parser.add_argument("--out-geo", default=str(ROOT / "data" / "raw" / "geo.json"), help="Write GEO raw JSON to file")

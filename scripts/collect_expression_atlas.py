@@ -26,8 +26,12 @@ def http_get_json(url: str, params: dict | None = None) -> dict | list:
     if params:
         url = f"{url}?{urllib.parse.urlencode(params)}"
     req = urllib.request.Request(url, headers={"Accept": "application/json"})
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        print(f"Warning: Expression Atlas request failed for {url}: {e}")
+        return {}
 
 
 def atlas_gene_search_url(gene: str, species: str | None = None) -> str:
