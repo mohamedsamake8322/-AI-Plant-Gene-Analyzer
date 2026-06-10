@@ -64,6 +64,7 @@ def upgma(distance_matrix: np.ndarray, names: List[str]) -> Dict:
     # Build dendrogram data
     dendro = dendrogram(Z, labels=names, no_plot=True)
     
+    newick = linkage_to_newick(Z, names)
     return {
         "algorithm": "UPGMA",
         "sequence_names": names,
@@ -74,6 +75,7 @@ def upgma(distance_matrix: np.ndarray, names: List[str]) -> Dict:
             "leaves": dendro["leaves"],
             "color_list": dendro.get("color_list", []),
         },
+        "newick": newick,
         "tree_type": "Ultrametric (clock-like)",
     }
 
@@ -180,12 +182,55 @@ def neighbor_joining(distance_matrix: np.ndarray, names: List[str]) -> Dict:
     }
     edges.append(final_edge)
     
+    newick = nj_edges_to_newick(edges)
     return {
         "algorithm": "Neighbor-Joining",
         "sequence_names": names,
         "edges": edges,
+        "newick": newick,
         "tree_type": "Additive (non-clock)",
     }
+
+
+def linkage_to_newick(linkage_matrix: np.ndarray, labels: List[str]) -> str:
+    """Convert scipy linkage matrix to Newick format."""
+    tree = to_tree(linkage_matrix, rd=False)
+
+    def _node_to_newick(node) -> str:
+        if node.is_leaf():
+            return f"{labels[node.id]}:{max(node.dist, 0):.6f}"
+        left = _node_to_newick(node.get_left())
+        right = _node_to_newick(node.get_right())
+        return f"({left},{right}):{max(node.dist, 0):.6f}"
+
+    return _node_to_newick(tree) + ";"
+
+
+def nj_edges_to_newick(edges: List[Dict]) -> str:
+    """Build a Newick string from Neighbor-Joining edge list."""
+    if not edges:
+        return ";"
+
+    children: Dict[str, List[tuple[str, float]]] = {}
+    nodes = set()
+    for edge in edges:
+        parent = edge["parent"]
+        nodes.add(parent)
+        nodes.add(edge["child_1"])
+        nodes.add(edge["child_2"])
+        children.setdefault(parent, []).append((edge["child_1"], float(edge["branch_1"])))
+        children.setdefault(parent, []).append((edge["child_2"], float(edge["branch_2"])))
+
+    child_nodes = {c for kids in children.values() for c, _ in kids}
+    roots = [n for n in nodes if n not in child_nodes] or ["Root"]
+
+    def _render(node: str) -> str:
+        if node not in children:
+            return node
+        parts = [_render(child) + f":{length:.6f}" for child, length in children[node]]
+        return f"({','.join(parts)})"
+
+    return _render(roots[0]) + ";"
 
 
 # ─── PHYLOGENETIC TREE VISUALIZATION ──────────────────────────────────────────

@@ -111,12 +111,32 @@ def nucleotide_distribution(sequence: str) -> dict[str, int | float]:
     }
 
 
+def _scan_start_stop_codons(sequence: str) -> tuple[bool, bool]:
+    """Detect ATG starts and in-frame stop codons across all six reading frames."""
+    has_start = False
+    has_stop = False
+    strands = [sequence, reverse_complement(sequence)]
+    for strand in strands:
+        for frame in range(3):
+            subseq = strand[frame:]
+            for i in range(0, len(subseq) - 2, 3):
+                codon = subseq[i : i + 3]
+                if codon == "ATG":
+                    has_start = True
+                if codon in STOP_CODONS:
+                    has_stop = True
+            if has_start and has_stop:
+                return has_start, has_stop
+    return has_start, has_stop
+
+
 def sequence_statistics(sequence: str) -> dict:
     """Compute DNA sequence metrics."""
     dist = nucleotide_distribution(sequence)
     gc = calculate_gc_content(sequence)
     at = dist["percentages"]["A"] + dist["percentages"]["T"]
-    orfs = find_orfs(sequence)
+    orfs = find_orfs(sequence, include_reverse=True)
+    has_start, has_stop = _scan_start_stop_codons(sequence)
     return {
         "length": len(sequence),
         "gc_content": gc,
@@ -125,11 +145,8 @@ def sequence_statistics(sequence: str) -> dict:
         "nucleotide_counts": dist["counts"],
         "nucleotide_percentages": dist["percentages"],
         "is_coding_length": len(sequence) % 3 == 0,
-        "has_start_codon": sequence.startswith("ATG"),
-        "has_stop_codon": any(
-            sequence[i:i+3] in ("TAA", "TAG", "TGA")
-            for i in range(0, len(sequence) - 2, 3)
-        ),
+        "has_start_codon": has_start,
+        "has_stop_codon": has_stop,
         "sequence_type": "dna",
         "orf_count": len(orfs),
         "longest_orf_length": orfs[0]["length"] if orfs else 0,
@@ -261,8 +278,7 @@ def estimate_isoelectric_point(sequence: str) -> float:
 STOP_CODONS = {"TAA", "TAG", "TGA"}
 
 
-def find_orfs(sequence: str, min_length: int = 30) -> list[dict[str, object]]:
-    """Scan the DNA sequence for ORFs in all three forward frames."""
+def _find_orfs_on_strand(sequence: str, frame_label_prefix: str, min_length: int) -> list[dict[str, object]]:
     orfs: list[dict[str, object]] = []
     for frame in range(3):
         i = frame
@@ -275,29 +291,39 @@ def find_orfs(sequence: str, min_length: int = 30) -> list[dict[str, object]]:
                     triplet = sequence[j : j + 3]
                     if triplet in STOP_CODONS:
                         orf_seq = sequence[start : j + 3]
-                        orfs.append({
-                            "frame": f"+{frame + 1}",
-                            "start": start + 1,
-                            "end": j + 3,
-                            "length": len(orf_seq),
-                            "complete": True,
-                            "protein": translate_dna(orf_seq)["protein"],
-                        })
+                        if len(orf_seq) >= min_length:
+                            orfs.append({
+                                "frame": f"{frame_label_prefix}{frame + 1}",
+                                "start": start + 1,
+                                "end": j + 3,
+                                "length": len(orf_seq),
+                                "complete": True,
+                                "protein": translate_dna(orf_seq)["protein"],
+                            })
                         break
                     j += 3
                 else:
                     orf_seq = sequence[start:]
-                    orfs.append({
-                        "frame": f"+{frame + 1}",
-                        "start": start + 1,
-                        "end": len(sequence),
-                        "length": len(orf_seq),
-                        "complete": False,
-                        "protein": translate_dna(orf_seq)["protein"],
-                    })
+                    if len(orf_seq) >= min_length:
+                        orfs.append({
+                            "frame": f"{frame_label_prefix}{frame + 1}",
+                            "start": start + 1,
+                            "end": len(sequence),
+                            "length": len(orf_seq),
+                            "complete": False,
+                            "protein": translate_dna(orf_seq)["protein"],
+                        })
                 i = start + 3
             else:
                 i += 3
+    return orfs
+
+
+def find_orfs(sequence: str, min_length: int = 30, include_reverse: bool = True) -> list[dict[str, object]]:
+    """Scan DNA for ORFs in forward (+) and optional reverse (-) frames."""
+    orfs = _find_orfs_on_strand(sequence, "+", min_length)
+    if include_reverse:
+        orfs.extend(_find_orfs_on_strand(reverse_complement(sequence), "-", min_length))
     orfs.sort(key=lambda item: item["length"], reverse=True)
     return orfs
 
@@ -352,44 +378,84 @@ def translate_dna(sequence: str, frame: int = 0) -> dict[str, object]:
     }
 
 
-def translate_all_frames(sequence: str) -> dict[str, dict[str, object]]:
-    """Translate a DNA sequence in all three forward reading frames."""
-    return {
+def translate_all_frames(sequence: str, include_reverse: bool = True) -> dict[str, dict[str, object]]:
+    """Translate DNA in forward (+) and reverse (-) reading frames."""
+    frames = {
         f"Frame +{frame + 1}": translate_dna(sequence, frame)
         for frame in range(3)
     }
+    if include_reverse:
+        rev = reverse_complement(sequence)
+        for frame in range(3):
+            frames[f"Frame -{frame + 1}"] = translate_dna(rev, frame)
+    return frames
 
 
-def detect_mutations(query: str, reference: str) -> dict:
-    """Identify point mutations between query and reference sequences."""
-    min_len = min(len(query), len(reference))
+def detect_mutations(query: str, reference: str, seq_type: str = "dna") -> dict:
+    """Identify substitutions and indels after global pairwise alignment."""
+    import alignment_engine as aln
+
+    query = query.upper().replace(" ", "")
+    reference = reference.upper().replace(" ", "")
+    alignment = aln.needleman_wunsch(query, reference, seq_type=seq_type)
+    q_aln = alignment["seq1_aligned"]
+    r_aln = alignment["seq2_aligned"]
+    stats = aln.alignment_statistics(q_aln, r_aln)
+
     mutations: list[dict[str, object]] = []
-    matches = 0
+    indels: list[dict[str, object]] = []
+    ref_pos = 0
+    query_pos = 0
 
-    for i in range(min_len):
-        q_nuc = query[i]
-        r_nuc = reference[i]
-        if q_nuc == r_nuc:
-            matches += 1
-        else:
-            mutations.append({
-                "position": i + 1,
-                "reference": r_nuc,
-                "query": q_nuc,
-                "type": _classify_mutation(r_nuc, q_nuc),
+    for qc, rc in zip(q_aln, r_aln):
+        if qc != "-" and rc != "-":
+            ref_pos += 1
+            query_pos += 1
+            if qc != rc:
+                mutations.append({
+                    "position_reference": ref_pos,
+                    "position_query": query_pos,
+                    "reference": rc,
+                    "query": qc,
+                    "type": _classify_mutation(rc, qc),
+                })
+        elif qc == "-" and rc != "-":
+            ref_pos += 1
+            indels.append({
+                "position_reference": ref_pos,
+                "position_query": query_pos,
+                "reference": rc,
+                "query": "-",
+                "type": "deletion",
+            })
+        elif rc == "-" and qc != "-":
+            query_pos += 1
+            indels.append({
+                "position_reference": ref_pos,
+                "position_query": query_pos,
+                "reference": "-",
+                "query": qc,
+                "type": "insertion",
             })
 
-    mutation_rate = round(len(mutations) / min_len * 100, 2) if min_len else 0.0
-    identity = round(matches / min_len * 100, 2) if min_len else 0.0
+    aligned_cols = stats["aligned_columns_without_gaps"]
+    substitution_rate = round(len(mutations) / aligned_cols * 100, 2) if aligned_cols else 0.0
     return {
         "total_mutations": len(mutations),
-        "mutation_rate_percent": mutation_rate,
-        "identity_percent": identity,
-        "compared_length": min_len,
+        "total_indels": len(indels),
+        "mutation_rate_percent": substitution_rate,
+        "identity_percent": stats["identity_percent"],
+        "compared_length": aligned_cols,
         "query_length": len(query),
         "reference_length": len(reference),
         "length_difference": abs(len(query) - len(reference)),
         "mutations": mutations,
+        "indels": indels,
+        "alignment": {
+            "query_aligned": q_aln,
+            "reference_aligned": r_aln,
+            "algorithm": alignment["algorithm"],
+        },
     }
 
 

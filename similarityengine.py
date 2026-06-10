@@ -1,20 +1,20 @@
 """
 similarityengine.py
 -------------------
-Similarity and alignment engine for the AI-Powered Plant Gene Analyzer.
-Compares a query DNA sequence against the built-in gene database
-using character-by-character alignment and a sliding-window approach.
+Database similarity search using global pairwise alignment (Needleman-Wunsch)
+and percent identity over aligned non-gap columns.
 """
+
+from __future__ import annotations
 
 import json
 import os
 from typing import Optional
 
+import alignment_engine as aln
 import bioinformatics as bio
 import sequence_loader
 
-
-# ─── Load gene database ────────────────────────────────────────────────────────
 
 def _normalize_database(raw: object) -> dict:
     if isinstance(raw, dict):
@@ -42,10 +42,8 @@ def _normalize_database(raw: object) -> dict:
 
 def load_gene_database(db_path: str = "genes_database.json") -> dict:
     """Load the gene database JSON file."""
-    # Support PostgreSQL backend
     if isinstance(db_path, str) and (db_path == "postgres" or db_path.startswith("postgresql")):
         try:
-            # import helper dynamically to avoid adding scripts/ to sys.path at import time
             import sys
             from pathlib import Path
 
@@ -57,13 +55,10 @@ def load_gene_database(db_path: str = "genes_database.json") -> dict:
 
             return load_gene_database_from_postgres()
         except Exception:
-            # fall back to existing behavior
             pass
 
     if not os.path.exists(db_path):
-        raise FileNotFoundError(
-            f"Gene database not found at: {db_path}"
-        )
+        raise FileNotFoundError(f"Gene database not found at: {db_path}")
     if db_path.lower().endswith((".fa", ".fasta")):
         return _load_database_from_fasta(db_path)
 
@@ -115,209 +110,76 @@ def _load_database_from_fasta(db_path: str) -> dict:
     return records
 
 
-# ─── Core alignment ────────────────────────────────────────────────────────────
-
-def pairwise_similarity(seq1: str, seq2: str) -> float:
-    """
-    Calculate the similarity percentage between two sequences
-    by aligning them character by character over the shorter length.
-
-    Returns a float in [0.0, 100.0].
-    """
-    if not seq1 or not seq2:
-        return 0.0
-    min_len = min(len(seq1), len(seq2))
-    matches = sum(1 for a, b in zip(seq1[:min_len], seq2[:min_len]) if a == b)
-    return round(matches / min_len * 100, 2)
-
-
-def sliding_window_similarity(
+def aligned_similarity(
     query: str,
     reference: str,
-    window_size: int = 30,
+    query_type: str = "dna",
+    reference_type: str = "dna",
 ) -> dict:
     """
-    Scan the query across the reference using a sliding window
-    to find the best local alignment region.
-
-    Args:
-        query:       query DNA string
-        reference:   reference DNA string
-        window_size: length of the comparison window
-
-    Returns:
-        dict with best_score, best_position, best_window, alignment_map
+    Compute global and local alignment identity between two sequences.
+    For mixed DNA/protein pairs, tests all translation frames and keeps the best.
     """
-    if len(query) < window_size or len(reference) < window_size:
-        score = pairwise_similarity(query, reference)
-        return {
-            "best_score": score,
-            "best_position": 0,
-            "best_window": reference[: len(query)],
-            "alignment_map": _build_alignment_map(
-                query[:window_size], reference[:window_size]
-            ),
-            "method": "direct",
-        }
+    query = query.upper().replace(" ", "")
+    reference = reference.upper().replace(" ", "")
 
-    best_score = 0.0
-    best_pos = 0
+    if query_type == "protein" and reference_type == "dna":
+        best = {"similarity_score": 0.0, "alignment": {}, "frame": 0, "method": "protein_to_dna"}
+        for frame in range(3):
+            translated = bio.translate_dna(reference, frame)["protein"]
+            global_aln = aln.needleman_wunsch(query, translated, seq_type="protein")
+            if global_aln["identity_percent"] > best["similarity_score"]:
+                best = {
+                    "similarity_score": global_aln["identity_percent"],
+                    "alignment": global_aln,
+                    "frame": frame,
+                    "method": "protein_to_dna_global",
+                }
+        return best
 
-    for i in range(len(reference) - window_size + 1):
-        window = reference[i : i + window_size]
-        score = pairwise_similarity(query[:window_size], window)
-        if score > best_score:
-            best_score = score
-            best_pos = i
+    if query_type == "dna" and reference_type == "protein":
+        best = {"similarity_score": 0.0, "alignment": {}, "frame": 0, "method": "dna_to_protein"}
+        for frame in range(3):
+            translated = bio.translate_dna(query, frame)["protein"]
+            global_aln = aln.needleman_wunsch(translated, reference, seq_type="protein")
+            if global_aln["identity_percent"] > best["similarity_score"]:
+                best = {
+                    "similarity_score": global_aln["identity_percent"],
+                    "alignment": global_aln,
+                    "frame": frame,
+                    "method": "dna_to_protein_global",
+                }
+        return best
 
-    best_window = reference[best_pos : best_pos + window_size]
+    seq_type = "protein" if query_type == "protein" else "dna"
+    global_aln = aln.needleman_wunsch(query, reference, seq_type=seq_type)
+    local_aln = aln.smith_waterman(query, reference, seq_type=seq_type)
     return {
-        "best_score": best_score,
-        "best_position": best_pos + 1,
-        "best_window": best_window,
-        "alignment_map": _build_alignment_map(query[:window_size], best_window),
-        "method": "sliding_window",
+        "similarity_score": global_aln["identity_percent"],
+        "global_identity": global_aln["identity_percent"],
+        "local_identity": local_aln["identity_percent"],
+        "alignment": global_aln,
+        "method": "global",
+        "local_alignment": local_aln,
     }
 
-
-def _build_alignment_map(seq1: str, seq2: str) -> dict[str, str]:
-    """
-    Build a visual alignment representation with ASCII art.
-    Returns a dict with 'query', 'match_line', 'reference', and ASCII alignment.
-    """
-    min_len = min(len(seq1), len(seq2))
-    match_line = "".join(
-        "|" if seq1[i] == seq2[i] else "X"
-        for i in range(min_len)
-    )
-    
-    # Build ASCII art alignment (formatted in blocks of 50)
-    ascii_alignment = _build_ascii_alignment(seq1[:min_len], seq2[:min_len], match_line)
-    
-    return {
-        "query": seq1[:min_len],
-        "match_line": match_line,
-        "reference": seq2[:min_len],
-        "identity_count": match_line.count("|"),
-        "mismatch_count": match_line.count("X"),
-        "ascii_alignment": ascii_alignment,
-    }
-
-
-def _build_ascii_alignment(query: str, reference: str, match_line: str, block_size: int = 50) -> str:
-    """
-    Build a formatted ASCII alignment display, like BLAST output.
-
-    Args:
-        query: Query sequence
-        reference: Reference sequence
-        match_line: Line showing matches (|) and mismatches (X)
-        block_size: Characters per line in the alignment
-
-    Returns:
-        Formatted ASCII alignment string
-    """
-    lines: list[str] = []
-    for i in range(0, len(match_line), block_size):
-        end = min(i + block_size, len(match_line))
-        lines.append(f"\nQuery    {i + 1:6d}  {query[i:end]}  {end}")
-        lines.append(f"         {'':6s}  {match_line[i:end]}")
-        lines.append(f"Ref      {i + 1:6d}  {reference[i:end]}  {end}")
-    return "\n".join(lines)
-
-
-def _compare_protein_query_to_dna_reference(query_protein: str, reference_dna: str) -> dict:
-    """Compare a protein query to a DNA reference by translation in all frames."""
-    best_match = {
-        "best_score": 0.0,
-        "alignment": _build_alignment_map("", ""),
-        "frame": 0,
-    }
-    for frame in range(3):
-        translated = bio.translate_dna(reference_dna, frame)["protein"]
-        score = pairwise_similarity(query_protein, translated)
-        if score > best_match["best_score"]:
-            best_match["best_score"] = score
-            best_match["alignment"] = _build_alignment_map(query_protein, translated)
-            best_match["frame"] = frame
-    return best_match
-
-
-def _compare_dna_query_to_protein_reference(query_dna: str, reference_protein: str) -> dict:
-    """Compare a DNA query to a protein reference by translating the query."""
-    best_match = {
-        "best_score": 0.0,
-        "alignment": _build_alignment_map("", ""),
-        "frame": 0,
-    }
-    for frame in range(3):
-        translated = bio.translate_dna(query_dna, frame)["protein"]
-        score = pairwise_similarity(translated, reference_protein)
-        if score > best_match["best_score"]:
-            best_match["best_score"] = score
-            best_match["alignment"] = _build_alignment_map(translated, reference_protein)
-            best_match["frame"] = frame
-    return best_match
-
-
-# ─── Database comparison ───────────────────────────────────────────────────────
 
 def compare_with_database(
     query: str,
     db_source: str | dict = "genes_database.json",
     top_n: int = 3,
 ) -> list[dict]:
-    """
-    Compare the query sequence against every gene in the database.
-    Returns the top_n best matches, sorted by similarity score.
-
-    Each result dict contains:
-        gene_name, trait, description, organism, accession,
-        similarity_score, alignment, reference_length, query_length
-    """
-    if isinstance(db_source, dict):
-        database = db_source
-    else:
-        database = load_gene_database(db_source)
-
-    results: list[dict] = []
-
+    """Compare query against each gene using aligned percent identity."""
+    database = db_source if isinstance(db_source, dict) else load_gene_database(db_source)
     query_type = bio.detect_sequence_type(query)
+    results: list[dict] = []
 
     for gene_name, gene_info in database.items():
         ref_seq = gene_info["sequence"].upper().replace(" ", "")
         ref_type = gene_info.get("sequence_type") or bio.detect_sequence_type(ref_seq)
-        direct_score = 0.0
-        best_score = 0.0
-        alignment_payload: dict[str, object]
-
-        if query_type == "protein" and ref_type == "dna":
-            protein_result = _compare_protein_query_to_dna_reference(query, ref_seq)
-            alignment_payload = {
-                "alignment_map": protein_result["alignment"],
-                "best_score": protein_result["best_score"],
-                "method": "protein_to_dna",
-                "frame": protein_result["frame"],
-            }
-            direct_score = protein_result["best_score"]
-            best_score = protein_result["best_score"]
-        elif query_type == "dna" and ref_type == "protein":
-            protein_result = _compare_dna_query_to_protein_reference(query, ref_seq)
-            alignment_payload = {
-                "alignment_map": protein_result["alignment"],
-                "best_score": protein_result["best_score"],
-                "method": "dna_to_protein",
-                "frame": protein_result["frame"],
-            }
-            direct_score = protein_result["best_score"]
-            best_score = protein_result["best_score"]
-        else:
-            alignment_payload = sliding_window_similarity(query, ref_seq)
-            direct_score = pairwise_similarity(query, ref_seq)
-            best_score = max(alignment_payload["best_score"], direct_score)
-
-        if isinstance(alignment_payload, dict) and "alignment_map" in alignment_payload:
-            alignment_payload["ascii_alignment"] = alignment_payload["alignment_map"].get("ascii_alignment")
+        match = aligned_similarity(query, ref_seq, query_type=query_type, reference_type=ref_type)
+        alignment = match["alignment"]
+        alignment_map = alignment.get("alignment_map", {}) if isinstance(alignment, dict) else {}
 
         results.append({
             "gene_name": gene_name,
@@ -325,10 +187,16 @@ def compare_with_database(
             "description": gene_info.get("description", ""),
             "organism": gene_info.get("organism", "Unknown"),
             "accession": gene_info.get("accession", "N/A"),
-            "similarity_score": best_score,
-            "direct_similarity": direct_score,
-            "sliding_window_similarity": alignment_payload["best_score"],
-            "alignment": alignment_payload,
+            "similarity_score": match["similarity_score"],
+            "alignment_method": match.get("method", "global"),
+            "alignment": {
+                "alignment_map": alignment_map,
+                "algorithm": alignment.get("algorithm") if isinstance(alignment, dict) else None,
+                "alignment_score": alignment.get("alignment_score") if isinstance(alignment, dict) else None,
+                "global_identity": match.get("global_identity"),
+                "local_identity": match.get("local_identity"),
+                "frame": match.get("frame"),
+            },
             "reference_length": len(ref_seq),
             "query_length": len(query),
             "reference_type": ref_type,
@@ -339,60 +207,48 @@ def compare_with_database(
     return results[:top_n]
 
 
-def get_best_match(
-    query: str,
-    db_path: str = "genes_database.json",
-) -> Optional[dict]:
-    """Return the single best matching gene from the database."""
+def get_best_match(query: str, db_path: str = "genes_database.json") -> Optional[dict]:
     matches = compare_with_database(query, db_path, top_n=1)
     return matches[0] if matches else None
 
 
-# ─── Similarity classification ─────────────────────────────────────────────────
-
 def classify_similarity(score: float) -> dict[str, str]:
-    """
-    Map a similarity score to a biological classification label.
-
-    Returns dict with 'level', 'label', 'color', and 'emoji'.
-    """
     if score >= 90:
         return {
             "level": "very_high",
             "label": "Very High Similarity",
             "color": "#00c853",
             "emoji": "🟢",
-            "interpretation": "Near-identical sequence — likely same gene or very close homolog.",
+            "interpretation": "Near-identical aligned sequence — likely same gene or very close homolog.",
         }
-    elif score >= 75:
+    if score >= 75:
         return {
             "level": "high",
             "label": "High Similarity",
             "color": "#76ff03",
             "emoji": "🟩",
-            "interpretation": "Strong homology — likely functional equivalent across species.",
+            "interpretation": "Strong homology after global alignment — likely functional equivalent.",
         }
-    elif score >= 55:
+    if score >= 55:
         return {
             "level": "moderate",
             "label": "Moderate Similarity",
             "color": "#ffd600",
             "emoji": "🟡",
-            "interpretation": "Partial homology — may share functional domains.",
+            "interpretation": "Partial homology — may share conserved domains.",
         }
-    elif score >= 35:
+    if score >= 35:
         return {
             "level": "low",
             "label": "Low Similarity",
             "color": "#ff6d00",
             "emoji": "🟠",
-            "interpretation": "Distant relationship — possible convergent function.",
+            "interpretation": "Distant relationship — limited aligned identity.",
         }
-    else:
-        return {
-            "level": "very_low",
-            "label": "Very Low / No Significant Similarity",
-            "color": "#d50000",
-            "emoji": "🔴",
-            "interpretation": "No significant match — likely novel or unrelated sequence.",
-        }
+    return {
+        "level": "very_low",
+        "label": "Very Low / No Significant Similarity",
+        "color": "#d50000",
+        "emoji": "🔴",
+        "interpretation": "No significant aligned match in the reference database.",
+    }

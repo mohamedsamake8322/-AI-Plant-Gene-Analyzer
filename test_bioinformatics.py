@@ -139,13 +139,12 @@ class TestProteinTranslation:
         assert result["status"] == "no_stop_codon"
     
     def test_translate_all_frames(self):
-        """Test translation of all three frames."""
+        """Test translation of forward and reverse frames."""
         seq = "ATGATGATG"
-        result = bio.translate_all_frames(seq)
-        assert len(result) == 3
+        result = bio.translate_all_frames(seq, include_reverse=True)
+        assert len(result) == 6
         assert "Frame +1" in result
-        assert "Frame +2" in result
-        assert "Frame +3" in result
+        assert "Frame -1" in result
 
 
 class TestMutationDetection:
@@ -165,7 +164,7 @@ class TestMutationDetection:
         reference = "ATGAATGC"  # C -> A at position 3
         result = bio.detect_mutations(query, reference)
         assert result["total_mutations"] == 1
-        assert result["mutations"][0]["position"] == 4
+        assert result["mutations"][0]["position_reference"] == 4
     
     def test_detect_mutations_transition(self):
         """Test classification of transition mutation."""
