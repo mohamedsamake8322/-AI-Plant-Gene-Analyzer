@@ -252,3 +252,8 @@ Multiple connection attempts failed. All failures were:
 2026-06-10 09:53:17,456 - __main__ - INFO - CSS loaded successfully from style.css
 2026-06-10 09:53:17,490 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
 2026-06-10 09:53:31,182 - __main__ - INFO - Analysis session state saved
+2026-06-10 09:57:28,836 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-10 09:57:40,644 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-10 09:57:42,776 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-10 09:57:42,830 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-06-10 09:58:14,032 - __main__ - INFO - Analysis session state saved

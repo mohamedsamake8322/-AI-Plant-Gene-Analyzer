@@ -36,6 +36,14 @@ def normalize_record(item: dict) -> dict | None:
     if seq_type not in ("dna", "protein"):
         seq_type = "dna"
 
+    external_links = dict(item.get("external_links") or {})
+    if item.get("url"):
+        external_links.setdefault("source", item["url"])
+    if item.get("source_url"):
+        external_links.setdefault("source_api", item["source_url"])
+    if item.get("accession"):
+        external_links.setdefault("accession", item["accession"])
+
     rec = {
         "gene_id": gene_id,
         "symbol": symbol,
@@ -44,7 +52,7 @@ def normalize_record(item: dict) -> dict | None:
         "sequence_type": seq_type,
         "description": item.get("description") or item.get("title") or "",
         "traits": item.get("traits") or item.get("trait") or [],
-        "external_links": item.get("external_links") or {},
+        "external_links": external_links,
         "expression_profiles": item.get("expression_profiles") or [],
         "pathways": item.get("pathways") or [],
         "publications": item.get("publications") or [],
