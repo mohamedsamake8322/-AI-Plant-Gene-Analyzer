@@ -114,9 +114,10 @@ def export_results_csv(
             writer.writerow({"Metric": "Organism", "Value": best_match.get("organism", "N/A")})
         
         # Mutations
-        writer.writerow({"Metric": "Total Mutations", "Value": mutation_report.get("total_mutations", "N/A")})
-        writer.writerow({"Metric": "Mutation Rate (%)", "Value": mutation_report.get("mutation_rate_percent", "N/A")})
-        writer.writerow({"Metric": "Identity (%)", "Value": mutation_report.get("identity_percent", "N/A")})
+        writer.writerow({"Metric": "Substitutions", "Value": mutation_report.get("total_mutations", "N/A")})
+        writer.writerow({"Metric": "Indels", "Value": mutation_report.get("total_indels", "N/A")})
+        writer.writerow({"Metric": "Substitution Rate (%)", "Value": mutation_report.get("mutation_rate_percent", "N/A")})
+        writer.writerow({"Metric": "Identity (aligned, %)", "Value": mutation_report.get("identity_percent", "N/A")})
     
     return str(filepath)
 

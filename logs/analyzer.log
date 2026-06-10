@@ -213,3 +213,42 @@ Multiple connection attempts failed. All failures were:
 2026-06-07 10:52:31,087 - __main__ - INFO - CSS loaded successfully from style.css
 2026-06-07 10:52:31,129 - __main__ - INFO - Starting analysis for record 1/1: DREB1A_Arabidopsis_drought_resistance | GC=62% | trait=drought-stress
 2026-06-07 10:52:31,154 - __main__ - INFO - Analysis session state saved
+2026-06-07 12:04:19,816 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-07 12:04:22,607 - __main__ - INFO - Loaded 24 genes from PostgreSQL
+2026-06-07 12:04:35,128 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-07 12:04:37,790 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-07 12:04:37,837 - __main__ - INFO - Starting analysis for record 1/1: DREB1A_Arabidopsis_drought_resistance | GC=62% | trait=drought-stress
+2026-06-07 12:04:37,862 - __main__ - INFO - Analysis session state saved
+2026-06-07 19:08:05,814 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-07 19:08:11,298 - __main__ - INFO - Loaded 24 genes from PostgreSQL
+2026-06-07 19:08:58,502 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-07 19:09:29,416 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-07 19:09:29,473 - __main__ - INFO - Starting analysis for record 1/1: DREB1A_Arabidopsis_drought_resistance | GC=62% | trait=drought-stress
+2026-06-07 19:09:56,788 - __main__ - INFO - Analysis session state saved
+2026-06-07 19:27:47,453 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-07 19:27:52,027 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-07 19:27:52,078 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-06-07 19:28:13,163 - __main__ - INFO - Analysis session state saved
+2026-06-10 09:42:55,281 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-10 09:43:01,604 - __main__ - INFO - Loaded 24 genes from PostgreSQL
+2026-06-10 09:43:43,927 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-10 09:43:49,393 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-10 09:43:49,423 - __main__ - INFO - Starting analysis for record 1/1: DREB1A_Arabidopsis_drought_resistance | GC=62% | trait=drought-stress
+2026-06-10 09:44:02,517 - __main__ - INFO - Analysis session state saved
+2026-06-10 09:44:26,020 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-10 09:45:08,946 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-10 09:45:09,168 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-10 09:45:09,213 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-06-10 09:45:39,286 - __main__ - INFO - Analysis session state saved
+2026-06-10 09:46:22,906 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-10 09:51:07,868 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-10 09:51:12,091 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-10 09:51:17,807 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-10 09:51:18,039 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-10 09:51:18,083 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-06-10 09:51:48,282 - __main__ - INFO - Analysis session state saved
+2026-06-10 09:53:10,221 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-10 09:53:10,450 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-10 09:53:17,456 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-10 09:53:17,490 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-06-10 09:53:31,182 - __main__ - INFO - Analysis session state saved

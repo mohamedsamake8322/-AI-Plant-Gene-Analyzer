@@ -334,15 +334,38 @@ def plot_mutation_map(mutation_report: dict, seq_length: int) -> go.Figure:
         )
         return fig
 
-    positions = [m["position"] for m in mutations]
-    colors = [
-        "#ffd600" if m["type"] == "transition" else "#ff3d00"
-        for m in mutations
-    ]
-    hover_texts = [
-        f"Pos {m['position']}: {m['reference']} → {m['query']} ({m['type']})"
-        for m in mutations
-    ]
+    positions = []
+    colors = []
+    hover_texts = []
+    for m in mutations:
+        position = m.get("position")
+        if position is None:
+            position = m.get("position_query", m.get("position_reference"))
+        if position is None:
+            continue
+
+        positions.append(position)
+        mutation_type = m.get("type", "unknown")
+        colors.append("#ffd600" if mutation_type == "transition" else "#ff3d00")
+        hover_texts.append(
+            f"Pos {position}: {m.get('reference', '?')} → {m.get('query', '?')} ({mutation_type})"
+        )
+
+    if not positions:
+        fig = go.Figure()
+        fig.update_layout(
+            **_base_layout("Mutation Map"),
+            annotations=[
+                dict(
+                    text="No mutation positions available",
+                    x=0.5, y=0.5,
+                    xref="paper", yref="paper",
+                    showarrow=False,
+                    font=dict(color="#ffab00", size=16),
+                )
+            ],
+        )
+        return fig
 
     fig = go.Figure()
 

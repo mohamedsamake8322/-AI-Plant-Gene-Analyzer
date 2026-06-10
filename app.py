@@ -122,10 +122,12 @@ def analyze_sequence_record(record: dict[str, str], input_type: str, reading_fra
         logger.warning(f"Database comparison failed: {e}")
         similarity_results = []
 
-    if best_match and db and seq_type == "dna":
+    if best_match and db:
         try:
             ref_seq = db[best_match["gene_name"]]["sequence"].upper().replace(" ", "")
-            mutation_report = bio.detect_mutations(sequence, ref_seq)
+            ref_type = db[best_match["gene_name"]].get("sequence_type") or bio.detect_sequence_type(ref_seq)
+            mut_seq_type = "protein" if seq_type == "protein" or ref_type == "protein" else "dna"
+            mutation_report = bio.detect_mutations(sequence, ref_seq, seq_type=mut_seq_type)
         except Exception as e:
             logger.warning(f"Mutation detection failed: {e}")
             mutation_report = None
@@ -709,7 +711,10 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                         st.markdown(f"**Organism:** {match['organism']}")
                         st.markdown(f"**Accession:** {match['accession']}")
                     with c2:
-                        st.markdown(f"**Similarity:** {match['similarity_score']:.1f}%")
+                        st.markdown(f"**Similarity (aligned identity):** {match['similarity_score']:.1f}%")
+                        st.markdown(f"**Alignment:** {match.get('alignment_method', 'global')}")
+                        if match.get("alignment", {}).get("algorithm"):
+                            st.markdown(f"**Algorithm:** {match['alignment']['algorithm']}")
                         st.markdown(f"**Level:** {classification['label']}")
                         st.markdown(f"**Interpretation:** {classification['interpretation']}")
                         st.markdown(f"**Description:** {match['description']}")
@@ -730,31 +735,58 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             st.info("No mutation report — run analysis with a database match first.")
         else:
             mc1, mc2, mc3, mc4 = st.columns(4)
-            mc1.metric("Total Mutations", mutation_report["total_mutations"])
-            mc2.metric("Mutation Rate", f"{mutation_report['mutation_rate_percent']}%")
-            mc3.metric("Identity", f"{mutation_report['identity_percent']}%")
-            mc4.metric("Compared Length", f"{mutation_report['compared_length']} bp")
+            mc1.metric("Substitutions", mutation_report["total_mutations"])
+            mc2.metric("Indels", mutation_report.get("total_indels", 0))
+            mc3.metric("Identity (aligned)", f"{mutation_report['identity_percent']}%")
+            mc4.metric("Aligned columns", f"{mutation_report['compared_length']}")
 
             st.plotly_chart(
                 viz.plot_mutation_map(mutation_report, mutation_report["compared_length"]),
                 use_container_width=True,
             )
 
+            if mutation_report.get("alignment"):
+                aln_data = mutation_report["alignment"]
+                match_line = "".join(
+                    "|" if a == b and a != "-" else (" " if a == "-" or b == "-" else "X")
+                    for a, b in zip(aln_data["query_aligned"], aln_data["reference_aligned"])
+                )
+                st.markdown(f"**Alignment method:** {aln_data.get('algorithm', 'Needleman-Wunsch')}")
+                st.plotly_chart(
+                    viz.plot_alignment({
+                        "query": aln_data["query_aligned"],
+                        "reference": aln_data["reference_aligned"],
+                        "match_line": match_line,
+                    }),
+                    use_container_width=True,
+                )
+
             mutations = mutation_report.get("mutations", [])
+            indels = mutation_report.get("indels", [])
             if mutations:
-                st.markdown("#### Point Mutations Table")
+                st.markdown("#### Substitutions")
                 st.markdown(
-                    "| Position | Reference | Query | Type |\n"
-                    "|---|---|---|---|\n" +
+                    "| Ref pos | Query pos | Reference | Query | Type |\n"
+                    "|---|---|---|---|---|\n" +
                     "\n".join(
-                        f"| {m['position']} | `{m['reference']}` | `{m['query']}` | {m['type'].capitalize()} |"
+                        f"| {m['position_reference']} | {m['position_query']} | `{m['reference']}` | `{m['query']}` | {m['type'].capitalize()} |"
                         for m in mutations[:50]
                     )
                 )
                 if len(mutations) > 50:
-                    st.info(f"Showing first 50 of {len(mutations)} mutations.")
-            else:
-                st.success("No point mutations detected — sequence matches reference perfectly.")
+                    st.info(f"Showing first 50 of {len(mutations)} substitutions.")
+            if indels:
+                st.markdown("#### Indels")
+                st.markdown(
+                    "| Ref pos | Query pos | Reference | Query | Type |\n"
+                    "|---|---|---|---|---|\n" +
+                    "\n".join(
+                        f"| {m['position_reference']} | {m['position_query']} | `{m['reference']}` | `{m['query']}` | {m['type'].capitalize()} |"
+                        for m in indels[:50]
+                    )
+                )
+            if not mutations and not indels:
+                st.success("No differences after global alignment — sequences are identical.")
 
     # ── Tab 4: Translation ─────────────────────────────────────────────────────
     with tabs[3]:
@@ -782,8 +814,8 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             else:
                 st.warning("No protein sequence translated — check reading frame or sequence length.")
 
-            st.markdown("#### All Reading Frames")
-            all_frames = bio.translate_all_frames(sequence)
+            st.markdown("#### All Reading Frames (+ and - strands)")
+            all_frames = bio.translate_all_frames(sequence, include_reverse=True)
             for frame_name, frame_result in all_frames.items():
                 with st.expander(f"{frame_name} — {frame_result['length']} aa"):
                     st.code(frame_result["protein"] or "(empty)", language=None)
@@ -950,7 +982,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
         seqs_input = st.text_area("Paste multiple FASTA sequences or one per line:", height=160)
         msa_btn = st.button("Run MSA", key="msa_run")
         if msa_btn and seqs_input:
-            from core_engines.alignment_engine import progressive_alignment, needleman_wunsch
+            from core_engines.alignment_engine import star_alignment, needleman_wunsch
 
             # parse simple input (one sequence per line or FASTA)
             from sequence_loader import parse_fasta
@@ -959,9 +991,12 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             if len(sequences) < 2:
                 st.warning("Provide at least 2 sequences for MSA.")
             else:
-                with st.spinner("Running progressive MSA..."):
-                    msa_result = progressive_alignment(sequences, seq_type="dna")
-                st.success(f"MSA complete — {msa_result.get('num_sequences')} sequences aligned")
+                with st.spinner("Running star MSA (reference-guided)..."):
+                    msa_result = star_alignment(sequences, seq_type="dna")
+                st.success(
+                    f"MSA complete — {msa_result.get('num_sequences')} sequences, "
+                    f"conservation {msa_result.get('conservation_score', 0)}%"
+                )
                 aligned = msa_result.get('aligned_sequences', [])
                 labels = [r.get('header', f"Seq{i+1}") for i, r in enumerate(records_msa)]
                 try:
@@ -1007,6 +1042,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
         st.markdown("#### Compute Pairwise Distance Matrix")
         dm_input = st.text_area("Paste FASTA or one sequence per line:", height=160)
         dm_method = st.selectbox("Method", options=["hamming", "jukes_cantor", "kimura", "pam"], index=2)
+        st.caption("Sequences are star-aligned before distance calculation.")
         if st.button("Compute Distance Matrix", key="dm_compute"):
             from sequence_loader import parse_fasta
             from core_engines.distance_engine import distance_matrix
@@ -1017,10 +1053,15 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             else:
                 with st.spinner("Calculating distances..."):
                     dm_res = distance_matrix(sequences, method=dm_method)
+                st.write("**Alignment:**", dm_res.get("alignment_method", "Star MSA"))
                 st.write("**Sequence names**", dm_res['sequence_names'])
                 import pandas as pd
                 df = pd.DataFrame(dm_res['distance_matrix'], index=dm_res['sequence_names'], columns=dm_res['sequence_names'])
                 st.dataframe(df)
+                if dm_res.get("aligned_sequences"):
+                    with st.expander("Aligned sequences used for distances"):
+                        for name, aln_seq in zip(dm_res["sequence_names"], dm_res["aligned_sequences"]):
+                            st.code(f">{name}\n{aln_seq}", language=None)
                 st.download_button("Download CSV", df.to_csv().encode('utf-8'), file_name="distance_matrix.csv")
 
     # ── Tab 9: Phylogeny ─────────────────────────────────────────────────────
@@ -1037,7 +1078,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             if len(seqs) < 2:
                 st.warning("Provide at least 2 sequences for a simple tree; 3+ sequences are recommended for more meaningful phylogeny.")
             else:
-                with st.spinner("Computing distance matrix..."):
+                with st.spinner("Aligning sequences and computing distance matrix..."):
                     dm = distance_matrix(seqs, method="kimura")
                 mat = dm['distance_matrix']
                 import numpy as np
@@ -1060,25 +1101,39 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 except Exception as e:
                     logger.warning(f"Failed to render dendrogram: {e}")
 
-                # Simple Newick fallback (leaf list)
-                try:
-                    newick = "(" + ",".join(tree.get('sequence_names', [])) + ");"
-                except Exception:
-                    newick = None
                 st.markdown("#### Newick format")
-                st.code(newick or "Newick not available")
+                st.code(tree.get("newick") or "Newick not available")
+                if tree.get("newick"):
+                    st.download_button(
+                        "Download Newick",
+                        tree["newick"],
+                        file_name="phylogeny_tree.nwk",
+                        mime="text/plain",
+                    )
 
     # ── Tab 10: Protein Analysis ─────────────────────────────────────────────
     with tabs[9]:
-        st.markdown("#### Protein properties (simple)")
-        prot_seq = st.text_area("Paste protein sequence:", height=120)
+        st.markdown("#### Protein biochemical analysis")
+        prot_seq = st.text_area("Paste protein sequence:", height=120, value=sequence if sequence_type == "protein" else "")
         if st.button("Analyze protein", key="prot_analyze"):
-            from bioinformatics import generate_protein_statistics
             if not prot_seq:
                 st.warning("Paste a protein sequence to analyze.")
             else:
-                stats = generate_protein_statistics(prot_seq.strip())
-                st.json(stats)
+                cleaned = bio.clean_sequence(prot_seq.strip(), sequence_type="protein")
+                is_valid, msg = bio.validate_sequence(cleaned, sequence_type="protein")
+                if not is_valid:
+                    st.error(msg)
+                else:
+                    stats = bio.generate_protein_statistics(cleaned)
+                    props = bio.protein_properties(cleaned)
+                    dist = stats["amino_acid_distribution"]
+                    pcol1, pcol2, pcol3, pcol4 = st.columns(4)
+                    pcol1.metric("Length (aa)", stats["length"])
+                    pcol2.metric("Molecular weight (Da)", props["molecular_weight"])
+                    pcol3.metric("Isoelectric point", props["isoelectric_point"])
+                    pcol4.metric("Avg hydrophobicity", props["hydrophobicity"])
+                    st.plotly_chart(viz.plot_amino_acid_bar(dist), use_container_width=True)
+                    st.json(stats)
 
 else:
     # ── Welcome screen ──────────────────────────────────────────────────────────
@@ -1104,9 +1159,9 @@ else:
             | GC Content | % of G and C nucleotides |
             | Nucleotide Distribution | Count and % of A, T, G, C, N |
             | Sliding Window GC | GC content profile along the sequence |
-            | Database Similarity | Comparison against 8 known plant genes |
-            | Alignment | Visual match/mismatch display |
-            | Mutation Detection | Point mutations vs. best reference |
+            | Database Similarity | Global alignment (Needleman-Wunsch) vs. reference genes |
+            | Alignment | Needleman-Wunsch / Smith-Waterman / star MSA |
+            | Mutation Detection | Substitutions and indels after global alignment |
             | Protein Translation | All 3 reading frames, codon table |
             | Motif Search | Known plant regulatory elements |
             | AI Interpretation | Rule-based biological explanation |

@@ -9,9 +9,15 @@ import alignment_engine as _orig
 needleman_wunsch = _orig.needleman_wunsch
 smith_waterman = _orig.smith_waterman
 progressive_alignment = _orig.progressive_alignment
+star_alignment = _orig.star_alignment
+alignment_statistics = _orig.alignment_statistics
+pairwise_align = _orig.pairwise_align
 
 __all__ = [
     'needleman_wunsch',
     'smith_waterman',
     'progressive_alignment',
+    'star_alignment',
+    'alignment_statistics',
+    'pairwise_align',
 ]

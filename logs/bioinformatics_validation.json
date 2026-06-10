@@ -1,0 +1,41 @@
+{
+  "checks": [
+    {
+      "name": "Needleman-Wunsch self-identity",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Mutations include alignment block",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Mutations report substitutions",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Star MSA row count",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Distance matrix uses alignment",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Similarity uses NW algorithm",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "UPGMA Newick",
+      "status": "PASS",
+      "detail": ""
+    }
+  ],
+  "passed": 7,
+  "failed": 0
+}
