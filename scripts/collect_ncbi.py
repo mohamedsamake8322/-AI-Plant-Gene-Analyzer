@@ -30,7 +30,7 @@ def _efetch_fasta_batch(batch: list[str], db: str = "nucleotide", max_retries: i
             if isinstance(txt, bytes):
                 txt = txt.decode("utf-8", errors="replace")
             return txt
-        except (http.client.IncompleteRead, urllib.error.IncompleteRead) as e:
+        except http.client.IncompleteRead as e:
             if attempt < max_retries:
                 print(f"Warning: incomplete read on NCBI batch {batch[:3]}... retrying ({attempt}/{max_retries})")
                 time.sleep(2 ** attempt)
