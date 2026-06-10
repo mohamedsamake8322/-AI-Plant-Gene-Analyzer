@@ -6,6 +6,7 @@ Run the full data pipeline: collect from APIs, normalize the result, and load in
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -82,14 +83,18 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--ncbi-accession", "-n", action="append", help="NCBI accession for sequence fetch")
     parser.add_argument("--ncbi-db", default="nucleotide", choices=["nucleotide", "protein"], help="NCBI database")
     parser.add_argument("--organism", help="Species filter for GEO/NCBI/Atlas searches")
-    parser.add_argument("--atlas-species", default="Arabidopsis thaliana", help="Species for Expression Atlas searches")
-    parser.add_argument("--retmax", type=int, default=10, help="Maximum records for GEO and NCBI search")
-    parser.add_argument("--size", type=int, default=10, help="Maximum Expression Atlas results")
-    parser.add_argument("--max-length", type=int, default=500000, help="Max sequence length for NCBI fetch (0 = no limit)")
+    parser.add_argument("--atlas-species", default=None, help="Species for Expression Atlas searches (default: all species)")
+    parser.add_argument("--retmax", type=int, default=100, help="Maximum records for GEO and NCBI search")
+    parser.add_argument("--size", type=int, default=100, help="Maximum Expression Atlas results")
+    parser.add_argument("--max-length", type=int, default=0, help="Max sequence length for NCBI fetch (0 = no limit)")
     parser.add_argument("--mrna-only", action="store_true", help="Restrict NCBI search to mRNA sequences")
     parser.add_argument("--no-plants-only", dest="plants_only", action="store_false", help="Disable plant-only filtering for GEO/NCBI")
     parser.add_argument("--out-raw", default=str(ROOT / "raw_collect.json"), help="Raw collected JSON output path")
     parser.add_argument("--out-clean", default=str(ROOT / "data" / "clean" / "plant_data_clean.json"), help="Normalized JSON output path")
+    parser.add_argument("--out-geo", default=str(ROOT / "data" / "raw" / "geo.json"), help="Write GEO raw JSON to file")
+    parser.add_argument("--out-ensembl", default=str(ROOT / "data" / "raw" / "ensembl.json"), help="Write Ensembl raw JSON to file")
+    parser.add_argument("--out-atlas", default=str(ROOT / "data" / "raw" / "atlas.json"), help="Write Expression Atlas raw JSON to file")
+    parser.add_argument("--out-ncbi", default=str(ROOT / "data" / "raw" / "ncbi.json"), help="Write NCBI raw JSON to file")
     parser.add_argument("--create-tables", action="store_true", help="Create PostgreSQL tables before loading")
     parser.add_argument("--max-data", action="store_true", help="Use broader API result windows for GEO/Atlas/NCBI during collection")
     parser.add_argument("--skip-clean", action="store_true", help="Skip normalization step")
@@ -105,10 +110,41 @@ def main(argv: list[str] | None = None) -> None:
     import load_to_postgres as load_to_postgres
 
     collect_args = build_collect_args(args, raw_path)
-    if args.max_data:
-        collect_args.append("--max-data")
+    collect_args.append("--max-data")
     print(f"[1/3] Collecting plant data to {raw_path}")
     collect_plant_data.main(collect_args)
+
+    raw_path.parent.mkdir(parents=True, exist_ok=True)
+    if args.out_geo or args.out_ensembl or args.out_atlas or args.out_ncbi:
+        raw_data = json.loads(raw_path.read_text(encoding="utf-8"))
+        if args.out_geo:
+            Path(args.out_geo).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.out_geo).write_text(
+                json.dumps(raw_data.get("geo", []), indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            print(f"Wrote GEO raw JSON to {args.out_geo}")
+        if args.out_ensembl:
+            Path(args.out_ensembl).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.out_ensembl).write_text(
+                json.dumps(raw_data.get("ensembl", []), indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            print(f"Wrote Ensembl raw JSON to {args.out_ensembl}")
+        if args.out_atlas:
+            Path(args.out_atlas).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.out_atlas).write_text(
+                json.dumps(raw_data.get("expression_atlas", []), indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            print(f"Wrote Atlas raw JSON to {args.out_atlas}")
+        if args.out_ncbi:
+            Path(args.out_ncbi).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.out_ncbi).write_text(
+                json.dumps(raw_data.get("ncbi", []), indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            print(f"Wrote NCBI raw JSON to {args.out_ncbi}")
 
     if not args.skip_clean:
         print(f"[2/3] Cleaning and normalizing collected data to {clean_path}")
