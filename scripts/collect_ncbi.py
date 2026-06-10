@@ -5,10 +5,12 @@ Uses Biopython Entrez. Reads credentials from .env (NCBI_EMAIL, NCBI_API_KEY).
 """
 
 from pathlib import Path
+import http.client
 import os
 import sys
 import time
 import re
+import urllib.error
 from dotenv import load_dotenv
 from Bio import Entrez
 
@@ -18,6 +20,34 @@ PLANTS_FILTER = "plants[filter]"
 DEFAULT_MAX_LENGTH = 500_000
 
 load_dotenv(ROOT / ".env")
+
+def _efetch_fasta_batch(batch: list[str], db: str = "nucleotide", max_retries: int = 3) -> str:
+    ids = ",".join(batch)
+    for attempt in range(1, max_retries + 1):
+        try:
+            with Entrez.efetch(db=db, id=ids, rettype="fasta", retmode="text") as handle:
+                txt = handle.read()
+            if isinstance(txt, bytes):
+                txt = txt.decode("utf-8", errors="replace")
+            return txt
+        except (http.client.IncompleteRead, urllib.error.IncompleteRead) as e:
+            if attempt < max_retries:
+                print(f"Warning: incomplete read on NCBI batch {batch[:3]}... retrying ({attempt}/{max_retries})")
+                time.sleep(2 ** attempt)
+                continue
+            partial = getattr(e, "partial", None)
+            if partial:
+                try:
+                    return partial.decode("utf-8", errors="replace")
+                except Exception:
+                    pass
+            raise
+        except Exception as e:
+            if attempt < max_retries:
+                print(f"Warning: NCBI batch fetch failed ({attempt}/{max_retries}): {e}")
+                time.sleep(2 ** attempt)
+                continue
+            raise
 Entrez.email = os.getenv("NCBI_EMAIL")
 Entrez.api_key = os.getenv("NCBI_API_KEY")
 
@@ -145,9 +175,7 @@ def fetch_fasta_by_accession(
         print(f"Skipped {acc}: not found or does not match plant/organism filters.")
         return []
     try:
-        handle = Entrez.efetch(db=db, id=uid, rettype="fasta", retmode="text")
-        txt = handle.read()
-        handle.close()
+        txt = _efetch_fasta_batch([uid], db=db, max_retries=3)
         records = parse_fasta_text(txt)
         return filter_records(records, plants_only=False, max_length=max_length, acc=acc)
     except Exception as e:
@@ -184,13 +212,19 @@ def fetch_by_term(
     for i in range(0, len(ids), 50):
         batch = ids[i : i + 50]
         try:
-            handle = Entrez.efetch(db=db, id=",".join(batch), rettype="fasta", retmode="text")
-            txt = handle.read()
-            handle.close()
+            txt = _efetch_fasta_batch(batch, db=db, max_retries=3)
             records.extend(parse_fasta_text(txt))
             time.sleep(0.34)
         except Exception as e:
-            print(f"Batch fetch failed: {e}")
+            print(f"Batch fetch failed for {batch[:5]}: {e}. Retrying in smaller chunks.")
+            for j in range(0, len(batch), 10):
+                small_batch = batch[j : j + 10]
+                try:
+                    txt = _efetch_fasta_batch(small_batch, db=db, max_retries=3)
+                    records.extend(parse_fasta_text(txt))
+                    time.sleep(0.34)
+                except Exception as inner_exc:
+                    print(f"  Small batch fetch failed for {small_batch[:3]}: {inner_exc}")
     return filter_records(records, plants_only=False, max_length=max_length)
 
 
