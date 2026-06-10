@@ -1,10 +1,9 @@
 {
   "metadata": {
-    "generated_at": "2026-06-04T09:16:06.307524Z",
+    "generated_at": "2026-06-10T12:27:53.432635Z",
     "sources": [
       "GEO",
-      "Ensembl",
-      "Expression Atlas"
+      "Ensembl"
     ]
   },
   "geo": [
@@ -107,6 +106,906 @@
       "samples": 12,
       "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE244749",
       "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE244nnn/GSE244749/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE316071",
+      "title": "Transcriptome analysis of wheat seedlings in response to abscisic acid",
+      "organism": "Triticum aestivum",
+      "platform": "",
+      "samples": 16,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE316071",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE316nnn/GSE316071/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE294193",
+      "title": "Acetylated OsWOX13 coordinately regulated drought-responsive and NUE- related genes",
+      "organism": "Oryza sativa Japonica Group",
+      "platform": "",
+      "samples": 4,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE294193",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE294nnn/GSE294193/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE326331",
+      "title": "Transcriptomic data of 84K poplar were detected at 3, 6, and 9 days under drought conditions.",
+      "organism": "Populus alba x Populus glandulosa",
+      "platform": "",
+      "samples": 12,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE326331",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE326nnn/GSE326331/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE304788",
+      "title": "14-3-3 proteins GRF6 and GRF8 positively regulate drought tolerance in Arabidopsis thaliana",
+      "organism": "Arabidopsis thaliana",
+      "platform": "",
+      "samples": 24,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE304788",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE304nnn/GSE304788/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE288330",
+      "title": "Molecular responses of amaranth species to abiotic stresses",
+      "organism": "Amaranthus hybridus; Amaranthus hypochondriacus",
+      "platform": "",
+      "samples": 18,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE288330",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE288nnn/GSE288330/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE264243",
+      "title": "Ribo-seq analysis of alternative splicing under PEG treatment in osfkbp20-1b mutant compared to wild-type (ZH11) rice.",
+      "organism": "Oryza sativa Japonica Group",
+      "platform": "",
+      "samples": 12,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE264243",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE264nnn/GSE264243/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE264095",
+      "title": "Transcriptome analysis of alternative splicing under PEG treatment in osfkbp20-1b mutant compared to wild-type (ZH11) rice",
+      "organism": "Oryza sativa Japonica Group",
+      "platform": "",
+      "samples": 12,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE264095",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE264nnn/GSE264095/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE278279",
+      "title": "expression data from Arabidopsis Col-0 and avp1 mutants",
+      "organism": "Arabidopsis thaliana",
+      "platform": "",
+      "samples": 12,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE278279",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE278nnn/GSE278279/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE207858",
+      "title": "Heterologous synthesis of poly-γ-glutamic acid enhanced drought resistance in maize (Zea mays L.)",
+      "organism": "Zea mays",
+      "platform": "",
+      "samples": 6,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE207858",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE207nnn/GSE207858/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE311296",
+      "title": "DNA methylation mediates transcriptional stability and transposon-driven trans-regulation under drought in wheat ",
+      "organism": "Triticum aestivum",
+      "platform": "",
+      "samples": 2,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE311296",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE311nnn/GSE311296/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE222529",
+      "title": "Identification of stress response by multi-scale analyses of drought effect in Arabidopsis thaliana under future climate CO2",
+      "organism": "Arabidopsis thaliana",
+      "platform": "",
+      "samples": 12,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE222529",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE222nnn/GSE222529/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE288980",
+      "title": "Dynamics of the Spanish fir transcriptome in nature: Metabolic pathways and gene networks involved in the response to climate stress",
+      "organism": "Abies pinsapo",
+      "platform": "",
+      "samples": 24,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE288980",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE288nnn/GSE288980/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE303939",
+      "title": "Transcriptional memory of tomato plants using ultrasound and drought stress stimuli",
+      "organism": "Solanum lycopersicum",
+      "platform": "",
+      "samples": 20,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE303939",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE303nnn/GSE303939/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE303938",
+      "title": "Transcriptional memory of tomato plants using ultrasound and drought stress stimuli [RNA-seq]",
+      "organism": "Solanum lycopersicum",
+      "platform": "",
+      "samples": 12,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE303938",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE303nnn/GSE303938/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE303937",
+      "title": "Transcriptional memory of tomato plants using ultrasound and drought stress stimuli [WGBS]",
+      "organism": "Solanum lycopersicum",
+      "platform": "",
+      "samples": 8,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE303937",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE303nnn/GSE303937/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE290776",
+      "title": "Rapeseed NAC-type transcription factor BnNAC038 manipulates the trade-off between drought response and growth [DAP-seq]",
+      "organism": "Brassica napus",
+      "platform": "",
+      "samples": 3,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE290776",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE290nnn/GSE290776/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE290775",
+      "title": "Rapeseed NAC-type transcription factor BnNAC038 manipulates the trade-off between drought response and growth [RNA-seq]",
+      "organism": "Brassica napus",
+      "platform": "",
+      "samples": 45,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE290775",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE290nnn/GSE290775/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE276295",
+      "title": "Quantitative proteome and acetylome analyses uncover integrated drought resistance mechanisms in rice",
+      "organism": "Oryza sativa",
+      "platform": "",
+      "samples": 4,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE276295",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE276nnn/GSE276295/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE306689",
+      "title": "Genotype-Specific Modulation of Drought Tolerance by Arbuscular Mycorrhizal Symbiosis in Foxtail Millet",
+      "organism": "Setaria italica",
+      "platform": "",
+      "samples": 24,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE306689",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE306nnn/GSE306689/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE294406",
+      "title": "Integrative morpho-physiological and transcriptomic insights into wheat responses to combined drought, heat, and elevated CO₂ under future climate conditions",
+      "organism": "Triticum aestivum",
+      "platform": "",
+      "samples": 24,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE294406",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE294nnn/GSE294406/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE275172",
+      "title": "Exploiting Sesbania grandiflora’s Genetic Potential for Legume Breeding and Adaptive Responses to Combined Drought and Salt Stress",
+      "organism": "Sesbania grandiflora",
+      "platform": "",
+      "samples": 21,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE275172",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE275nnn/GSE275172/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE211298",
+      "title": "Series-temporal transcriptome profiling of cotton reveals the response mechanism of phosphatidylinositol signaling system in the early stage of drought stress",
+      "organism": "Gossypium hirsutum",
+      "platform": "",
+      "samples": 45,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE211298",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE211nnn/GSE211298/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE275202",
+      "title": "Transcriptomic Insights into Drought Tolerance Enhancement in Bread Wheat  Induced by a Microalgae-based Biostimulant",
+      "organism": "Triticum aestivum",
+      "platform": "",
+      "samples": 12,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE275202",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE275nnn/GSE275202/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE218817",
+      "title": "Genes related to cell wall metabolisms are targeted by miRNAs in immature tomato fruits under drought stress",
+      "organism": "Solanum lycopersicum",
+      "platform": "",
+      "samples": 6,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE218817",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE218nnn/GSE218817/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE288713",
+      "title": "Biomarker genes for model-based prediction of drought-stress perception levels in rice",
+      "organism": "Oryza sativa",
+      "platform": "",
+      "samples": 239,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE288713",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE288nnn/GSE288713/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE288615",
+      "title": "Biomarker genes for model-based prediction of drought-stress perception levels in rice",
+      "organism": "Oryza sativa",
+      "platform": "",
+      "samples": 72,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE288615",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE288nnn/GSE288615/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE288412",
+      "title": "Biomarker genes for model-based prediction of drought-stress perception levels in rice",
+      "organism": "Oryza sativa",
+      "platform": "",
+      "samples": 156,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE288412",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE288nnn/GSE288412/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE303744",
+      "title": "Drought Recovery in Plants Triggers a Cell-State Specific Immune Activation [MERFISH]",
+      "organism": "Arabidopsis thaliana; synthetic construct",
+      "platform": "",
+      "samples": 4,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE303744",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE303nnn/GSE303744/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE289042",
+      "title": "Drought Recovery in Plants Triggers a Cell-State Specific Immune Activation [RNA-seq]",
+      "organism": "Arabidopsis thaliana",
+      "platform": "",
+      "samples": 28,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE289042",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE289nnn/GSE289042/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE220278",
+      "title": "Drought Recovery in Plants Triggers a Cell-State Specific Immune Activation",
+      "organism": "Arabidopsis thaliana; synthetic construct; Arabidopsis",
+      "platform": "",
+      "samples": 160,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE220278",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE220nnn/GSE220278/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE220277",
+      "title": "Drought Recovery in Plants Triggers a Cell-State Specific Immune Activation [snRNA-Seq]",
+      "organism": "Arabidopsis",
+      "platform": "",
+      "samples": 14,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE220277",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE220nnn/GSE220277/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE220276",
+      "title": "Drought Recovery in Plants Triggers a Cell-State Specific Immune Activations [bulk RNA-seq]",
+      "organism": "Arabidopsis thaliana",
+      "platform": "",
+      "samples": 114,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE220276",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE220nnn/GSE220276/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE276121",
+      "title": "Transcriptome analysis uncovers the drought responses of two contrasting sorghum (Sorghum bicolor (L.) Moench) cultivars",
+      "organism": "Sorghum bicolor",
+      "platform": "",
+      "samples": 12,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE276121",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE276nnn/GSE276121/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE288446",
+      "title": "Small nucleolar RNA HIDDEN TREASURE 2 decrease drought tolerance through multiple pathways in Arabidopsis thaliana",
+      "organism": "Arabidopsis thaliana",
+      "platform": "",
+      "samples": 24,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE288446",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE288nnn/GSE288446/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE288426",
+      "title": "The small nucleolar RNA NONCODING RNA 1 negatively regulates drought tolerance in Arabidopsis thaliana",
+      "organism": "Arabidopsis thaliana",
+      "platform": "",
+      "samples": 24,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE288426",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE288nnn/GSE288426/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE287933",
+      "title": "Drought inhibits thermomorphogenesis via salicylic acid-mediated suppression of ELF3 phase separation",
+      "organism": "Arabidopsis thaliana",
+      "platform": "",
+      "samples": 12,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE287933",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE287nnn/GSE287933/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE295637",
+      "title": "Growth-limiting drought increases sensitivity of Asian rice (Oryza sativa) leaves to heat shock through physiological and spatially distinct transcriptomic responses",
+      "organism": "Oryza sativa",
+      "platform": "",
+      "samples": 80,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE295637",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE295nnn/GSE295637/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE133921",
+      "title": "The spatial differences of root apex contribute to improved drought tolerance as induced by drought priming in wheat",
+      "organism": "Triticum aestivum",
+      "platform": "",
+      "samples": 36,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE133921",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE133nnn/GSE133921/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE300184",
+      "title": "Cell layer-specific modification of cell wall is associated with  exo-mesocarp split in pistachio (Pistacia vera L.)",
+      "organism": "Pistacia vera",
+      "platform": "",
+      "samples": 20,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE300184",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE300nnn/GSE300184/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE283835",
+      "title": "Single nuclei transcriptomic and bulk RNA-seq of Populus tremula x alba stem under well-watering and severe drought conditions",
+      "organism": "Populus tremula x Populus alba",
+      "platform": "",
+      "samples": 10,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE283835",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE283nnn/GSE283835/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE205328",
+      "title": "Small RNA of sugar beet in response to drought stress",
+      "organism": "Beta vulgaris",
+      "platform": "",
+      "samples": 6,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE205328",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE205nnn/GSE205328/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE205327",
+      "title": "CircRNA of sugar beet in response to drought stress",
+      "organism": "Beta vulgaris",
+      "platform": "",
+      "samples": 6,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE205327",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE205nnn/GSE205327/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE282587",
+      "title": "Gene expression in droughted and well-watered maize roots in diverse, differentially conditioned soil microbiomes",
+      "organism": "Zea mays",
+      "platform": "",
+      "samples": 132,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE282587",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE282nnn/GSE282587/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE282586",
+      "title": "Gene expression in droughted and well-watered eastern gamagrass roots in diverse, differentially conditioned soil microbiomes",
+      "organism": "Tripsacum dactyloides",
+      "platform": "",
+      "samples": 133,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE282586",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE282nnn/GSE282586/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE291256",
+      "title": "Abscisic acid and GIGANTEA signalling converge to regulate the recruitment of CONSTANS to the FT promoter and activate floral transition",
+      "organism": "Arabidopsis thaliana",
+      "platform": "",
+      "samples": 8,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE291256",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE291nnn/GSE291256/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE255759",
+      "title": "The polyploidy of the scion and the rootstock in citrus is shaping the better tolerance to water deficit",
+      "organism": "Citrus sinensis; Citrus x aurantiifolia; Citrus x latifolia",
+      "platform": "",
+      "samples": 53,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE255759",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE255nnn/GSE255759/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE296395",
+      "title": "Comparative Study on the Effects of Silicon Nanoparticles and Cellulose Nanocrystals on Drought Tolerance in Tall Fescue (Festuca arundinacea Schreb.)",
+      "organism": "Lolium arundinaceum",
+      "platform": "",
+      "samples": 18,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE296395",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE296nnn/GSE296395/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE282986",
+      "title": "Rice B2 and B3 RAFs play central roles in both ABA and osmotic stress signaling",
+      "organism": "Oryza sativa Japonica Group",
+      "platform": "",
+      "samples": 12,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE282986",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE282nnn/GSE282986/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE295322",
+      "title": "RNA-seq, miRNA-seq, and degradome-seq analysis of taproots and lateral roots of Quercus robur seedlings under well-watered and drought stress conditions [degradome]",
+      "organism": "Quercus robur",
+      "platform": "",
+      "samples": 6,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE295322",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE295nnn/GSE295322/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE295320",
+      "title": "RNA-seq, miRNA-seq, and degradome-seq analysis of taproots and lateral roots of Quercus robur seedlings under well-watered and drought stress conditions [miRNA-seq]",
+      "organism": "Quercus robur",
+      "platform": "",
+      "samples": 12,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE295320",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE295nnn/GSE295320/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE295319",
+      "title": "RNA-seq, miRNA-seq, and degradome-seq analysis of taproots and lateral roots of Quercus robur seedlings under well-watered and drought stress conditions [RNA-seq]",
+      "organism": "Quercus robur",
+      "platform": "",
+      "samples": 12,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE295319",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE295nnn/GSE295319/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE294039",
+      "title": "Genetic variation at transcription factor binding sites largely explains phenotypic heritability in maize",
+      "organism": "Zea mays",
+      "platform": "",
+      "samples": 150,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE294039",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE294nnn/GSE294039/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE292422",
+      "title": "De novo genome assembly of faba bean (Vicia faba L.) leaf transcriptome provide novel insights into the drought stress tolerance mechanisms",
+      "organism": "Vicia faba",
+      "platform": "",
+      "samples": 6,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE292422",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE292nnn/GSE292422/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE267880",
+      "title": "Factors Driving Diversity in Gene Regulatory Networks at Genome Scale[main]",
+      "organism": "Brachypodium distachyon",
+      "platform": "",
+      "samples": 214,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE267880",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE267nnn/GSE267880/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE267878",
+      "title": "Factors Driving Diversity in Gene Regulatory Networks at Genome Scale[ASE]",
+      "organism": "Brachypodium distachyon",
+      "platform": "",
+      "samples": 24,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE267878",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE267nnn/GSE267878/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE292373",
+      "title": "Guard cell and whole plant expression of Arabidopsis thaliana TOR",
+      "organism": "Arabidopsis thaliana",
+      "platform": "",
+      "samples": 27,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE292373",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE292nnn/GSE292373/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE254116",
+      "title": "Effect of Abscissic acid on Brassica napus guard cells",
+      "organism": "Brassica napus",
+      "platform": "",
+      "samples": 9,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE254116",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE254nnn/GSE254116/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE288740",
+      "title": "Transcriptome analysies reveals the role of OsCBM1 in rice defense against Xanthomonas oryzae pv.oryzae",
+      "organism": "Oryza sativa",
+      "platform": "",
+      "samples": 9,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE288740",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE288nnn/GSE288740/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE214932",
+      "title": "Wheat earthworm-plant-microbiota interactions",
+      "organism": "Triticum aestivum",
+      "platform": "",
+      "samples": 20,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE214932",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE214nnn/GSE214932/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE275988",
+      "title": "Essential angiosperm-specific subunits of HDA19 histone deacetylase complexes in Arabidopsis",
+      "organism": "Arabidopsis thaliana",
+      "platform": "",
+      "samples": 6,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE275988",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE275nnn/GSE275988/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE275986",
+      "title": "Essential angiosperm-specific subunits of HDA19 histone deacetylase complexes in Arabidopsis [ChIP-Seq]",
+      "organism": "Arabidopsis thaliana",
+      "platform": "",
+      "samples": 22,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE275986",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE275nnn/GSE275986/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE290214",
+      "title": "Stress drives plasticity in leaf aging transcriptional dynamics in Arabidopsis thaliana",
+      "organism": "Arabidopsis thaliana",
+      "platform": "",
+      "samples": 22,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE290214",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE290nnn/GSE290214/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE280644",
+      "title": "Combining the CowPEAsy web application with in planta agroinfiltration for native promoter validation in Vigna unguiculata",
+      "organism": "Vigna unguiculata",
+      "platform": "",
+      "samples": 30,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE280644",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE280nnn/GSE280644/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE287886",
+      "title": "Unraveling Morphogenesis, Starvation, and Light Responses in a Mushroom-Forming Fungus, Coprinopsis cinerea, Using Long Read Sequencing and Extensive Expression Profiling",
+      "organism": "Coprinopsis cinerea AmutBmut pab1-1",
+      "platform": "",
+      "samples": 201,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE287886",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE287nnn/GSE287886/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE286232",
+      "title": "Differential expression and localization of expansins in Arabidopsis shoots: Implications for cell wall dynamics and drought tolerance",
+      "organism": "Arabidopsis thaliana",
+      "platform": "",
+      "samples": 24,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE286232",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE286nnn/GSE286232/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE195521",
+      "title": "Ethanol treatment enhances drought stress avoidance in cassava (Manihot esculenta Crantz)",
+      "organism": "Manihot esculenta",
+      "platform": "",
+      "samples": 26,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE195521",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE195nnn/GSE195521/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE273926",
+      "title": "Dual and spatially resolved drought responses in the Arabidopsis leaf mesophyll revealed by single-cell transcriptomics",
+      "organism": "Arabidopsis thaliana",
+      "platform": "",
+      "samples": 14,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE273926",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE273nnn/GSE273926/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE273033",
+      "title": "Dual and spatially resolved drought responses in the Arabidopsis leaf mesophyll revealed by single-cell transcriptomics",
+      "organism": "Arabidopsis thaliana",
+      "platform": "",
+      "samples": 8,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE273033",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE273nnn/GSE273033/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE224565",
+      "title": "EVG1 regulates vascular development and regeneration in response to stress",
+      "organism": "Arabidopsis thaliana",
+      "platform": "",
+      "samples": 9,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE224565",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE224nnn/GSE224565/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE285356",
+      "title": "PIF4 promotes stomatal movement during fluctuating light coincidant with drought stress via the SAL1-PAP signaling pathway (ChIP-Seq)",
+      "organism": "Oryza sativa",
+      "platform": "",
+      "samples": 6,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE285356",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE285nnn/GSE285356/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE284707",
+      "title": "GWAS identifies a OsPIF4 gene underlying iWUE under fluctuating light and drought combined stress in rice",
+      "organism": "Oryza sativa",
+      "platform": "",
+      "samples": 6,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE284707",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE284nnn/GSE284707/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE240619",
+      "title": "Conserved functions of angiosperm ε-clade 14-3-3 proteins in growth, flowering, and abiotic stress resilience",
+      "organism": "Brachypodium distachyon",
+      "platform": "",
+      "samples": 9,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE240619",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE240nnn/GSE240619/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE242922",
+      "title": "Transcriptomic profiling of abiotic stress responses of Elaeis guineensis to drought, salinity, heat, cold and flood stresses",
+      "organism": "Elaeis guineensis",
+      "platform": "",
+      "samples": 18,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE242922",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE242nnn/GSE242922/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE25705",
+      "title": "Transcriptional profiling of chickpea genes differentially expressed in response to drought stress using high density oligonucleotide microarray",
+      "organism": "Cicer arietinum",
+      "platform": "",
+      "samples": 24,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE25705",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE25nnn/GSE25705/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE270657",
+      "title": "Key Codonopsis pilosula Seedlings Drought-Responsive Genes and Pathways Revealed by Comparative Transcriptome",
+      "organism": "Codonopsis pilosula",
+      "platform": "",
+      "samples": 12,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE270657",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE270nnn/GSE270657/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE275862",
+      "title": "Differentially expressed genes between WT and AtC3H3 OX, and WT and AtC3H26 OX",
+      "organism": "Arabidopsis",
+      "platform": "",
+      "samples": 14,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE275862",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE275nnn/GSE275862/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE252706",
+      "title": "Physiological, Biochemical, and Transcriptomic Analyses Reveal the Response to Oxidative Stress Under Drought Stress in Castor (Ricinus communis L.)",
+      "organism": "Ricinus communis",
+      "platform": "",
+      "samples": 18,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE252706",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE252nnn/GSE252706/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE279454",
+      "title": "Effect of Penicillium chrysogenum, Penicillium minioluteum, and Serendipita indica on gene expression in Solanum lycopersicum plants under control and drought stress conditions",
+      "organism": "Solanum lycopersicum",
+      "platform": "",
+      "samples": 24,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE279454",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE279nnn/GSE279454/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE185717",
+      "title": "Comparative Transcriptomics Identifies Differentially Expressed Genes Regulating endoreplication and trichome branching",
+      "organism": "Arabidopsis thaliana",
+      "platform": "",
+      "samples": 6,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE185717",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE185nnn/GSE185717/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE243365",
+      "title": "mRNA ADENOSINE METHYLASE promotes drought tolerance through N6-methyladenosine-dependent and independent impacts on mRNA regulation in Arabidopsis",
+      "organism": "Arabidopsis thaliana",
+      "platform": "",
+      "samples": 48,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE243365",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE243nnn/GSE243365/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE275842",
+      "title": "Responses of grapevine cells to physiological doses of ethanol, among which induced resistance to heat stress",
+      "organism": "Vitis vinifera",
+      "platform": "",
+      "samples": 13,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE275842",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE275nnn/GSE275842/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE242460",
+      "title": "H3K9ac-marked three-dimensional genome dynamics in rice under drought stress",
+      "organism": "Oryza sativa",
+      "platform": "",
+      "samples": 29,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE242460",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE242nnn/GSE242460/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE242459",
+      "title": "H3K9ac-marked three-dimensional genome dynamics in rice under drought stress [RNA-Seq]",
+      "organism": "Oryza sativa",
+      "platform": "",
+      "samples": 8,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE242459",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE242nnn/GSE242459/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE242455",
+      "title": "H3K9ac-marked three-dimensional genome dynamics in rice under drought stress [ChIA-PET]",
+      "organism": "Oryza sativa",
+      "platform": "",
+      "samples": 8,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE242455",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE242nnn/GSE242455/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE242453",
+      "title": "H3K9ac-marked three-dimensional genome dynamics in rice under drought stress [ChIP-Seq]",
+      "organism": "Oryza sativa",
+      "platform": "",
+      "samples": 13,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE242453",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE242nnn/GSE242453/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE276430",
+      "title": "Transcriptome analysis of response to exogenous trehalose and abiotic stress in grapes",
+      "organism": "Vitis vinifera",
+      "platform": "",
+      "samples": 24,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE276430",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE276nnn/GSE276430/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE270048",
+      "title": "The function of FtMYBs in regulating the synthesis of flavonoids in Fagopyrum tartaricum under drought stress",
+      "organism": "Fagopyrum tataricum",
+      "platform": "",
+      "samples": 12,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE270048",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE270nnn/GSE270048/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE262062",
+      "title": "Untargeted mutagenesis of brassinosteroid receptor SbBRI1 confers drought tolerance by altering phenylpropanoid metabolism in Sorghum bicolor",
+      "organism": "Sorghum bicolor",
+      "platform": "",
+      "samples": 12,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE262062",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE262nnn/GSE262062/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE235730",
+      "title": "Spatiotemporal orchestration of phytohormones determines the organization pattern of aerenchyma in S. polyrhiza",
+      "organism": "Spirodela polyrhiza",
+      "platform": "",
+      "samples": 13,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE235730",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE235nnn/GSE235730/"
+    },
+    {
+      "source": "GEO",
+      "accession": "GSE254797",
+      "title": "β-diketone accumulation in modern bread wheat varieties",
+      "organism": "Triticum aestivum",
+      "platform": "",
+      "samples": 12,
+      "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE254797",
+      "ftp": "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE254nnn/GSE254797/"
     }
   ],
   "ensembl": [
@@ -135,22 +1034,6 @@
       }
     }
   ],
-  "expression_atlas": [
-    {
-      "source": "Expression Atlas",
-      "gene_query": "DREB1A",
-      "species": "Arabidopsis thaliana",
-      "url": "https://www.ebi.ac.uk/gxa/search?geneQuery=%5B%7B%22value%22%3A%20%22DREB1A%22%2C%20%22category%22%3A%20%22symbol%22%7D%5D&organism=Arabidopsis%20thaliana",
-      "note": "Atlas gene search URL (baseline + differential expression heatmaps)"
-    },
-    {
-      "source": "Expression Atlas",
-      "experiment_id": "E-MEXP-2435",
-      "title": "",
-      "species": "",
-      "url": "https://www.ebi.ac.uk/gxa/experiments/E-MEXP-2435",
-      "api_url": "https://www.ebi.ac.uk/gxa/json/experiments/E-MEXP-2435"
-    }
-  ],
+  "expression_atlas": [],
   "ncbi": []
 }

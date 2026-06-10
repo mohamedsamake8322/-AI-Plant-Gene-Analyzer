@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "generated_at": "2026-06-04T18:09:42.158480Z",
+    "generated_at": "2026-06-10T12:27:53.514335Z",
     "source_file": "raw_collect.json",
     "count": 1
   },
@@ -14,7 +14,8 @@
       "description": "dehydration response element B1A [Source:NCBI gene (formerly Entrezgene);Acc:828652]",
       "traits": [],
       "external_links": {
-        "ensembl": "https://plants.ensembl.org/arabidopsis_thaliana/Gene/Summary?g=AT4G25480"
+        "ensembl": "https://plants.ensembl.org/arabidopsis_thaliana/Gene/Summary?g=AT4G25480",
+        "source_api": "https://rest.ensembl.org/lookup/id/AT4G25480"
       },
       "expression_profiles": [],
       "pathways": [],
@@ -27,7 +28,7 @@
         "strand": -1
       },
       "length": 1391,
-      "date_added": "2026-06-04T18:09:42.158480Z",
+      "date_added": "2026-06-10T12:27:53.514335Z",
       "source": "Ensembl"
     }
   ]
