@@ -183,6 +183,9 @@ python scripts/download_data.py \
 
 Les fichiers sont écrits dans `data/raw/geo.json`, `data/raw/ensembl.json`, `data/raw/atlas.json`, `data/raw/ncbi.json`.
 
+Le script `scripts/collect_multi_type.py` permet de collecter des séquences multi-type pour une espèce : DNA, RNA/mRNA et protein.
+Il utilise NCBI pour récupérer les transcrits mRNA lorsqu'on inclut `rna` ou `mrna` dans `--types`.
+
 Pipeline recommandée (collecte → nettoyage → import PostgreSQL)
 
 1) Collecte brute depuis les APIs dans un fichier JSON :
@@ -758,9 +761,24 @@ For issues or questions:
 ## 🧬 About
 
 **AI-Powered Plant Gene Analyzer** — Bringing bioinformatics to agronomists and plant scientists with an intuitive, powerful web interface.
+#
+# Integration notes (recent work)
 
 **Version:** 2.0 (May 2026)
 **Built with:** Streamlit • Biopython • Plotly • Python 3.10+
+
+### Changements récents et migration vers un schéma professionnel
+
+Les changements récents ont introduit un *schéma professionnel* (v2.0) pour les
+données collectées (métadonnées enrichies, qualité, taxonomie structurée,
+références externes standardisées, support multi-type pour `dna`/`protein`, etc.).
+
+- Fichiers de référence générés : [PROFESSIONAL_SCHEMA_GUIDE.md](PROFESSIONAL_SCHEMA_GUIDE.md), [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)
+- Exemple de transformation effectuée : `Data/clean/rice_genes.json` → `Data/clean/rice_genes_pro.json` (297 enregistrements, sauvegarde `.bak` créée)
+
+Pour la description complète des modifications, des scripts ajoutés et des
+instructions d'intégration, consultez `PROFESSIONAL_SCHEMA_GUIDE.md` et
+`IMPLEMENTATION_SUMMARY.md` dans la racine du projet.
 #   - A I - P l a n t - G e n e - A n a l y z e r 
  
  

@@ -35,11 +35,15 @@ def collect_and_clean_type(
     """Collect one sequence type and return cleaned records."""
     print(f"\n[→] Collecting {seq_type.upper()} sequences for '{plant_term}'...")
 
-    ncbi_db_map = {
-        "dna": "nucleotide",
-        "protein": "protein",
+    ncbi_options = {
+        "dna": {"db": "nucleotide", "mrna_only": False},
+        "rna": {"db": "nucleotide", "mrna_only": True},
+        "mrna": {"db": "nucleotide", "mrna_only": True},
+        "protein": {"db": "protein", "mrna_only": False},
     }
-    ncbi_db = ncbi_db_map.get(seq_type, "nucleotide")
+    opts = ncbi_options.get(seq_type, {"db": "nucleotide", "mrna_only": False})
+    ncbi_db = opts["db"]
+    mrna_only = opts["mrna_only"]
 
     pipeline_argv = [
         "--ncbi-term", plant_term,
@@ -49,12 +53,17 @@ def collect_and_clean_type(
         "--out-clean", str(temp_clean),
         "--skip-load",
     ]
+    if mrna_only:
+        pipeline_argv.append("--mrna-only")
 
     pipeline_module.main(pipeline_argv)
 
     if temp_clean.exists():
         raw = json.loads(temp_clean.read_text(encoding="utf-8"))
         records = raw.get("genes", [])
+        if seq_type in ("rna", "mrna"):
+            for rec in records:
+                rec["sequence_type"] = "rna"
         print(f"  ✓ Collected {len(records)} {seq_type.upper()} records")
         return records
     return []
@@ -62,14 +71,14 @@ def collect_and_clean_type(
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
-        description="Collect multiple sequence types (DNA, protein) for a plant species."
+        description="Collect multiple sequence types (DNA, RNA, protein) for a plant species."
     )
     parser.add_argument("--plant", required=True, help="Plant species term (e.g., 'Oryza sativa')")
     parser.add_argument("--retmax", type=int, default=300, help="Max records per type (default: 300)")
     parser.add_argument(
         "--types",
-        default="dna,protein",
-        help="Comma-separated sequence types to collect (default: dna,protein)",
+        default="dna,rna,protein",
+        help="Comma-separated sequence types to collect (default: dna,rna,protein)",
     )
     parser.add_argument("--out-clean", default=None, help="Output clean JSON file")
     parser.add_argument("--out-raw", default=None, help="Output raw JSON file")
