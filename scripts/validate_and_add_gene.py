@@ -58,8 +58,8 @@ def fallback_validate(record: dict) -> tuple[bool, str]:
     for k in ("gene_id", "symbol", "sequence", "sequence_type"):
         if k not in record or not record[k]:
             return False, f"Missing required field: {k}"
-    if record["sequence_type"] not in ("dna", "protein"):
-        return False, "sequence_type must be 'dna' or 'protein'"
+    if record["sequence_type"] not in ("dna", "rna", "protein"):
+        return False, "sequence_type must be 'dna', 'rna', or 'protein'"
     seq = clean_sequence(record["sequence"])
     if not seq:
         return False, "Empty sequence"
@@ -68,6 +68,10 @@ def fallback_validate(record: dict) -> tuple[bool, str]:
         for c in seq:
             if c not in set("ACGTN"):
                 return False, f"Invalid character in DNA sequence: {c}"
+    if record["sequence_type"] == "rna":
+        for c in seq:
+            if c not in set("ACGUN"):
+                return False, f"Invalid character in RNA sequence: {c}"
     return True, ""
 
 

@@ -51,8 +51,14 @@ def normalize_record(item: dict) -> dict | None:
         return None
 
     if not seq_type:
-        seq_type = "dna" if all(c in "ACGTN" for c in seq.upper()) else "protein"
-    if seq_type not in ("dna", "protein"):
+        if all(c in "ACGTUN" for c in seq.upper()):
+            seq_type = "rna" if "U" in seq.upper() else "dna"
+        else:
+            seq_type = "protein"
+    seq_type = str(seq_type).lower()
+    if seq_type in ("mrna", "trna", "rrna", "transcript"):
+        seq_type = "rna"
+    if seq_type not in ("dna", "rna", "protein"):
         seq_type = "dna"
 
     external_links = dict(item.get("external_links") or {})
