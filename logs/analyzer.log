@@ -265,3 +265,7 @@ Multiple connection attempts failed. All failures were:
 2026-06-10 11:43:48,779 - __main__ - INFO - CSS loaded successfully from style.css
 2026-06-10 11:51:37,800 - __main__ - INFO - CSS loaded successfully from style.css
 2026-06-10 11:51:37,807 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-14 21:54:43,037 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-14 21:55:41,983 - __main__ - INFO - Loaded 993 genes from PostgreSQL
+2026-06-14 21:56:24,956 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-14 21:57:33,491 - __main__ - INFO - Loaded 993 genes from PostgreSQL

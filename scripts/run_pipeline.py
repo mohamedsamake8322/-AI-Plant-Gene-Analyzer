@@ -1,4 +1,5 @@
-#!/usr/bin/env python3
+
+0#!/usr/bin/env python3
 """
 Run the full data pipeline: collect from APIs, normalize the result, and load into PostgreSQL.
 """
