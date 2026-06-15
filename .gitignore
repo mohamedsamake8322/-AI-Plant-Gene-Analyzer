@@ -1,0 +1,7 @@
+.venv
+.env
+.env.example
+Data
+Data/raw/ncbi.json
+Data/clean
+logs/
