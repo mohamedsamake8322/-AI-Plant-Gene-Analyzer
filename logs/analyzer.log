@@ -269,3 +269,7 @@ Multiple connection attempts failed. All failures were:
 2026-06-14 21:55:41,983 - __main__ - INFO - Loaded 993 genes from PostgreSQL
 2026-06-14 21:56:24,956 - __main__ - INFO - CSS loaded successfully from style.css
 2026-06-14 21:57:33,491 - __main__ - INFO - Loaded 993 genes from PostgreSQL
+2026-06-15 22:18:28,624 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-15 22:18:49,297 - __main__ - INFO - CSS loaded successfully from style.css
+2026-06-15 22:21:29,134 - __main__ - WARNING - PostgreSQL load failed: canceling statement due to statement timeout
+2026-06-15 22:21:29,177 - __main__ - INFO - Loaded 13 genes from database

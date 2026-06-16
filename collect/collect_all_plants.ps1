@@ -9,10 +9,11 @@ Usage examples:
 param(
     [int]    $Workers      = 4,
     [int]    $Retmax       = 300,
-    [string] $Sources      = "ncbi,uniprot,kegg,planttfdb,pubmed",
+    [string] $Sources      = "ncbi,uniprot,kegg,planttfdb,pubmed,ensembl,atlas,geon",
     [string] $Category     = "",
     [string] $OutDir       = "data/clean/species",
     [string] $OutMaster    = "data/clean/master_plant_db.json",
+    [string] $ReportFile   = "data/clean/collection_summary.json",
     [switch] $LoadDB,
     [switch] $CreateTables,
     [switch] $Force,
@@ -30,8 +31,16 @@ Write-Host "  Retmax   : $Retmax" -ForegroundColor Yellow
 Write-Host "  Out dir  : $OutDir" -ForegroundColor Yellow
 if ($Category) { Write-Host "  Category : $Category" -ForegroundColor Yellow }
 
-if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
-    Write-Host "ERROR: Python not found in PATH." -ForegroundColor Red
+$venvPython = Join-Path $PSScriptRoot "..\.venv\Scripts\python.exe"
+if (Test-Path $venvPython) {
+    $PythonExe = $venvPython
+    Write-Host "Using virtualenv Python: $PythonExe" -ForegroundColor Gray
+} else {
+    $PythonExe = "python"
+}
+
+if (-not (Get-Command $PythonExe -ErrorAction SilentlyContinue)) {
+    Write-Host "ERROR: Python not found in PATH or .venv." -ForegroundColor Red
     exit 1
 }
 
@@ -54,7 +63,7 @@ if ($LoadDB)       { $PythonArgs += "--load-db" }
 if ($CreateTables) { $PythonArgs += "--create-tables" }
 if ($Force)        { $PythonArgs += "--force" }
 if ($NoMerge)      { $PythonArgs += "--no-merge" }
-
+if ($ReportFile)    { $PythonArgs += @("--report-file", $ReportFile) }
 if ($DryRun) {
     Write-Host "DRY RUN - would execute:" -ForegroundColor Magenta
     Write-Host "  python $($PythonArgs -join ' ')" -ForegroundColor Gray
@@ -65,7 +74,7 @@ Write-Host "Starting collection..." -ForegroundColor Green
 
 try {
     $env:PYTHONIOENCODING = 'utf-8'
-    & python @PythonArgs
+    & $PythonExe @PythonArgs
     $ExitCode = $LASTEXITCODE
 } catch {
     Write-Host "ERROR: Fatal error: $_" -ForegroundColor Red
@@ -81,6 +90,7 @@ if ($ExitCode -eq 0) {
     Write-Host "Output files:" -ForegroundColor Cyan
     Write-Host "   Per-species : $OutDir/" -ForegroundColor White
     Write-Host "   Master DB   : $OutMaster" -ForegroundColor White
+    Write-Host "   Summary     : $ReportFile" -ForegroundColor White
     if ($LoadDB) { Write-Host "   PostgreSQL  : imported" -ForegroundColor White }
 } else {
     Write-Host "WARNING: Pipeline exited with code $ExitCode (check logs above)" -ForegroundColor Yellow
