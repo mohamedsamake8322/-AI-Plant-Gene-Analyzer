@@ -16,6 +16,7 @@ Usage (custom list):
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import sys
 import time
@@ -25,42 +26,119 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "collect"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
+
+def import_local_collect_module(module_name: str):
+    search_paths = [ROOT / "collect", ROOT / "scripts"]
+    module_file = None
+
+    if any(sep in module_name for sep in ("/", "\\")):
+        candidate = (ROOT / module_name)
+        if candidate.exists():
+            module_file = candidate.resolve()
+        else:
+            candidate_py = candidate.with_suffix(".py")
+            if candidate_py.exists():
+                module_file = candidate_py.resolve()
+    else:
+        for base in search_paths:
+            candidate = base / f"{module_name}.py"
+            if candidate.exists():
+                module_file = candidate
+                break
+
+    if module_file is None:
+        raise FileNotFoundError(f"Local module file not found for {module_name}")
+
+    module_key = f"_local_collect_{module_file.stem}"
+    if module_key in sys.modules:
+        return sys.modules[module_key]
+    spec = importlib.util.spec_from_file_location(module_key, module_file)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load spec for {module_file}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_key] = module
+    spec.loader.exec_module(module)
+    return module
+
+# ── Canonical crop list ──────────────────────────────────────────────────────
 # ── Canonical crop list ──────────────────────────────────────────────────────
 ALL_PLANTS: list[dict] = [
     # Cereals & field crops
-    {"name": "Triticum aestivum",    "common": "Wheat",       "category": "cereal"},
-    {"name": "Zea mays",             "common": "Maize",       "category": "cereal"},
-    {"name": "Oryza sativa",         "common": "Rice",        "category": "cereal"},
-    {"name": "Hordeum vulgare",      "common": "Barley",      "category": "cereal"},
-    {"name": "Sorghum bicolor",      "common": "Sorghum",     "category": "cereal"},
-    # Vegetables
-    {"name": "Solanum lycopersicum", "common": "Tomato",      "category": "vegetable"},
-    {"name": "Solanum tuberosum",    "common": "Potato",      "category": "vegetable"},
-    {"name": "Daucus carota",        "common": "Carrot",      "category": "vegetable"},
-    {"name": "Lactuca sativa",       "common": "Lettuce",     "category": "vegetable"},
-    {"name": "Allium cepa",          "common": "Onion",       "category": "vegetable"},
-    {"name": "Brassica oleracea",    "common": "Cabbage",     "category": "vegetable"},
-    {"name": "Cucumis sativus",      "common": "Cucumber",    "category": "vegetable"},
-    # Fruit trees
-    {"name": "Malus domestica",      "common": "Apple",       "category": "fruit"},
-    {"name": "Vitis vinifera",       "common": "Grapevine",   "category": "fruit"},
-    {"name": "Prunus persica",       "common": "Peach",       "category": "fruit"},
-    {"name": "Citrus sinensis",      "common": "Orange",      "category": "fruit"},
-    {"name": "Fragaria ananassa",    "common": "Strawberry",  "category": "fruit"},
-    {"name": "Olea europaea",        "common": "Olive",       "category": "fruit"},
-    # Oil crops & legumes
-    {"name": "Glycine max",          "common": "Soybean",     "category": "legume"},
-    {"name": "Helianthus annuus",    "common": "Sunflower",   "category": "oilcrop"},
-    {"name": "Medicago sativa",      "common": "Alfalfa",     "category": "legume"},
-    {"name": "Phaseolus vulgaris",   "common": "Common bean", "category": "legume"},
-    # Model plant
-    {"name": "Arabidopsis thaliana", "common": "Thale cress", "category": "model"},
+    {"name": "Triticum aestivum",      "common": "Wheat",            "category": "cereal"},
+    {"name": "Zea mays",               "common": "Maize",            "category": "cereal"},
+    {"name": "Oryza sativa",           "common": "Rice",             "category": "cereal"},
+    {"name": "Hordeum vulgare",        "common": "Barley",           "category": "cereal"},
+    {"name": "Sorghum bicolor",        "common": "Sorghum",          "category": "cereal"},
+    {"name": "Secale cereale",         "common": "Rye",              "category": "cereal"},
+    {"name": "Avena sativa",           "common": "Oat",              "category": "cereal"},
+    {"name": "Milium effusum",         "common": "Millet",           "category": "cereal"},
+    # Vegetables & Maraîchage
+    {"name": "Solanum lycopersicum",   "common": "Tomato",           "category": "vegetable"},
+    {"name": "Solanum tuberosum",      "common": "Potato",           "category": "vegetable"},
+    {"name": "Daucus carota",          "common": "Carrot",           "category": "vegetable"},
+    {"name": "Lactuca sativa",         "common": "Lettuce",          "category": "vegetable"},
+    {"name": "Allium cepa",            "common": "Onion",            "category": "vegetable"},
+    {"name": "Brassica oleracea",      "common": "Cabbage",          "category": "vegetable"},
+    {"name": "Cucumis sativus",        "common": "Cucumber",         "category": "vegetable"},
+    {"name": "Solanum melongena",      "common": "Eggplant",         "category": "vegetable"},
+    {"name": "Capsicum annuum",        "common": "Pepper",           "category": "vegetable"},
+    {"name": "Spinacia oleracea",      "common": "Spinach",          "category": "vegetable"},
+    {"name": "Cucurbita pepo",         "common": "Zucchini",         "category": "vegetable"},
+    {"name": "Allium sativum",         "common": "Garlic",           "category": "vegetable"},
+    {"name": "Asparagus officinalis",  "common": "Asparagus",        "category": "vegetable"},
+    # Fruit trees & Berries
+    {"name": "Malus domestica",        "common": "Apple",            "category": "fruit"},
+    {"name": "Vitis vinifera",         "common": "Grapevine",        "category": "fruit"},
+    {"name": "Prunus persica",         "common": "Peach",            "category": "fruit"},
+    {"name": "Citrus sinensis",        "common": "Orange",           "category": "fruit"},
+    {"name": "Fragaria ananassa",      "common": "Strawberry",       "category": "fruit"},
+    {"name": "Olea europaea",          "common": "Olive",            "category": "fruit"},
+    {"name": "Pyrus communis",         "common": "Pear",             "category": "fruit"},
+    {"name": "Prunus domestica",       "common": "Plum",             "category": "fruit"},
+    {"name": "Prunus avium",           "common": "Sweet cherry",     "category": "fruit"},
+    {"name": "Citrus limon",           "common": "Lemon",            "category": "fruit"},
+    {"name": "Musa acuminata",         "common": "Banana",           "category": "fruit"},
+    {"name": "Vaccinium corymbosum",   "common": "Blueberry",        "category": "fruit"},
+    # Oil crops & Legumes
+    {"name": "Glycine max",            "common": "Soybean",          "category": "legume"},
+    {"name": "Helianthus annuus",      "common": "Sunflower",        "category": "oilcrop"},
+    {"name": "Medicago sativa",        "common": "Alfalfa",          "category": "legume"},
+    {"name": "Phaseolus vulgaris",     "common": "Common bean",      "category": "legume"},
+    {"name": "Brassica napus",         "common": "Rapeseed",         "category": "oilcrop"},
+    {"name": "Pisum sativum",          "common": "Pea",              "category": "legume"},
+    {"name": "Arachis hypogaea",       "common": "Peanut",           "category": "oilcrop"},
+    {"name": "Cicer arietinum",        "common": "Chickpea",         "category": "legume"},
+    {"name": "Lens culinaris",         "common": "Lentil",           "category": "legume"},
+    # Industrial & Stimulants
+    {"name": "Gossypium hirsutum",     "common": "Cotton",           "category": "industrial"},
+    {"name": "Saccharum officinarum",  "common": "Sugarcane",        "category": "industrial"},
+    {"name": "Beta vulgaris",          "common": "Sugar beet",       "category": "industrial"},
+    {"name": "Coffea arabica",         "common": "Coffee",           "category": "stimulant"},
+    {"name": "Camellia sinensis",      "common": "Tea",              "category": "stimulant"},
+    {"name": "Theobroma cacao",        "common": "Cacao",            "category": "stimulant"},
+    {"name": "Nicotiana tabacum",      "common": "Tobacco",          "category": "industrial"},
+    # Model plants
+    {"name": "Arabidopsis thaliana",   "common": "Thale cress",      "category": "model"},
+    {"name": "Brachypodium distachyon","common": "Purple false brome","category": "model"},
 ]
 
+
 # ── Source flags ─────────────────────────────────────────────────────────────
-AVAILABLE_SOURCES = ["ncbi", "uniprot", "kegg", "planttfdb", "pubmed"]
+# Expanded source list to include broader data providers (ENSEMBL, Expression Atlas, GEON)
+AVAILABLE_SOURCES = [
+    "ncbi",
+    "uniprot",
+    "kegg",
+    "planttfdb",
+    "pubmed",
+    "ensembl",
+    "atlas",
+    "geon",
+]
 
 
 def collect_species(
@@ -92,7 +170,7 @@ def collect_species(
     # ── NCBI ─────────────────────────────────────────────────────────────────
     if "ncbi" in sources:
         try:
-            import collect_multi_type as cmt
+            cmt = import_local_collect_module("scripts/collect_multi_type")
             from pathlib import Path as _Path
             temp_dir = out_dir / ".tmp" / safe_name
             temp_dir.mkdir(parents=True, exist_ok=True)
@@ -115,7 +193,7 @@ def collect_species(
     # ── UniProt ───────────────────────────────────────────────────────────────
     if "uniprot" in sources:
         try:
-            import collect_uniprot as cu
+            cu = import_local_collect_module("collect_uniprot")
             recs = cu.fetch_uniprot(name, retmax=retmax)
             before = len(all_records)
             for r in recs:
@@ -129,7 +207,7 @@ def collect_species(
     # ── KEGG ──────────────────────────────────────────────────────────────────
     if "kegg" in sources:
         try:
-            import collect_kegg as ck
+            ck = import_local_collect_module("collect_kegg")
             recs = ck.fetch_kegg(name, retmax=retmax)
             before = len(all_records)
             for r in recs:
@@ -151,7 +229,7 @@ def collect_species(
     # ── PlantTFDB ─────────────────────────────────────────────────────────────
     if "planttfdb" in sources:
         try:
-            import collect_planttfdb as ptf
+            ptf = import_local_collect_module("collect_planttfdb")
             recs = ptf.fetch_planttfdb(name, retmax=retmax)
             before = len(all_records)
             for r in recs:
@@ -170,10 +248,52 @@ def collect_species(
         except Exception as e:
             errors.append(f"planttfdb: {e}")
 
+    # ── ENSEMBL ──────────────────────────────────────────────────────────────
+    if "ensembl" in sources:
+        try:
+            ce = import_local_collect_module("collect_ensembl")
+            recs = ce.fetch_ensembl(name, retmax=retmax)
+            before = len(all_records)
+            for r in recs:
+                gid = r.get("gene_id")
+                if gid and gid not in all_records:
+                    all_records[gid] = r
+            source_counts["ensembl"] = len(all_records) - before
+        except Exception as e:
+            errors.append(f"ensembl: {e}")
+
+    # ── Expression Atlas ────────────────────────────────────────────────────
+    if "atlas" in sources:
+        try:
+            ca = import_local_collect_module("collect_atlas")
+            recs = ca.fetch_atlas(name, retmax=retmax)
+            before = len(all_records)
+            for r in recs:
+                gid = r.get("gene_id")
+                if gid and gid not in all_records:
+                    all_records[gid] = r
+            source_counts["atlas"] = len(all_records) - before
+        except Exception as e:
+            errors.append(f"atlas: {e}")
+
+    # ── GEON / GEO-like ─────────────────────────────────────────────────────
+    if "geon" in sources:
+        try:
+            cg = import_local_collect_module("collect_geon")
+            recs = cg.fetch_geon(name, retmax=retmax)
+            before = len(all_records)
+            for r in recs:
+                gid = r.get("gene_id")
+                if gid and gid not in all_records:
+                    all_records[gid] = r
+            source_counts["geon"] = len(all_records) - before
+        except Exception as e:
+            errors.append(f"geon: {e}")
+
     # ── PubMed ────────────────────────────────────────────────────────────────
     if "pubmed" in sources:
         try:
-            import collect_pubmed as pm
+            pm = import_local_collect_module("collect_pubmed")
             pubs = pm.fetch_pubmed_for_species(name, retmax=min(retmax, 200))
             pub_record = pm.publications_to_gene_record(pubs, name)
             pub_id = pub_record["gene_id"]
@@ -210,61 +330,87 @@ def collect_species(
 
 
 def merge_all_species(species_files: list[Path], out_file: Path) -> int:
-    """
-    Merge all per-species JSON files into one master database file.
-    Deduplicates by gene_id within each species (keeps first occurrence).
-    """
-    master_genes: list[dict] = []
-    master_meta: list[dict] = []
-    global_ids: set[str] = set()
+    """Stream-merge per-species JSON files into a single master JSON file.
 
-    for sp_file in species_files:
-        if not sp_file.exists():
-            continue
-        try:
-            data = json.loads(sp_file.read_text(encoding="utf-8"))
-            meta = data.get("metadata", {})
-            master_meta.append(meta)
-            for gene in data.get("genes", []):
-                # Global dedup key: gene_id + organism
-                gid = gene.get("gene_id", "")
-                org = gene.get("organism", "")
-                key = f"{gid}::{org}"
-                if key not in global_ids:
-                    global_ids.add(key)
-                    master_genes.append(gene)
-        except Exception as e:
-            print(f"  [merge] Error reading {sp_file}: {e}")
+    This writes a temporary JSONL file of individual gene records to avoid
+    building the full master object in memory, then streams the JSONL lines
+    into the final `out_file` as a JSON array.
+    """
+    tmp_path = out_file.with_name(out_file.name + ".tmp.jsonl")
+    tmp_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Organism summary
-    organism_counts: dict[str, int] = {}
+    total = 0
+    organisms: set = set()
     seq_type_counts: dict[str, int] = {}
     source_counts: dict[str, int] = {}
-    for gene in master_genes:
-        org = gene.get("organism", "Unknown")
-        organism_counts[org] = organism_counts.get(org, 0) + 1
-        st = gene.get("sequence_type", "unknown")
-        seq_type_counts[st] = seq_type_counts.get(st, 0) + 1
-        src = gene.get("source", "unknown")
-        source_counts[src] = source_counts.get(src, 0) + 1
+    species_meta: list[dict] = []
+    global_ids: set[str] = set()
 
-    master = {
-        "metadata": {
-            "generated_at": datetime.utcnow().isoformat() + "Z",
-            "description": "Master plant genomics database — multi-source, multi-species",
-            "total_genes": len(master_genes),
-            "total_species": len(organism_counts),
-            "organism_counts": organism_counts,
-            "sequence_type_counts": seq_type_counts,
-            "source_counts": source_counts,
-            "species_metadata": master_meta,
-        },
-        "genes": master_genes,
+    # First pass: write JSONL and gather simple stats
+    with tmp_path.open("w", encoding="utf-8") as tmpf:
+        for sp_file in species_files:
+            if not sp_file.exists():
+                continue
+            try:
+                data = json.loads(sp_file.read_text(encoding="utf-8"))
+                meta = data.get("metadata", {})
+                species_meta.append(meta)
+                for gene in data.get("genes", []):
+                    gid = gene.get("gene_id", "")
+                    org = gene.get("organism", "Unknown")
+                    key = f"{gid}::{org}"
+                    if key in global_ids:
+                        continue
+                    global_ids.add(key)
+                    tmpf.write(json.dumps(gene, ensure_ascii=False))
+                    tmpf.write("\n")
+                    total += 1
+                    organisms.add(org)
+                    st = gene.get("sequence_type", "unknown")
+                    seq_type_counts[st] = seq_type_counts.get(st, 0) + 1
+                    src = gene.get("source", "unknown")
+                    source_counts[src] = source_counts.get(src, 0) + 1
+            except Exception as e:
+                print(f"  [merge] Error reading {sp_file}: {e}")
+
+    # Build metadata
+    metadata = {
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "description": "Master plant genomics database — multi-source, multi-species",
+        "total_genes": total,
+        "total_species": len(organisms),
+        "organism_counts": {o: None for o in organisms},
+        "sequence_type_counts": seq_type_counts,
+        "source_counts": source_counts,
+        "species_metadata": species_meta,
     }
 
+    # Write final JSON by streaming lines from tmp
     out_file.parent.mkdir(parents=True, exist_ok=True)
-    out_file.write_text(json.dumps(master, ensure_ascii=False, indent=2), encoding="utf-8")
-    return len(master_genes)
+    with out_file.open("w", encoding="utf-8") as outf:
+        outf.write(json.dumps({"metadata": metadata}, ensure_ascii=False, indent=2)[:-2])
+        outf.write(",\n  " + '"genes": [\n')
+        first = True
+        with tmp_path.open("r", encoding="utf-8") as tmpf:
+            for line in tmpf:
+                line = line.rstrip("\n")
+                if not line:
+                    continue
+                if first:
+                    outf.write("    ")
+                    outf.write(line)
+                    first = False
+                else:
+                    outf.write(",\n    ")
+                    outf.write(line)
+        outf.write("\n  ]\n}\n")
+
+    try:
+        tmp_path.unlink()
+    except Exception:
+        pass
+
+    return total
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -307,6 +453,11 @@ def main(argv: list[str] | None = None) -> None:
     # DB loading
     parser.add_argument("--load-db", action="store_true", help="Import results into PostgreSQL")
     parser.add_argument("--create-tables", action="store_true", help="Create PostgreSQL tables first")
+    parser.add_argument(
+        "--report-file",
+        default="",
+        help="Optional path to write a JSON summary report file",
+    )
 
     args = parser.parse_args(argv)
 
@@ -427,7 +578,11 @@ def main(argv: list[str] | None = None) -> None:
             print(f"✗ PostgreSQL import failed: {e}")
 
     # ── Write run report ──────────────────────────────────────────────────────
-    report_path = out_dir / f"collection_report_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
+    if args.report_file:
+        report_path = Path(args.report_file)
+    else:
+        report_path = out_dir / f"collection_report_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
+
     report = {
         "run_at": datetime.utcnow().isoformat() + "Z",
         "elapsed_seconds": round(elapsed, 2),
@@ -436,15 +591,28 @@ def main(argv: list[str] | None = None) -> None:
             "retmax": args.retmax,
             "workers": args.workers,
             "species_count": len(plants),
+            "category": args.category or "all",
         },
         "summary": {
             "success": len(ok),
             "partial": len(partial),
             "failed": len(failed),
             "total_genes": total_genes,
+            "species_with_errors": [r["plant"] for r in partial + failed],
+        },
+        "counts_by_species": {
+            r["plant"]: {
+                "gene_count": r.get("count", 0),
+                "status": r.get("status"),
+                "errors": r.get("errors", []),
+                "source_counts": r.get("source_counts", {}),
+            }
+            for r in results
         },
         "results": results,
     }
+
+    report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\n📋 Run report: {report_path}")
     print("\n🌿 Pipeline complete!")
