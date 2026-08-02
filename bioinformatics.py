@@ -1,7 +1,7 @@
 """
 bioinformatics.py
 -----------------
-Core bioinformatics engine for the AI-Powered Plant Gene Analyzer.
+Core bioinformatics engine for the Plant Gene Analyzer.
 Handles sequence cleaning, GC content, nucleotide statistics,
 protein translation, and mutation detection.
 """

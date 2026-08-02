@@ -1,7 +1,7 @@
 """
 pipeline.py
 -----------
-Analysis orchestration for the AI-Powered Plant Gene Analyzer.
+Analysis orchestration for the Plant Gene Analyzer.
 
 This module wires together bioinformatics.py, similarityengine.py, and
 aiinterpreter.py into the single-sequence analysis pipeline used by the
