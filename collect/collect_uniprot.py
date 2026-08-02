@@ -108,7 +108,7 @@ def fetch_uniprot(
 
             time.sleep(0.3)  # Be polite to UniProt API
 
-        except requests.RequestException as e:
+        except (requests.RequestException, ValueError) as e:
             print(f"  [UniProt] Request error for {species}: {e}")
             break
 

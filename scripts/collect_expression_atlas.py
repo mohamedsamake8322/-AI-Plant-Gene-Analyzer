@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -20,6 +21,9 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = ROOT / "genes_database.json"
 GXA_BASE = "https://www.ebi.ac.uk/gxa"
 EBI_SEARCH = "https://www.ebi.ac.uk/ebisearch/ws/rest/atlas-experiments"
+# EBI Search doesn't require a key but is shared infrastructure — a small
+# pause avoids hammering it when this runs across many species in a row.
+EBI_SLEEP = 0.2
 
 
 def http_get_json(url: str, params: dict | None = None) -> dict | list:
@@ -28,10 +32,13 @@ def http_get_json(url: str, params: dict | None = None) -> dict | list:
     req = urllib.request.Request(url, headers={"Accept": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            data = json.loads(resp.read().decode("utf-8"))
     except Exception as e:
         print(f"Warning: Expression Atlas request failed for {url}: {e}")
         return {}
+    finally:
+        time.sleep(EBI_SLEEP)
+    return data
 
 
 def atlas_gene_search_url(gene: str, species: str | None = None) -> str:

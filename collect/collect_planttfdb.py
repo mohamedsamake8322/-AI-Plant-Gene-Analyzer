@@ -168,7 +168,14 @@ def _fetch_via_download(sp_code: str, species: str, retmax: int) -> list[dict]:
                 "gene_id": gene_id or tf_id,
                 "symbol": tf_id,
                 "organism": species,
-                "sequence": "",  # Sequence fetched separately if needed
+                # NOTE: the download fallback (TF_list.txt.gz) only contains
+                # TF_ID / Gene_ID / Family / Species -- no sequence. This is
+                # a genuine data gap, not a bug: PlantTFDB's sequence FASTA
+                # download endpoint hasn't been verified/implemented here
+                # yet. Don't infer "no sequence" from an empty string
+                # elsewhere in the pipeline -- check
+                # annotations.sequence_available instead.
+                "sequence": "",
                 "sequence_type": "protein",
                 "description": TF_FAMILY_DESC.get(family, f"{family} transcription factor"),
                 "length": 0,
@@ -178,6 +185,7 @@ def _fetch_via_download(sp_code: str, species: str, retmax: int) -> list[dict]:
                     "tf_id": tf_id,
                     "is_transcription_factor": True,
                     "family_description": TF_FAMILY_DESC.get(family, ""),
+                    "sequence_available": False,
                 },
                 "external_links": {
                     "planttfdb": f"http://planttfdb.gao-lab.org/tf.php?sp={sp_code}&id={tf_id}",
@@ -249,6 +257,7 @@ def _parse_tf_record(tf: dict, species: str) -> dict | None:
             "binding_domain": tf.get("domain") or tf.get("binding_domain") or "",
             "family_description": TF_FAMILY_DESC.get(family, ""),
             "regulation_targets": tf.get("targets") or [],
+            "sequence_available": bool(sequence),
         },
         "external_links": {
             "planttfdb": tf.get("url") or f"http://planttfdb.gao-lab.org/tf.php?id={tf_id}",

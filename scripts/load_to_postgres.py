@@ -7,23 +7,42 @@ Includes retry logic and batch processing for resilience.
 from __future__ import annotations
 
 import argparse
+import sys
 import time
 from pathlib import Path
 
-from postgres_utils import create_tables, insert_gene_record, load_json_records
+import psycopg
+
+from postgres_utils import create_tables, get_connection, insert_gene_record, load_json_records
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = ROOT / "genes_database.json"
 
+# Errors that mean "the database is unreachable" (paused project, network
+# down, wrong credentials). Retrying these per-record is pointless — if the
+# very first attempt hits one, every subsequent record will too, so we fail
+# the whole run immediately instead of burning 35s+ per record for hundreds
+# of records.
+CONNECTION_ERRORS = (psycopg.OperationalError,)
 
-def insert_with_retry(record: dict, max_retries: int = 3, backoff_secs: int = 5) -> bool:
-    """Insert a single record with exponential backoff retry logic."""
+
+def insert_with_retry(record: dict, conn: psycopg.Connection, max_retries: int = 3, backoff_secs: int = 5) -> bool:
+    """Insert a single record with exponential backoff retry logic.
+
+    Retries are for transient, per-record issues only (e.g. a momentary
+    lock conflict). A connection-level failure is raised immediately so the
+    caller can stop the whole run rather than retrying a dead connection
+    hundreds of times.
+    """
     for attempt in range(1, max_retries + 1):
         try:
-            insert_gene_record(record)
+            insert_gene_record(record, conn=conn)
             gene_id = record.get('gene_id') or record.get('symbol')
             print(f"✓ Inserted/updated gene: {gene_id}")
             return True
+        except CONNECTION_ERRORS:
+            # Not a per-record problem — let the caller decide (fail fast).
+            raise
         except Exception as e:
             gene_id = record.get('gene_id') or record.get('symbol')
             if attempt < max_retries:
@@ -66,19 +85,40 @@ def main(argv: list[str] | None = None) -> None:
     print(f"Loading {len(records)} gene record(s) from {path}")
     print(f"Batch size: {args.batch_size}, pause between batches: {args.batch_pause}s\n")
 
+    # Open one connection up front. This both avoids reconnecting for every
+    # single record and fails fast with a clear message if the database is
+    # unreachable (e.g. a paused Supabase project) instead of silently
+    # retrying a dead connection hundreds of times.
+    try:
+        conn = get_connection()
+    except CONNECTION_ERRORS as e:
+        print(f"✗ Could not connect to the database: {e}")
+        print("  Check that your Supabase/Postgres project is running (not paused)")
+        print("  and that DATABASE_URL / DB_* variables in .env are correct.")
+        sys.exit(1)
+
     inserted = 0
     failed = 0
-    for i, record in enumerate(records, 1):
-        success = insert_with_retry(record, max_retries=3, backoff_secs=5)
-        if success:
-            inserted += 1
-        else:
-            failed += 1
-        
-        # Pause between batches to avoid overwhelming the connection pool
-        if i % args.batch_size == 0 and i < len(records):
-            print(f"\n→ Batch complete ({i}/{len(records)}). Pausing {args.batch_pause}s...\n")
-            time.sleep(args.batch_pause)
+    try:
+        for i, record in enumerate(records, 1):
+            try:
+                success = insert_with_retry(record, conn=conn, max_retries=3, backoff_secs=5)
+            except CONNECTION_ERRORS as e:
+                print(f"\n✗ Database connection lost after {inserted} inserted, {failed} failed: {e}")
+                print(f"  Stopping — {len(records) - i + 1} record(s) not attempted.")
+                sys.exit(1)
+
+            if success:
+                inserted += 1
+            else:
+                failed += 1
+
+            # Pause between batches to avoid overwhelming the connection pool
+            if i % args.batch_size == 0 and i < len(records):
+                print(f"\n→ Batch complete ({i}/{len(records)}). Pausing {args.batch_pause}s...\n")
+                time.sleep(args.batch_pause)
+    finally:
+        conn.close()
 
     print(f"\n✓ Import complete: {inserted} inserted, {failed} failed out of {len(records)} total.")
 

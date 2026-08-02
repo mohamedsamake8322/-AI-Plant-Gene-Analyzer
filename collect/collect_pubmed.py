@@ -10,15 +10,22 @@ from __future__ import annotations
 import os
 import time
 import xml.etree.ElementTree as ET
+from pathlib import Path
 from typing import Optional
 import requests
 import request_utils as rq
+from dotenv import load_dotenv
+
+ROOT = Path(__file__).resolve().parents[1]
+load_dotenv(ROOT / ".env")
 
 EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 
 # Optional: set your email for NCBI rate limits (3 req/s → 10 req/s)
 NCBI_EMAIL = os.getenv("NCBI_EMAIL", "researcher@example.com")
 NCBI_API_KEY = os.getenv("NCBI_API_KEY", "")
+# NCBI E-utilities allow ~3 req/s without an API key, ~10 req/s with one.
+NCBI_SLEEP = 0.11 if NCBI_API_KEY else 0.34
 
 
 def fetch_pubmed_for_species(
@@ -95,7 +102,7 @@ def fetch_pubmed_bulk_genes(
     for symbol in gene_symbols:
         pubs = fetch_pubmed_for_gene(symbol, species, pubs_per_gene)
         results[symbol] = pubs
-        time.sleep(0.15)  # NCBI rate limit
+        time.sleep(NCBI_SLEEP)  # NCBI rate limit
     return results
 
 
@@ -140,7 +147,7 @@ def _efetch_summaries(pmids: list[str], species: str) -> list[dict]:
             resp = rq.get(f"{EUTILS_BASE}/efetch.fcgi", params=params, timeout=30)
             batch_records = _parse_pubmed_xml(resp.text, species)
             records.extend(batch_records)
-            time.sleep(0.1)
+            time.sleep(NCBI_SLEEP)
 
         except requests.RequestException as e:
             print(f"  [PubMed] EFetch error (batch {i}): {e}")
@@ -250,18 +257,29 @@ def publications_to_gene_record(pubs: list[dict], species: str) -> dict:
     """
     Wrap publications into a gene record for storage.
     Use this when storing species-level publication summaries.
+
+    IMPORTANT: this is NOT a gene record with real sequence data -- it's a
+    literature-metadata bundle. sequence/sequence_type are left empty
+    (not a fake "N"/"dna" placeholder) so downstream tools (e.g.
+    verify_gene_records.py's classify_record) don't silently count this as
+    a real DNA gene. Check annotations.record_type == "publication_bundle"
+    to filter these out explicitly.
     """
     return {
         "gene_id": f"PUB_{species.replace(' ', '_').upper()}",
         "symbol": f"literature_{species.split()[0].lower()}",
         "organism": species,
-        "sequence": "N",  # Placeholder — publications don't have sequences
-        "sequence_type": "dna",
+        "sequence": "",
+        "sequence_type": "",
         "description": f"Publication metadata for {species}",
-        "length": 1,
+        "length": 0,
         "source": "pubmed",
         "publications": pubs,
-        "annotations": {"publication_count": len(pubs)},
+        "annotations": {
+            "publication_count": len(pubs),
+            "record_type": "publication_bundle",
+            "sequence_available": False,
+        },
         "external_links": {},
         "traits": [],
         "expression_profiles": [],

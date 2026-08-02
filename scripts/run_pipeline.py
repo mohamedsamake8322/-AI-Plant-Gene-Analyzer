@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from pathlib import Path
 
@@ -18,6 +19,19 @@ load_dotenv(ROOT / ".env")
 sys.path.insert(0, str(SCRIPTS))
 
 import clean_data as clean_data
+
+logger = logging.getLogger("run_pipeline")
+if not logger.handlers:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler(ROOT / "logs" / "pipeline.log", encoding="utf-8")
+            if (ROOT / "logs").exists()
+            else logging.NullHandler(),
+        ],
+    )
 
 
 def build_collect_args(args: argparse.Namespace, output_path: Path) -> list[str]:
@@ -60,6 +74,8 @@ def build_collect_args(args: argparse.Namespace, output_path: Path) -> list[str]
         collect_args.append("--mrna-only")
     if not args.plants_only:
         collect_args.append("--no-plants-only")
+    if args.max_data:
+        collect_args.append("--max-data")
     collect_args += ["--out", str(output_path)]
     return collect_args
 
@@ -88,7 +104,14 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--size", type=int, default=100, help="Maximum Expression Atlas results")
     parser.add_argument("--max-length", type=int, default=0, help="Max sequence length for NCBI fetch (0 = no limit)")
     parser.add_argument("--mrna-only", action="store_true", help="Restrict NCBI search to mRNA sequences")
-    parser.add_argument("--no-plants-only", dest="plants_only", action="store_false", default=False, help="Disable plant-only filtering for GEO/NCBI")
+    parser.add_argument(
+        "--plants-only", dest="plants_only", action="store_true", default=True,
+        help="Restrict GEO/NCBI results to plant organisms (default: on)",
+    )
+    parser.add_argument(
+        "--no-plants-only", dest="plants_only", action="store_false",
+        help="Disable plant-only filtering for GEO/NCBI",
+    )
     parser.add_argument("--out-raw", default=str(ROOT / "raw_collect.json"), help="Raw collected JSON output path")
     parser.add_argument("--out-clean", default=str(ROOT / "data" / "clean" / "plant_data_clean.json"), help="Normalized JSON output path")
     parser.add_argument("--out-geo", default=str(ROOT / "data" / "raw" / "geo.json"), help="Write GEO raw JSON to file")
@@ -110,8 +133,7 @@ def main(argv: list[str] | None = None) -> None:
     import load_to_postgres as load_to_postgres
 
     collect_args = build_collect_args(args, raw_path)
-    collect_args.append("--max-data")
-    print(f"[1/3] Collecting plant data to {raw_path}")
+    logger.info("[1/3] Collecting plant data to %s", raw_path)
     collect_plant_data.main(collect_args)
 
     raw_path.parent.mkdir(parents=True, exist_ok=True)
@@ -123,31 +145,31 @@ def main(argv: list[str] | None = None) -> None:
                 json.dumps(raw_data.get("geo", []), indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
-            print(f"Wrote GEO raw JSON to {args.out_geo}")
+            logger.info("Wrote GEO raw JSON to %s", args.out_geo)
         if args.out_ensembl:
             Path(args.out_ensembl).parent.mkdir(parents=True, exist_ok=True)
             Path(args.out_ensembl).write_text(
                 json.dumps(raw_data.get("ensembl", []), indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
-            print(f"Wrote Ensembl raw JSON to {args.out_ensembl}")
+            logger.info("Wrote Ensembl raw JSON to %s", args.out_ensembl)
         if args.out_atlas:
             Path(args.out_atlas).parent.mkdir(parents=True, exist_ok=True)
             Path(args.out_atlas).write_text(
                 json.dumps(raw_data.get("expression_atlas", []), indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
-            print(f"Wrote Atlas raw JSON to {args.out_atlas}")
+            logger.info("Wrote Atlas raw JSON to %s", args.out_atlas)
         if args.out_ncbi:
             Path(args.out_ncbi).parent.mkdir(parents=True, exist_ok=True)
             Path(args.out_ncbi).write_text(
                 json.dumps(raw_data.get("ncbi", []), indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
-            print(f"Wrote NCBI raw JSON to {args.out_ncbi}")
+            logger.info("Wrote NCBI raw JSON to %s", args.out_ncbi)
 
     if not args.skip_clean:
-        print(f"[2/3] Cleaning and normalizing collected data to {clean_path}")
+        logger.info("[2/3] Cleaning and normalizing collected data to %s", clean_path)
         clean_data.clean(raw_path, clean_path)
 
     if not args.skip_load:
@@ -156,10 +178,10 @@ def main(argv: list[str] | None = None) -> None:
         if args.create_tables:
             load_args.append("--create-tables")
         load_args += ["--json-file", str(load_source)]
-        print(f"[3/3] Loading data from {load_source} into PostgreSQL")
+        logger.info("[3/3] Loading data from %s into PostgreSQL", load_source)
         load_to_postgres.main(load_args)
 
-    print("Pipeline complete.")
+    logger.info("Pipeline complete.")
 
 
 if __name__ == "__main__":
