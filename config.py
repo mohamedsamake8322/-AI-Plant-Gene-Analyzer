@@ -1,7 +1,7 @@
 """
 config.py
 ---------
-Centralized configuration for the AI-Powered Plant Gene Analyzer.
+Centralized configuration for the Plant Gene Analyzer.
 Manages all constants, thresholds, and settings.
 """
 

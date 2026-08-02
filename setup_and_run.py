@@ -2,7 +2,7 @@
 """
 setup_and_run.py
 ----------------
-Installation helper and setup script for AI-Powered Plant Gene Analyzer.
+Installation helper and setup script for Plant Gene Analyzer.
 
 This script:
 1. Checks Python version
@@ -123,7 +123,7 @@ def main():
     print("\n")
     print("╔" + "=" * 68 + "╗")
     print("║" + " " * 68 + "║")
-    print("║" + "  🧬 AI-Powered Plant Gene Analyzer - Setup & Launch".center(68) + "║")
+    print("║" + "  🧬 Plant Gene Analyzer - Setup & Launch".center(68) + "║")
     print("║" + "  v2.0 (May 2026)".center(68) + "║")
     print("║" + " " * 68 + "║")
     print("╚" + "=" * 68 + "╝\n")

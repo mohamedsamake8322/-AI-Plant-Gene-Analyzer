@@ -1,15 +1,15 @@
-ï»¿# ğŸ§¬ Plant Gene Analyzer
+# ?? Plant Gene Analyzer
 
-Application bioinformatique locale et web pour analyser des sÃ©quences ADN/ARN/protÃ©ines vÃ©gÃ©tales, comparer les rÃ©sultats Ã  une base de rÃ©fÃ©rence, produire des interprÃ©tations biologiques et exporter des rapports professionnels.
+Application bioinformatique locale et web pour analyser des séquences ADN/ARN/protéines végétales, comparer les résultats à une base de référence, produire des interprétations biologiques et exporter des rapports professionnels.
 
 ---
 
-## ğŸš€ DÃ©marrage rapide
+## ?? Démarrage rapide
 
-### PrÃ©requis
+### Prérequis
 - Python 3.8+
 - pip
-- Internet pour installer les dÃ©pendances
+- Internet pour installer les dépendances
 
 ### Installation en 2 minutes
 ```bash
@@ -26,30 +26,30 @@ L'application est disponible sur http://localhost:8501.
 
 ### Test rapide
 1. Ouvrir l'interface Streamlit
-2. Charger la dÃ©mo "DREB-like"
-3. Cliquer sur "ğŸ”¬ Analyze Sequence"
+2. Charger la démo "DREB-like"
+3. Cliquer sur "?? Analyze Sequence"
 4. Explorer les onglets Statistics, Similarity, AI Interpretation
 
 ---
 
-## âœ¨ FonctionnalitÃ©s principales
+## ? Fonctionnalités principales
 
 ### Analyse bioinformatique
-- Calcul du GC%, AT%, distribution nuclÃ©otidique
-- Validation de sÃ©quences et dÃ©tection d'erreurs
-- Traduction ADN â†’ protÃ©ines sur plusieurs cadres
-- DÃ©tection de mutations et comparaison de sÃ©quences
-- Recherche de motifs rÃ©gulateurs (TATA-box, CAAT-box, etc.)
+- Calcul du GC%, AT%, distribution nucléotidique
+- Validation de séquences et détection d'erreurs
+- Traduction ADN ? protéines sur plusieurs cadres
+- Détection de mutations et comparaison de séquences
+- Recherche de motifs régulateurs (TATA-box, CAAT-box, etc.)
 
-### Comparaison Ã  une base de donnÃ©es
+### Comparaison à une base de données
 - Alignement local et global
-- Scores de similaritÃ©
-- Meilleurs matchs avec mÃ©tadonnÃ©es
-- Classification automatique des similaritÃ©s
+- Scores de similarité
+- Meilleurs matchs avec métadonnées
+- Classification automatique des similarités
 
-### InterprÃ©tation IA
-- Analyse rÃ¨gle-based des caractÃ©ristiques biologiques
-- PrÃ©diction de rÃ©sistance au stress (sÃ©cheresse, chaleur, maladies)
+### Interprétation IA
+- Analyse règle-based des caractéristiques biologiques
+- Prédiction de résistance au stress (sécheresse, chaleur, maladies)
 - Suggestions agricoles et fonctionnelles
 
 ### Visualisation et export
@@ -60,60 +60,60 @@ L'application est disponible sur http://localhost:8501.
 
 ---
 
-## ğŸ§± Architecture du projet
+## ?? Architecture du projet
 
 ```text
 Utilisateur
-   â†“
+   ?
 Streamlit UI (app.py)
-   â†“
+   ?
 Analyse bioinformatique (bioinformatics.py)
-   â†“
-Comparaison base de donnÃ©es (similarityengine.py)
-   â†“
-InterprÃ©tation IA (aiinterpreter.py)
-   â†“
+   ?
+Comparaison base de données (similarityengine.py)
+   ?
+Interprétation IA (aiinterpreter.py)
+   ?
 Export / visualisation / logs
 ```
 
 Le flux principal est le suivant :
-1. L'utilisateur fournit une sÃ©quence ADN/ARN/protÃ©ine
-2. L'application valide et nettoie la sÃ©quence
-3. Les analyses statistiques et comparatives sont calculÃ©es
-4. Un rapport est gÃ©nÃ©rÃ© avec explications biologiques
-5. Les rÃ©sultats peuvent Ãªtre exportÃ©s ou sauvegardÃ©s
+1. L'utilisateur fournit une séquence ADN/ARN/protéine
+2. L'application valide et nettoie la séquence
+3. Les analyses statistiques et comparatives sont calculées
+4. Un rapport est généré avec explications biologiques
+5. Les résultats peuvent être exportés ou sauvegardés
 
 ---
 
-## ğŸ“ Modules principaux
+## ?? Modules principaux
 
 ### app.py
-Interface utilisateur Streamlit. GÃ¨re l'entrÃ©e de sÃ©quence, les paramÃ¨tres, l'exÃ©cution du pipeline d'analyse, l'affichage des rÃ©sultats et les exports.
+Interface utilisateur Streamlit. Gère l'entrée de séquence, les paramètres, l'exécution du pipeline d'analyse, l'affichage des résultats et les exports.
 
 ### bioinformatics.py
 Moteur central de traitement biologique. Contient les fonctions de nettoyage, validation, calcul GC, distribution, traduction, mutations et motifs.
 
 ### similarityengine.py
-Moteur de comparaison aux gÃ¨nes de rÃ©fÃ©rence. Fournit les scores de similaritÃ©, les alignements et la sÃ©lection des meilleurs matchs.
+Moteur de comparaison aux gènes de référence. Fournit les scores de similarité, les alignements et la sélection des meilleurs matchs.
 
 ### aiinterpreter.py
-InterprÃ©tation intelligente des rÃ©sultats via logique de rÃ¨gles. Produit des commentaires biologiques, des prÃ©visions fonctionnelles et des recommandations.
+Interprétation intelligente des résultats via logique de règles. Produit des commentaires biologiques, des prévisions fonctionnelles et des recommandations.
 
 ### visualization.py
-GÃ©nÃ©ration de graphiques interactifs avec Plotly : composition nuclÃ©otidique, GC profile, similaritÃ©, mutations.
+Génération de graphiques interactifs avec Plotly : composition nucléotidique, GC profile, similarité, mutations.
 
 ### config.py
-Configuration centralisÃ©e : chemins, seuils, logging, styles, paramÃ¨tres d'analyse.
+Configuration centralisée : chemins, seuils, logging, styles, paramètres d'analyse.
 
 ### export_utils.py
 Utilitaires d'export multi-format : JSON, CSV, HTML.
 
 ### setup_and_run.py
-Assistant d'installation et de vÃ©rification de l'environnement.
+Assistant d'installation et de vérification de l'environnement.
 
 ---
 
-## ğŸ§ª Tests
+## ?? Tests
 
 Le projet contient une suite de tests unitaires pour le moteur bioinformatique.
 
@@ -128,7 +128,7 @@ pytest test_bioinformatics.py --cov=bioinformatics
 
 ---
 
-## ğŸ“¦ Installation dÃ©taillÃ©e
+## ?? Installation détaillée
 
 ### 1. Ouvrir un terminal
 Windows : PowerShell ou CMD
@@ -137,7 +137,7 @@ Windows : PowerShell ou CMD
 cd c:\Downloads\IA
 ```
 
-### 2. CrÃ©er un environnement virtuel (recommandÃ©)
+### 2. Créer un environnement virtuel (recommandé)
 ```bash
 python -m venv env
 env\Scripts\activate
@@ -149,14 +149,14 @@ python3 -m venv env
 source env/bin/activate
 ```
 
-### 3. Installer les dÃ©pendances
+### 3. Installer les dépendances
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. VÃ©rifier l'installation
+### 4. Vérifier l'installation
 ```bash
-python -c "import streamlit, plotly, bioinformatics; print('âœ… OK')"
+python -c "import streamlit, plotly, bioinformatics; print('? OK')"
 ```
 
 ### 5. Lancer l'application
@@ -164,34 +164,34 @@ python -c "import streamlit, plotly, bioinformatics; print('âœ… OK')"
 streamlit run app.py
 ```
 
-Si le port 8501 est dÃ©jÃ  utilisÃ©, utiliser :
+Si le port 8501 est déjà utilisé, utiliser :
 ```bash
 streamlit run app.py --server.port 8502
 ```
 
 ---
 
-## ğŸ”¬ Utilisation
+## ?? Utilisation
 
 ### Workflow simple
-1. Coller une sÃ©quence ADN ou charger un fichier FASTA
-2. Choisir les paramÃ¨tres de l'analyse
-3. Cliquer sur "ğŸ”¬ Analyze Sequence"
-4. Consulter les rÃ©sultats dans les onglets
+1. Coller une séquence ADN ou charger un fichier FASTA
+2. Choisir les paramètres de l'analyse
+3. Cliquer sur "?? Analyze Sequence"
+4. Consulter les résultats dans les onglets
 5. Exporter le rapport si besoin
 
-### DonnÃ©es de dÃ©monstration
+### Données de démonstration
 Le projet inclut des fichiers de test comme :
 - Data/sample_gene.fasta
 - Data/sample_protein.fasta
 
-Vous pouvez les charger directement via l'interface pour tester les fonctionnalitÃ©s.
+Vous pouvez les charger directement via l'interface pour tester les fonctionnalités.
 
 ---
 
-## ğŸŒ± Collecte de donnÃ©es vÃ©gÃ©tales
+## ?? Collecte de données végétales
 
-Le projet inclut Ã©galement un pipeline de collecte de donnÃ©es via le dossier `collect` et le dossier `scripts`.
+Le projet inclut également un pipeline de collecte de données via le dossier `collect` et le dossier `scripts`.
 
 ### Collecte multi-sources
 Le script principal est :
@@ -204,129 +204,129 @@ python collect/collect_all_sources.py --all-plants --workers 4 --retmax 300
 python scripts/collect_multi_type.py --plant "Oryza sativa" --retmax 300
 ```
 
-### Collecte de mÃ©tadonnÃ©es et pipeline complet
+### Collecte de métadonnées et pipeline complet
 Des scripts existent pour :
 - GEO / Expression Atlas / Ensembl / NCBI
 - UniProt, KEGG, PlantTFDB, PubMed
-- Nettoyage des donnÃ©es
+- Nettoyage des données
 - Import dans PostgreSQL
-- Reconstruction de bases fusionnÃ©es
+- Reconstruction de bases fusionnées
 
-Les pipelines sont conÃ§us pour produire des fichiers JSON par espÃ¨ce et un master JSON global.
+Les pipelines sont conçus pour produire des fichiers JSON par espèce et un master JSON global.
 
 ---
 
-## ğŸ§¬ SchÃ©ma professionnel (version avancÃ©e)
+## ?? Schéma professionnel (version avancée)
 
-Le projet inclut Ã©galement un schÃ©ma de donnÃ©es professionnel et un chargeur compatible.
+Le projet inclut également un schéma de données professionnel et un chargeur compatible.
 
-### Fichiers associÃ©s
+### Fichiers associés
 - professional_schema.py
 - professional_loader.py
 - scripts/transform_schema.py
 - scripts/clean_data.py
 
-### IntÃ©rÃªt
-- Versioning du schÃ©ma
-- MÃ©tadonnÃ©es structurÃ©es (taxonomie, qualitÃ©, analytics)
-- CompatibilitÃ© avec l'ancien format JSON
-- PrÃ©paration Ã  une utilisation plus robuste et Ã©volutive
+### Intérêt
+- Versioning du schéma
+- Métadonnées structurées (taxonomie, qualité, analytics)
+- Compatibilité avec l'ancien format JSON
+- Préparation à une utilisation plus robuste et évolutive
 
 ---
 
-## âœ… AmÃ©liorations majeures implÃ©mentÃ©es
+## ? Améliorations majeures implémentées
 
-Le projet a Ã©tÃ© enrichi avec plusieurs amÃ©liorations professionnelles :
-- Cache de chargement de la base de donnÃ©es
+Le projet a été enrichi avec plusieurs améliorations professionnelles :
+- Cache de chargement de la base de données
 - Gestion robuste des erreurs et logs
 - Export JSON/CSV/HTML
-- Configuration centralisÃ©e
+- Configuration centralisée
 - Visualisation ASCII des alignements
-- Tests unitaires automatisÃ©s
-- Pipeline de collecte et de nettoyage de donnÃ©es
+- Tests unitaires automatisés
+- Pipeline de collecte et de nettoyage de données
 
 ---
 
-## ğŸ›£ï¸ Roadmap
+## ??? Roadmap
 
-### PrioritÃ©s court terme
-- Support des sÃ©quences protÃ©iques avancÃ©
+### Priorités court terme
+- Support des séquences protéiques avancé
 - Support batch / multi-FASTA
-- Base de donnÃ©es plus flexible
+- Base de données plus flexible
 - Exports professionnels enrichis (XLSX, rapport HTML plus riche)
 
-### AmÃ©liorations avancÃ©es
-- IntÃ©gration BLAST local ou API NCBI BLAST
-- Alignements multiples et phylogÃ©nie
-- Annotation gÃ©nomique (GFF/BED)
+### Améliorations avancées
+- Intégration BLAST local ou API NCBI BLAST
+- Alignements multiples et phylogénie
+- Annotation génomique (GFF/BED)
 - Analyse de variantes et d'indels
 
 ---
 
-## ğŸ§° Structure du projet
+## ?? Structure du projet
 
 ```text
 IA/
-â”œâ”€â”€ app.py
-â”œâ”€â”€ bioinformatics.py
-â”œâ”€â”€ similarityengine.py
-â”œâ”€â”€ aiinterpreter.py
-â”œâ”€â”€ visualization.py
-â”œâ”€â”€ config.py
-â”œâ”€â”€ export_utils.py
-â”œâ”€â”€ setup_and_run.py
-â”œâ”€â”€ professional_schema.py
-â”œâ”€â”€ professional_loader.py
-â”œâ”€â”€ genes_database.json
-â”œâ”€â”€ requirements.txt
-â”œâ”€â”€ README.md
-â”œâ”€â”€ collect/
-â”œâ”€â”€ scripts/
-â”œâ”€â”€ tests/
-â””â”€â”€ logs/ / results/ (gÃ©nÃ©rÃ©s automatiquement)
++-- app.py
++-- bioinformatics.py
++-- similarityengine.py
++-- aiinterpreter.py
++-- visualization.py
++-- config.py
++-- export_utils.py
++-- setup_and_run.py
++-- professional_schema.py
++-- professional_loader.py
++-- genes_database.json
++-- requirements.txt
++-- README.md
++-- collect/
++-- scripts/
++-- tests/
++-- logs/ / results/ (générés automatiquement)
 ```
 
 ---
 
-## ğŸ› DÃ©pannage courant
+## ?? Dépannage courant
 
 ### Python introuvable
-VÃ©rifier :
+Vérifier :
 ```bash
 python --version
 ```
 
 ### Module introuvable
-RÃ©installer les dÃ©pendances :
+Réinstaller les dépendances :
 ```bash
 pip install -r requirements.txt
 ```
 
-### Port 8501 dÃ©jÃ  utilisÃ©
+### Port 8501 déjà utilisé
 ```bash
 streamlit run app.py --server.port 8502
 ```
 
 ### Fichier genes_database.json absent
-VÃ©rifier que le fichier est bien prÃ©sent Ã  la racine du projet.
+Vérifier que le fichier est bien présent à la racine du projet.
 
-### Tests qui Ã©chouent
+### Tests qui échouent
 ```bash
 pytest test_bioinformatics.py -v -s
 ```
 
 ---
 
-## ğŸ“š Documentation unique
+## ?? Documentation unique
 
-Ce README est dÃ©sormais le document principal et unique du projet. Il regroupe les informations de dÃ©marrage, dâ€™installation, dâ€™utilisation, dâ€™architecture, de collecte de donnÃ©es et de roadmap.
-
----
-
-## ğŸ¯ RÃ©sumÃ©
-
-Ce projet combine une interface Streamlit simple, un moteur bioinformatique robuste, une base de comparaison de gÃ¨nes et des outils de collecte de donnÃ©es vÃ©gÃ©tales. Il est conÃ§u pour Ãªtre Ã  la fois accessible pour un usage rapide et extensible pour des analyses plus avancÃ©es.
+Ce README est désormais le document principal et unique du projet. Il regroupe les informations de démarrage, d’installation, d’utilisation, d’architecture, de collecte de données et de roadmap.
 
 ---
 
-Happy analyzing! ğŸ§¬
+## ?? Résumé
+
+Ce projet combine une interface Streamlit simple, un moteur bioinformatique robuste, une base de comparaison de gènes et des outils de collecte de données végétales. Il est conçu pour être à la fois accessible pour un usage rapide et extensible pour des analyses plus avancées.
+
+---
+
+Happy analyzing! ??

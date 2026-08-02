@@ -1,7 +1,7 @@
 """
 visualization.py
 ----------------
-Visualization module for the AI-Powered Plant Gene Analyzer.
+Visualization module for the Plant Gene Analyzer.
 Produces Plotly and Matplotlib figures from analysis results.
 All functions return Plotly figures (compatible with st.plotly_chart).
 """

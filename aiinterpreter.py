@@ -1,7 +1,7 @@
 """
 aiinterpreter.py
 ----------------
-Rule-based AI interpretation engine for the AI-Powered Plant Gene Analyzer.
+Rule-based AI interpretation engine for the Plant Gene Analyzer.
 Converts bioinformatics results into human-readable biological explanations
 and agronomic recommendations — no external API required.
 """

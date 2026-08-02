@@ -1,7 +1,7 @@
 """
 app.py
 ------
-AI-Powered Plant Gene Analyzer — Streamlit frontend.
+Plant Gene Analyzer — Streamlit frontend.
 
 Run with:
     streamlit run app.py
@@ -217,7 +217,7 @@ with st.sidebar:
 
 # ─── Main header ───────────────────────────────────────────────────────────────
 st.markdown(
-    "<h1>🧬 AI-Powered Plant Gene Analyzer</h1>",
+    "<h1>🧬 Plant Gene Analyzer</h1>",
     unsafe_allow_html=True,
 )
 st.markdown(
@@ -902,7 +902,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
         )
 
         report_lines = [
-            "AI-Powered Plant Gene Analyzer — Analysis Report",
+            "Plant Gene Analyzer — Analysis Report",
             "=" * 50,
             f"Sequence Length: {stats['length']} {'aa' if sequence_type == 'protein' else 'bp'}",
         ]
