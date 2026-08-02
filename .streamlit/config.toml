@@ -8,3 +8,11 @@ port = 8501
 
 [runner]
 magicEnabled = false
+
+[theme]
+base = "dark"
+primaryColor = "#00d9a3"
+backgroundColor = "#060b14"
+secondaryBackgroundColor = "#0d1b2a"
+textColor = "#e8f4f0"
+font = "sans serif"
