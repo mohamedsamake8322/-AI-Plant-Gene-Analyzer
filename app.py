@@ -12,18 +12,17 @@ import json
 import os
 import io
 import logging
-import re
 import sys
 from pathlib import Path
 
 # ── Local modules ──────────────────────────────────────────────────────────────
 import bioinformatics as bio
 import similarityengine as sim
-import aiinterpreter as ai_interp
 import visualization as viz
 import export_utils as export_util
 import sequence_loader as loader
 import config
+import pipeline
 
 SCRIPT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_ROOT / "scripts"))
@@ -60,107 +59,30 @@ def load_css(css_file: str = "style.css") -> None:
         st.warning("⚠️ Could not load custom styling (CSS file error)")
 
 
-def analyze_sequence_record(record: dict[str, str], input_type: str, reading_frame: int) -> dict:
-    """Analyze a single sequence record and return a structured result."""
-    seq_type = input_type
-    if seq_type == "Auto detect":
-        seq_type = loader.detect_sequence_type(record["sequence"])
-        if seq_type == "unknown":
-            seq_type = "dna"
-
-    sequence = bio.clean_sequence(record["sequence"], sequence_type="protein" if seq_type == "protein" else "dna")
-    is_valid, validation_msg = bio.validate_sequence(sequence, sequence_type=seq_type)
-    if not is_valid:
-        raise ValueError(validation_msg)
-
-    if seq_type == "protein":
-        stats = bio.generate_protein_statistics(sequence)
-        dist = bio.amino_acid_distribution(sequence)
-        translation = None
-        protein_props = bio.protein_properties(sequence)
-        orfs = []
-    else:
-        stats = bio.sequence_statistics(sequence)
-        dist = bio.nucleotide_distribution(sequence)
-        translation = bio.translate_dna(sequence, frame=reading_frame)
-        protein_props = None
-        orfs = bio.find_orfs(sequence)
-
-    motifs = bio.find_motifs(sequence)
-    similarity_results = []
-    best_match = None
-    mutation_report = None
-
-    header_metadata = record.get("metadata", {}) or {}
-    metadata_warnings: list[str] = []
-    if seq_type == "dna" and header_metadata.get("gc"):
-        try:
-            annotated_gc = float(header_metadata["gc"].rstrip("%"))
-            if abs(annotated_gc - stats["gc_content"]) > 0.2:
-                metadata_warnings.append(
-                    f"FASTA header GC annotation {header_metadata['gc']} does not match computed GC {stats['gc_content']}%."
-                )
-        except ValueError:
-            metadata_warnings.append(
-                f"FASTA header GC annotation '{header_metadata['gc']}' is not a valid percentage."
-            )
-
-    if header_metadata.get("length"):
-        try:
-            annotated_length = int(re.sub(r"[^0-9]", "", header_metadata["length"]))
-            if annotated_length != stats["length"]:
-                metadata_warnings.append(
-                    f"FASTA header length annotation {annotated_length} does not match actual length {stats['length']} bp."
-                )
-        except ValueError:
-            pass
-
-    try:
-        similarity_results = sim.compare_with_database(sequence, db, top_n=top_n_matches)
-        best_match = similarity_results[0] if similarity_results else None
-    except Exception as e:
-        logger.warning(f"Database comparison failed: {e}")
-        similarity_results = []
-
-    if best_match and db:
-        try:
-            ref_seq = db[best_match["gene_name"]]["sequence"].upper().replace(" ", "")
-            ref_type = db[best_match["gene_name"]].get("sequence_type") or bio.detect_sequence_type(ref_seq)
-            mut_seq_type = "protein" if seq_type == "protein" or ref_type == "protein" else "dna"
-            mutation_report = bio.detect_mutations(sequence, ref_seq, seq_type=mut_seq_type)
-        except Exception as e:
-            logger.warning(f"Mutation detection failed: {e}")
-            mutation_report = None
-
-    interpretation = {}
-    try:
-        interpretation = ai_interp.interpret(stats, similarity_results, mutation_report)
-    except Exception as e:
-        logger.warning(f"AI interpretation failed: {e}")
-
-    return {
-        "header": record.get("header", "Sequence"),
-        "sequence": sequence,
-        "stats": stats,
-        "protein_stats": protein_props,
-        "dist": dist,
-        "translation": translation,
-        "motifs": motifs,
-        "similarity_results": similarity_results,
-        "best_match": best_match,
-        "mutation_report": mutation_report,
-        "interpretation": interpretation,
-        "sequence_type": seq_type,
-        "orfs": orfs,
-        "header_metadata": header_metadata,
-        "metadata_warnings": metadata_warnings,
-    }
+# analyze_sequence_record() and get_alignment_map() now live in pipeline.py
+# (see import below) — this keeps the analysis orchestration testable and
+# reusable independently of the Streamlit UI.
 
 
-def get_alignment_map(match: dict) -> dict[str, str] | None:
-    if isinstance(match.get("alignment"), dict):
-        return match["alignment"].get("alignment_map")
-    return None
+@st.cache_data(show_spinner=False)
+def _cached_analyze(record_json: str, input_type: str, reading_frame: int, top_n_matches: int, _db: dict) -> dict:
+    """Streamlit-cached wrapper around pipeline.analyze_sequence_record.
+
+    Avoids recomputing GC%, ORFs, alignments, mutation detection, etc. when
+    Streamlit re-runs the script for an unrelated widget interaction (e.g.
+    toggling a chart option) with the exact same sequence and settings.
+    The record is passed as a JSON string (not a dict) because st.cache_data
+    needs a hashable argument. `_db` is prefixed with an underscore, a
+    Streamlit convention meaning "don't hash this for the cache key" — it's
+    already stable for the session via load_gene_database_cached() above, so
+    re-hashing a potentially large dict on every single call would be wasted
+    work.
+    """
+    record = json.loads(record_json)
+    return pipeline.analyze_sequence_record(
+        record, input_type, reading_frame,
+        db=_db, top_n_matches=top_n_matches, logger=logger,
+    )
 
 
 # ─── Load gene database with caching ────────────────────────────────────────────────────────────
@@ -309,9 +231,29 @@ with col_input:
     selected_index = 0
 
     if uploaded_file is not None:
-        content = uploaded_file.read().decode("utf-8", errors="ignore")
-        records = loader.parse_fasta(content)
-        st.info(f"File loaded: {uploaded_file.name}")
+        if uploaded_file.size > config.MAX_UPLOAD_SIZE_BYTES:
+            st.error(
+                f"❌ File too large ({uploaded_file.size / 1024 / 1024:.1f} MB). "
+                f"Maximum allowed is {config.MAX_UPLOAD_SIZE_BYTES / 1024 / 1024:.0f} MB."
+            )
+            content = None
+        else:
+            raw_bytes = uploaded_file.read()
+            try:
+                content = raw_bytes.decode("utf-8")
+            except UnicodeDecodeError:
+                try:
+                    content = raw_bytes.decode("latin-1")
+                    st.warning(
+                        "⚠️ File is not valid UTF-8; decoded as Latin-1 instead. "
+                        "Double-check the sequence for unexpected characters."
+                    )
+                except UnicodeDecodeError:
+                    st.error("❌ Could not decode file — unsupported text encoding.")
+                    content = None
+        if content is not None:
+            records = loader.parse_fasta(content)
+            st.info(f"File loaded: {uploaded_file.name}")
     elif raw_sequence:
         records = loader.parse_fasta(raw_sequence)
     
@@ -387,7 +329,11 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                         f"Starting analysis for record {idx + 1}/{len(analysis_targets)}: {record.get('header', 'Sequence')}"
                     )
                     analyzed_results.append(
-                        analyze_sequence_record(record, sequence_input_type, reading_frame)
+                        _cached_analyze(
+                            json.dumps(record, sort_keys=True),
+                            sequence_input_type, reading_frame, top_n_matches,
+                            _db=db,
+                        )
                     )
 
             st.session_state["last_results"] = analyzed_results
@@ -414,7 +360,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             "Select a sequence to inspect in this batch:",
             options=list(range(len(last_results))),
             format_func=lambda i: record_options[i],
-            help="Choisissez une séquence pour afficher ses statistiques détaillées et ses graphiques.",
+            help="Choose a sequence to display its detailed statistics and charts.",
         )
 
     result = last_results[selected_batch_index]
@@ -442,7 +388,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             for idx, item in enumerate(last_results, start=1):
                 similarity_value = "—"
                 if item["best_match"]:
-                    similarity_score = item["best_match"].get("similarity_score", 0.0)
+                    similarity_score = item["best_match"]["similarity_score"]
                     similarity_value = f"{similarity_score:.1f}"
                 summary_rows.append({
                     "Sequence": item["header"],
@@ -548,7 +494,6 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
     st.markdown("---")
 
     # ── KPI Metrics ────────────────────────────────────────────────────────────
-    # ── KPI Metrics ───────────────────────────────────────────────────────────
     st.markdown("### Sequence Overview")
     if sequence_type == "protein":
         m1, m2, m3, m4, m5 = st.columns(5)

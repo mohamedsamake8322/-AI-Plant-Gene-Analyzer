@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import datetime
 import json
 import sys
 from pathlib import Path
@@ -86,7 +87,9 @@ def normalize_value(value: Any) -> str:
         return ""
     if isinstance(value, str):
         return value
-    return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, (datetime.datetime, datetime.date)):
+        return value.isoformat()
+    return json.dumps(value, ensure_ascii=False, default=str)
 
 
 def create_report_row(rec: dict, preview_length: int, show_seq: bool) -> dict:
@@ -180,10 +183,17 @@ def main(argv: list[str] | None = None) -> None:
         print(f"  {rec_type}: {count}")
 
     print("\nSummary:")
-    print(f"{'gene_id':<20}{'symbol':<15}{'organism':<30}{'type':<15}{'len':>6}{'source':>15}")
-    print("-" * 110)
+    header = f"{'gene_id':<20} | {'symbol':<15} | {'organism':<30} | {'type':<15} | {'len':>6} | {'source':>15}"
+    print(header)
+    print("-" * len(header))
     for r in rows:
-        print(f"{r['gene_id'][:20]:<20}{r['symbol'][:15]:<15}{r['organism'][:30]:<30}{r['type'][:15]:<15}{str(r['length']):>6}{str(r['source'])[:15]:>15}")
+        gene_id = r['gene_id'][:20]
+        symbol = r['symbol'][:15]
+        organism = r['organism'][:30]
+        rtype = r['type'][:15]
+        length = str(r['length'])
+        source = str(r['source'])[:15]
+        print(f"{gene_id:<20} | {symbol:<15} | {organism:<30} | {rtype:<15} | {length:>6} | {source:>15}")
         if args.show_seq and r.get("full_sequence"):
             print(f"  SEQ: {r['full_sequence']}\n")
         elif r['sequence_preview']:

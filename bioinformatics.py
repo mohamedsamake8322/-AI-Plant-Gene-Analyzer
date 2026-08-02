@@ -32,7 +32,14 @@ CODON_TABLE: dict[str, str] = {
     "GGT": "G", "GGC": "G", "GGA": "G", "GGG": "G",
 }
 
-VALID_NUCLEOTIDES = set("ATGCN")
+# Standard IUPAC nucleotide ambiguity codes (R,Y,S,W,K,M,B,D,H,V), commonly
+# present in real sequencing output (e.g. heterozygous calls, low-confidence
+# base calls). N is the "any base" wildcard. Accepting them avoids rejecting
+# otherwise-valid plant sequences outright; downstream statistics (GC%, codon
+# lookups, motif search) already only match concrete A/T/G/C so ambiguous
+# positions are simply excluded from those counts rather than causing errors.
+IUPAC_AMBIGUITY_CODES = set("RYSWKMBDHV")
+VALID_NUCLEOTIDES = set("ATGCN") | IUPAC_AMBIGUITY_CODES
 AMINO_ACIDS = set("ACDEFGHIKLMNPQRSTVWYBXZ*")
 
 
@@ -51,25 +58,36 @@ def clean_sequence(sequence: str, sequence_type: str = "dna") -> str:
         cleaned = re.sub(r"[^A-Z*]", "", joined)
         cleaned = "".join(ch for ch in cleaned if ch in AMINO_ACIDS)
     else:
-        cleaned = re.sub(r"[^ATGCNatgcn]", "", joined).upper()
+        cleaned = re.sub(r"[^ATGCNRYSWKMBDHVatgcnryswkmbdhv]", "", joined).upper()
     return cleaned
 
 
-def validate_sequence(sequence: str, sequence_type: str = "dna") -> tuple[bool, str]:
-    """Validate a DNA or protein sequence."""
+def validate_sequence(
+    sequence: str,
+    sequence_type: str = "dna",
+    min_dna_length: int = 10,
+    min_protein_length: int = 5,
+) -> tuple[bool, str]:
+    """Validate a DNA or protein sequence.
+
+    min_dna_length / min_protein_length default to this module's own
+    standalone thresholds so it keeps working with no config dependency, but
+    callers (e.g. the Streamlit app) can pass config.MIN_SEQUENCE_LENGTH /
+    config.MIN_PROTEIN_LENGTH to make config.py the single source of truth.
+    """
     if not sequence:
         return False, "Sequence is empty."
 
     if sequence_type == "protein":
-        if len(sequence) < 5:
-            return False, f"Protein sequence is too short ({len(sequence)} aa). Minimum is 5 aa."
+        if len(sequence) < min_protein_length:
+            return False, f"Protein sequence is too short ({len(sequence)} aa). Minimum is {min_protein_length} aa."
         invalid = set(sequence) - AMINO_ACIDS
         if invalid:
             return False, f"Invalid protein characters found: {', '.join(sorted(invalid))}"
         return True, "Protein sequence is valid."
 
-    if len(sequence) < 10:
-        return False, f"Sequence is too short ({len(sequence)} bp). Minimum is 10 bp."
+    if len(sequence) < min_dna_length:
+        return False, f"Sequence is too short ({len(sequence)} bp). Minimum is {min_dna_length} bp."
     invalid = set(sequence) - VALID_NUCLEOTIDES
     if invalid:
         return False, f"Invalid characters found: {', '.join(sorted(invalid))}"
@@ -151,6 +169,7 @@ def sequence_statistics(sequence: str) -> dict:
         "orf_count": len(orfs),
         "longest_orf_length": orfs[0]["length"] if orfs else 0,
         "longest_orf_frame": orfs[0]["frame"] if orfs else None,
+        "orfs": orfs,
     }
 
 
@@ -229,9 +248,23 @@ def protein_properties(sequence: str) -> dict[str, float]:
     }
 
 
+# Mass of one water molecule (Da). NOTE: the values in RESIDUE_MONOISOTOPIC_MASS
+# are average masses of the FREE amino acids (verified against standard
+# reference tables, e.g. Ala=89.09, Gly=75.07), not residue masses and not
+# monoisotopic masses despite the constant's name. Linking n free amino acids
+# into a polypeptide chain releases (n-1) water molecules via condensation,
+# so the chain's mass is sum(free amino acid masses) - (n-1) * WATER_MASS.
+# The constant name is kept for backward compatibility with callers/tests.
+WATER_MASS = 18.02
+
+
 def calculate_molecular_weight(sequence: str) -> float:
-    """Estimate the molecular weight of a protein sequence."""
-    return sum(RESIDUE_MONOISOTOPIC_MASS.get(res, 110.0) for res in sequence)
+    """Estimate the average molecular weight of a protein sequence (Da)."""
+    if not sequence:
+        return 0.0
+    total_free_mass = sum(RESIDUE_MONOISOTOPIC_MASS.get(res, 110.0) for res in sequence)
+    water_released = (len(sequence) - 1) * WATER_MASS
+    return total_free_mass - water_released
 
 
 def calculate_hydrophobicity(sequence: str) -> float:
@@ -278,52 +311,93 @@ def estimate_isoelectric_point(sequence: str) -> float:
 STOP_CODONS = {"TAA", "TAG", "TGA"}
 
 
+# Cap on how many amino acids of an ORF's protein translation we compute and
+# store. A biologically real gene rarely needs this — stop codons appear
+# roughly every ~20 codons in random DNA, and the vast majority of plant
+# proteins are well under 1000 aa — but a pathological/adversarial input
+# with very few stop codons can produce many long, overlapping ORFs.
+# Without this cap, translating every one of them in full would still cost
+# O(total ORF length), which can approach O(n) per ORF and O(n^2) overall
+# even though the stop-codon search itself is O(n).
+ORF_PROTEIN_TRANSLATION_LIMIT_AA = 1000
+
+
 def _find_orfs_on_strand(sequence: str, frame_label_prefix: str, min_length: int) -> list[dict[str, object]]:
+    """Scan a single strand for ORFs across its 3 reading frames.
+
+    Runtime: O(n) per frame instead of O(n^2). The original implementation
+    re-scanned forward from every ATG codon to find its stop codon
+    independently, which degenerates to O(n^2) on sequences with many ATGs
+    and few/no in-frame stop codons (e.g. a long sequence with no stop at
+    all). This version precomputes, once per frame, the position of the
+    next in-frame stop codon at or after every codon position, then looks
+    each ATG's stop up in O(1) — producing the same ORFs (including
+    nested/overlapping ORFs that share a stop codon), computed once per
+    frame instead of once per ATG found.
+    """
     orfs: list[dict[str, object]] = []
+    seq_len = len(sequence)
+
     for frame in range(3):
-        i = frame
-        while i < len(sequence) - 2:
-            codon = sequence[i : i + 3]
-            if codon == "ATG":
-                start = i
-                j = i
-                while j < len(sequence) - 2:
-                    triplet = sequence[j : j + 3]
-                    if triplet in STOP_CODONS:
-                        orf_seq = sequence[start : j + 3]
-                        if len(orf_seq) >= min_length:
-                            orfs.append({
-                                "frame": f"{frame_label_prefix}{frame + 1}",
-                                "start": start + 1,
-                                "end": j + 3,
-                                "length": len(orf_seq),
-                                "complete": True,
-                                "protein": translate_dna(orf_seq)["protein"],
-                            })
-                        break
-                    j += 3
-                else:
-                    orf_seq = sequence[start:]
-                    if len(orf_seq) >= min_length:
-                        orfs.append({
-                            "frame": f"{frame_label_prefix}{frame + 1}",
-                            "start": start + 1,
-                            "end": len(sequence),
-                            "length": len(orf_seq),
-                            "complete": False,
-                            "protein": translate_dna(orf_seq)["protein"],
-                        })
-                i = start + 3
+        codon_starts = list(range(frame, seq_len - 2, 3))
+        if not codon_starts:
+            continue
+
+        # next_stop_at[k] = index into codon_starts of the next in-frame
+        # stop codon at or after codon_starts[k], or None if none remains.
+        next_stop_at: list[Optional[int]] = [None] * len(codon_starts)
+        running_next_stop: Optional[int] = None
+        for k in range(len(codon_starts) - 1, -1, -1):
+            codon = sequence[codon_starts[k]: codon_starts[k] + 3]
+            if codon in STOP_CODONS:
+                running_next_stop = k
+            next_stop_at[k] = running_next_stop
+
+        for k, start in enumerate(codon_starts):
+            if sequence[start:start + 3] != "ATG":
+                continue
+            stop_k = next_stop_at[k]
+            if stop_k is not None:
+                end = codon_starts[stop_k] + 3
+                complete = True
             else:
-                i += 3
+                end = seq_len
+                complete = False
+            orf_seq = sequence[start:end]
+
+            if len(orf_seq) >= min_length:
+                protein_input = orf_seq[: ORF_PROTEIN_TRANSLATION_LIMIT_AA * 3]
+                protein = translate_dna(protein_input)["protein"]
+                if len(orf_seq) > len(protein_input):
+                    protein += "...[truncated]"
+                orfs.append({
+                    "frame": f"{frame_label_prefix}{frame + 1}",
+                    "start": start + 1,
+                    "end": end,
+                    "length": len(orf_seq),
+                    "complete": complete,
+                    "protein": protein,
+                })
+
     return orfs
 
 
 def find_orfs(sequence: str, min_length: int = 30, include_reverse: bool = True) -> list[dict[str, object]]:
-    """Scan DNA for ORFs in forward (+) and optional reverse (-) frames."""
+    """Scan DNA for ORFs in forward (+) and optional reverse (-) frames.
+
+    Reverse-strand ORF coordinates are remapped from the internal
+    reverse-complement sequence back to positions on the original (forward)
+    input sequence, so "start"/"end" are always directly usable to locate the
+    ORF in the sequence the user provided, regardless of strand.
+    """
     orfs = _find_orfs_on_strand(sequence, "+", min_length)
     if include_reverse:
-        orfs.extend(_find_orfs_on_strand(reverse_complement(sequence), "-", min_length))
+        seq_len = len(sequence)
+        reverse_orfs = _find_orfs_on_strand(reverse_complement(sequence), "-", min_length)
+        for orf in reverse_orfs:
+            rc_start, rc_end = orf["start"], orf["end"]
+            orf["start"], orf["end"] = seq_len - rc_end + 1, seq_len - rc_start + 1
+        orfs.extend(reverse_orfs)
     orfs.sort(key=lambda item: item["length"], reverse=True)
     return orfs
 
@@ -480,16 +554,30 @@ KNOWN_MOTIFS: dict[str, str] = {
 
 
 def find_motifs(sequence: str) -> list[dict[str, object]]:
-    """Search for known regulatory motifs in a sequence."""
-    results: list[dict[str, object]] = []
+    """Search for known regulatory motifs in a sequence.
+
+    Some biologically distinct motif names share the exact same consensus
+    pattern (e.g. "E-box" and "MYC recognition" are both CANNTG, since MYC
+    family transcription factors bind the canonical E-box). Rather than
+    reporting the same DNA span twice under different names, matches at an
+    identical position/pattern are merged into a single entry whose "name"
+    lists every biological label that applies.
+    """
+    hits_by_position: dict[tuple[int, int, str], list[str]] = {}
     for name, motif in KNOWN_MOTIFS.items():
         pattern = motif.replace("N", "[ATGC]")
         for match in re.finditer(pattern, sequence):
-            results.append({
-                "name": name,
-                "motif": motif,
-                "start": match.start() + 1,
-                "end": match.end(),
-                "match": match.group(),
-            })
+            key = (match.start(), match.end(), motif)
+            hits_by_position.setdefault(key, []).append(name)
+
+    results: list[dict[str, object]] = []
+    for (start, end, motif), names in hits_by_position.items():
+        results.append({
+            "name": " / ".join(names),
+            "motif": motif,
+            "start": start + 1,
+            "end": end,
+            "match": sequence[start:end],
+        })
+    results.sort(key=lambda item: item["start"])
     return results

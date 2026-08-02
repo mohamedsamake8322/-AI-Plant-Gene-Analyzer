@@ -97,7 +97,13 @@ def _fetch_gene_entry(org_code: str, gene_id: str, species: str) -> dict | None:
     try:
         resp = rq.get(f"{KEGG_BASE}/get/{org_code}:{gene_id}", timeout=30)
         return _parse_kegg_flat(resp.text, gene_id, org_code, species)
-    except requests.RequestException:
+    except requests.RequestException as e:
+        print(f"  [KEGG] Request failed for {org_code}:{gene_id}: {e}")
+        return None
+    except Exception as e:
+        # A single malformed flat-file entry shouldn't abort the whole
+        # species collection -- skip it and keep going.
+        print(f"  [KEGG] Failed to parse {org_code}:{gene_id}: {e}")
         return None
 
 
@@ -148,7 +154,12 @@ def _parse_kegg_flat(text: str, gene_id: str, org_code: str, species: str) -> di
             seq_type = "protein"
 
     if not sequence:
-        return None
+        seq_type = ""
+        # No NTSEQ/AASEQ in this KEGG entry -- still keep pathway/KO data
+        # instead of discarding the whole record, same reasoning as the
+        # PlantTFDB fix: metadata without a sequence is still useful.
+        if not pathways and not ko_ids:
+            return None
 
     # DBlinks
     external = {
@@ -175,6 +186,7 @@ def _parse_kegg_flat(text: str, gene_id: str, org_code: str, species: str) -> di
         "annotations": {
             "ko_ids": ko_ids,
             "kegg_org": org_code,
+            "sequence_available": bool(sequence),
         },
         "external_links": external,
         "traits": [p["name"] for p in pathways[:5]],
@@ -190,8 +202,7 @@ def fetch_pathway_genes(pathway_id: str, species: str = "") -> list[str]:
     Example: fetch_pathway_genes("map00010")  # Glycolysis
     """
     try:
-        resp = requests.get(f"{KEGG_BASE}/link/genes/{pathway_id}", timeout=30)
-        resp.raise_for_status()
+        resp = rq.get(f"{KEGG_BASE}/link/genes/{pathway_id}", timeout=30)
         genes = []
         for line in resp.text.strip().splitlines():
             parts = line.split("\t")

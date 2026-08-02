@@ -15,9 +15,16 @@ STYLE_CSS_PATH = PROJECT_ROOT / "style.css"
 LOG_DIR = PROJECT_ROOT / "logs"
 RESULTS_DIR = PROJECT_ROOT / "results"
 
-# Create directories if they don't exist
-LOG_DIR.mkdir(exist_ok=True)
-RESULTS_DIR.mkdir(exist_ok=True)
+# Create directories if they don't exist. Guarded because config.py is
+# imported at module load time by every other module; a read-only deployment
+# target (e.g. a locked-down container) would otherwise crash the whole app
+# on import with an unhandled PermissionError instead of failing gracefully
+# where logging/export actually happens.
+for _dir in (LOG_DIR, RESULTS_DIR):
+    try:
+        _dir.mkdir(exist_ok=True)
+    except OSError:
+        pass
 
 # ─── Logging Configuration ────────────────────────────────────────────────────
 LOG_LEVEL = logging.INFO
@@ -27,8 +34,25 @@ LOG_FILE = LOG_DIR / "analyzer.log"
 # ─── Bioinformatics Parameters ────────────────────────────────────────────────
 
 # Sequence validation
-MIN_SEQUENCE_LENGTH = 10
-MAX_SEQUENCE_LENGTH = 1_000_000  # 1 million bp
+MIN_SEQUENCE_LENGTH = 10  # bp, for DNA/RNA input
+MIN_PROTEIN_LENGTH = 5  # aa, for protein input
+MAX_SEQUENCE_LENGTH = 1_000_000  # 1 million bp — hard cap for O(n) stats (GC%, motifs, translation)
+
+# Pairwise alignment (Needleman-Wunsch / Smith-Waterman) used for database
+# similarity search and mutation detection is O(n*m) in both time AND
+# memory (two full DP matrices), unlike the O(n) basic statistics above.
+# With int32 score + int8 traceback matrices (see alignment_engine.py),
+# two 5,000x5,000 matrices are ~125 MB combined -- reasonable for a shared,
+# publicly hosted instance. A larger cap here is not just slower but risks
+# exhausting memory outright (e.g. 20,000x20,000 would be ~1.6 GB). This
+# covers the vast majority of real single-gene/transcript-length plant
+# sequences; true long-sequence alignment (whole loci, chromosomes) needs a
+# different algorithm (BLAST-style seed-and-extend heuristic, already on
+# the project roadmap) rather than a bigger cap on this exact DP.
+MAX_ALIGNMENT_SEQUENCE_LENGTH = 5_000  # bp / aa
+
+# Uploaded file size cap (bytes), checked before reading the file into memory.
+MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB
 
 # GC content thresholds
 GC_HIGH = 60.0

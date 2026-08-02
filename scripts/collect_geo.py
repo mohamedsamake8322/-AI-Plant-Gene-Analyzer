@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import sys
 import time
@@ -24,6 +25,13 @@ load_dotenv(ROOT / ".env")
 Entrez.email = os.getenv("NCBI_EMAIL")
 Entrez.api_key = os.getenv("NCBI_API_KEY")
 
+# NCBI E-utilities allow ~3 req/s without an API key, ~10 req/s with one.
+NCBI_SLEEP = 0.11 if Entrez.api_key else 0.34
+
+logger = logging.getLogger("collect_geo")
+if not logger.handlers:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+
 if not Entrez.email:
     print("Warning: NCBI_EMAIL not set in .env")
 
@@ -39,21 +47,29 @@ def build_query(term: str, organism: str | None, plants_only: bool) -> str:
 
 def search_geo(term: str, retmax: int = 20, organism: str | None = None, plants_only: bool = True) -> list[str]:
     query = build_query(term, organism, plants_only)
-    handle = Entrez.esearch(db="gds", term=query, retmax=retmax)
-    result = Entrez.read(handle)
-    handle.close()
+    try:
+        handle = Entrez.esearch(db="gds", term=query, retmax=retmax)
+        result = Entrez.read(handle)
+        handle.close()
+    except Exception as exc:
+        logger.warning("GEO search failed for query %r: %s", query, exc)
+        return []
     ids = result.get("IdList", [])
     if not ids:
-        print(f"No GEO datasets for: {query}")
+        logger.info("No GEO datasets for: %s", query)
     return ids
 
 
 def fetch_geo_summaries(uids: list[str]) -> list[dict]:
     if not uids:
         return []
-    handle = Entrez.esummary(db="gds", id=",".join(uids), retmode="json")
-    payload = json.loads(handle.read())
-    handle.close()
+    try:
+        handle = Entrez.esummary(db="gds", id=",".join(uids), retmode="json")
+        payload = json.loads(handle.read())
+        handle.close()
+    except Exception as exc:
+        logger.warning("GEO summary fetch failed for %d id(s): %s", len(uids), exc)
+        return []
 
     records = []
     for uid in uids:
@@ -84,9 +100,13 @@ def fetch_by_accession(accession: str) -> list[dict]:
         term = f"{accession}[Accession]"
     else:
         term = f"{accession}[Accession] OR GDS{acc}[Accession]"
-    handle = Entrez.esearch(db="gds", term=term, retmax=5)
-    result = Entrez.read(handle)
-    handle.close()
+    try:
+        handle = Entrez.esearch(db="gds", term=term, retmax=5)
+        result = Entrez.read(handle)
+        handle.close()
+    except Exception as exc:
+        logger.warning("GEO accession search failed for %s: %s", accession, exc)
+        return []
     return fetch_geo_summaries(result.get("IdList", []))
 
 
@@ -111,10 +131,11 @@ def main(argv: list[str]) -> None:
     if args.accession:
         for acc in args.accession:
             records.extend(fetch_by_accession(acc))
-            time.sleep(0.34)
+            time.sleep(NCBI_SLEEP)
 
     if args.term:
         uids = search_geo(args.term, retmax=args.retmax, organism=args.organism, plants_only=args.plants_only)
+        time.sleep(NCBI_SLEEP)
         records.extend(fetch_geo_summaries(uids))
 
     if not records:

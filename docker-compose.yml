@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: plant_genes_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: plantadmin
+      POSTGRES_PASSWORD: 78772652Moh
+      POSTGRES_DB: plant_genes
+    ports:
+      - "5433:5432"
+    volumes:
+      - plant_genes_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U plantadmin -d plant_genes"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  plant_genes_data:

@@ -140,6 +140,17 @@ AVAILABLE_SOURCES = [
     "geon",
 ]
 
+# Sources with a real, working bulk-per-species implementation as of writing.
+# - "atlas" and "geon" now bridge to the real scripts/collect_expression_atlas.py
+#   and scripts/collect_geo.py (dataset-level data wrapped as a single
+#   pseudo-gene-record per species — see collect_atlas.py / collect_geon.py).
+# - "ensembl" is still excluded: collect/collect_ensembl_stub.py is a stub,
+#   and the working scripts/collect_ensembl.py exposes fetch_gene(species,
+#   symbol, feature_id, seq_type) — a single-gene lookup, not the bulk
+#   fetch_ensembl(name, retmax) interface this pipeline expects. Would need
+#   Ensembl Plants BioMart for a real bulk implementation.
+DEFAULT_SOURCES = [s for s in AVAILABLE_SOURCES if s not in ("ensembl",)]
+
 
 def collect_species(
     plant: dict,
@@ -251,7 +262,10 @@ def collect_species(
     # ── ENSEMBL ──────────────────────────────────────────────────────────────
     if "ensembl" in sources:
         try:
-            ce = import_local_collect_module("collect_ensembl")
+            # NOTE: this branch is excluded from DEFAULT_SOURCES (see above)
+            # because collect_ensembl_stub.fetch_ensembl() is a stub. It's
+            # only reachable if someone explicitly passes --sources ensembl.
+            ce = import_local_collect_module("collect_ensembl_stub")
             recs = ce.fetch_ensembl(name, retmax=retmax)
             before = len(all_records)
             for r in recs:
@@ -432,8 +446,13 @@ def main(argv: list[str] | None = None) -> None:
     # Source selection
     parser.add_argument(
         "--sources",
-        default=",".join(AVAILABLE_SOURCES),
-        help=f"Comma-separated sources to collect (default: all). Options: {', '.join(AVAILABLE_SOURCES)}",
+        default=",".join(DEFAULT_SOURCES),
+        help=(
+            f"Comma-separated sources to collect (default: {','.join(DEFAULT_SOURCES)}). "
+            f"All options: {', '.join(AVAILABLE_SOURCES)}. "
+            "Note: 'ensembl' is still a stub (no bulk-per-species Ensembl "
+            "endpoint without BioMart) — excluded from the default."
+        ),
     )
 
     # Collection parameters
@@ -484,6 +503,14 @@ def main(argv: list[str] | None = None) -> None:
         plants = ALL_PLANTS
 
     sources = [s.strip().lower() for s in args.sources.split(",") if s.strip()]
+    stub_sources = [s for s in sources if s == "ensembl"]
+    if stub_sources:
+        print(
+            "⚠ Warning: 'ensembl' has no working bulk-per-species "
+            "implementation (see collect/collect_ensembl_stub.py) and will "
+            "always return 0 records for every species. Not an error — "
+            "just wasted collection time."
+        )
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 

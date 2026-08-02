@@ -32,7 +32,12 @@ def collect_and_clean_type(
     temp_raw: Path,
     temp_clean: Path,
 ) -> list[dict]:
-    """Collect one sequence type and return cleaned records."""
+    """Collect one sequence type and return cleaned records.
+
+    Returns an empty list (instead of raising) if this particular sequence
+    type fails -- a problem collecting, say, protein sequences shouldn't
+    throw away DNA/RNA records already gathered for the same species.
+    """
     print(f"\n[→] Collecting {seq_type.upper()} sequences for '{plant_term}'...")
 
     ncbi_options = {
@@ -56,7 +61,11 @@ def collect_and_clean_type(
     if mrna_only:
         pipeline_argv.append("--mrna-only")
 
-    pipeline_module.main(pipeline_argv)
+    try:
+        pipeline_module.main(pipeline_argv)
+    except Exception as e:
+        print(f"  ✗ {seq_type.upper()} collection failed for '{plant_term}': {e}")
+        return []
 
     if temp_clean.exists():
         raw = json.loads(temp_clean.read_text(encoding="utf-8"))
@@ -104,58 +113,59 @@ def main(argv: list[str] | None = None) -> None:
     temp_dir = ROOT / ".temp_collect"
     temp_dir.mkdir(exist_ok=True)
 
-    for seq_type in seq_types:
-        temp_raw = temp_dir / f"raw_{seq_type}.json"
-        temp_clean = temp_dir / f"clean_{seq_type}.json"
+    try:
+        for seq_type in seq_types:
+            temp_raw = temp_dir / f"raw_{seq_type}.json"
+            temp_clean = temp_dir / f"clean_{seq_type}.json"
 
-        records = collect_and_clean_type(
-            args.plant, seq_type, args.retmax, temp_raw, temp_clean
-        )
+            records = collect_and_clean_type(
+                args.plant, seq_type, args.retmax, temp_raw, temp_clean
+            )
 
-        for record in records:
-            gene_id = record.get("gene_id") or record.get("symbol")
-            if gene_id:
-                if gene_id not in all_records:
-                    all_records[gene_id] = record
-                else:
-                    # Merge metadata if gene already exists (e.g., from another type)
-                    existing = all_records[gene_id]
-                    if not existing.get("sequence") and record.get("sequence"):
-                        all_records[gene_id]["sequence"] = record["sequence"]
-                    if not existing.get("sequence_type") and record.get("sequence_type"):
-                        all_records[gene_id]["sequence_type"] = record["sequence_type"]
+            for record in records:
+                gene_id = record.get("gene_id") or record.get("symbol")
+                if gene_id:
+                    if gene_id not in all_records:
+                        all_records[gene_id] = record
+                    else:
+                        # Merge metadata if gene already exists (e.g., from another type)
+                        existing = all_records[gene_id]
+                        if not existing.get("sequence") and record.get("sequence"):
+                            all_records[gene_id]["sequence"] = record["sequence"]
+                        if not existing.get("sequence_type") and record.get("sequence_type"):
+                            all_records[gene_id]["sequence_type"] = record["sequence_type"]
 
-    print(f"\n✓ Merged {len(all_records)} unique genes\n")
+        print(f"\n✓ Merged {len(all_records)} unique genes\n")
 
-    # Write combined clean JSON
-    out_data = {
-        "metadata": {
-            "generated_at": datetime.utcnow().isoformat() + "Z",
-            "plant": args.plant,
-            "sequence_types": seq_types,
-            "count": len(all_records),
-        },
-        "genes": list(all_records.values()),
-    }
+        # Write combined clean JSON
+        out_data = {
+            "metadata": {
+                "generated_at": datetime.utcnow().isoformat() + "Z",
+                "plant": args.plant,
+                "sequence_types": seq_types,
+                "count": len(all_records),
+            },
+            "genes": list(all_records.values()),
+        }
 
-    out_clean.write_text(json.dumps(out_data, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"✓ Wrote {len(all_records)} records to {out_clean}\n")
+        out_clean.write_text(json.dumps(out_data, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"✓ Wrote {len(all_records)} records to {out_clean}\n")
 
-    # Optional: Import to PostgreSQL
-    if not args.skip_load:
-        import load_to_postgres as load_to_postgres
+        # Optional: Import to PostgreSQL
+        if not args.skip_load:
+            import load_to_postgres as load_to_postgres
 
-        load_argv = ["--json-file", str(out_clean)]
-        if args.create_tables:
-            load_argv.insert(0, "--create-tables")
+            load_argv = ["--json-file", str(out_clean)]
+            if args.create_tables:
+                load_argv.insert(0, "--create-tables")
 
-        print("[3/3] Loading to PostgreSQL...\n")
-        load_to_postgres.main(load_argv)
-
-    # Cleanup temp directory
-    import shutil
-    if temp_dir.exists():
-        shutil.rmtree(temp_dir)
+            print("[3/3] Loading to PostgreSQL...\n")
+            load_to_postgres.main(load_argv)
+    finally:
+        # Always clean up, even if something above raised.
+        import shutil
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir)
 
     print("\n✓ Pipeline complete!")
 

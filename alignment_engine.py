@@ -7,9 +7,19 @@ star-based multiple sequence alignment, and alignment statistics.
 
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import Dict, List, Tuple
 
 import numpy as np
+
+import config
+
+# "Negative infinity" sentinel for affine-gap DP. Must be far below any
+# reachable real score (max ~5,000 * 11 for a full BLOSUM62 W-W run at the
+# MAX_ALIGNMENT_SEQUENCE_LENGTH cap) but far enough from int32's limits
+# (~2.1e9) that repeated gap_extend additions during traceback-adjacent
+# arithmetic can't overflow.
+NEG_INF = -10**7
 
 # Standard BLOSUM62 (Henikoff & Henikoff, 1992) — full 20×20 matrix
 BLOSUM62_ALPHABET = "ARNDCQEGHILKMFPSTWYV"
@@ -51,6 +61,40 @@ def get_score(char1: str, char2: str, seq_type: str = "dna") -> int:
     if seq_type == "dna":
         return DNA_MATRIX.get(c1, DNA_MATRIX["N"]).get(c2, 0)
     return BLOSUM62_MATRIX.get(c1, {}).get(c2, -4)
+
+
+@lru_cache(maxsize=2)
+def _score_lookup_table(seq_type: str) -> tuple[dict[str, int], int, np.ndarray]:
+    """Precompute a dense numeric substitution matrix + char->index map.
+
+    Replaces get_score()'s per-cell dict-of-dict lookups (two hash lookups
+    plus a Python function call, executed up to m*n times in the DP inner
+    loop) with O(1) numpy array indexing. Built once per seq_type and
+    cached — the matrices never change at runtime. The extra row/column
+    (index = len(alphabet)) is the fallback for any character outside the
+    known alphabet (e.g. an IUPAC ambiguity code); its score against
+    everything is set to match get_score()'s existing fallback exactly:
+    0 for DNA (same as falling back to "N", whose row is all zeros) and -4
+    for protein (get_score's fixed fallback penalty).
+    """
+    if seq_type == "dna":
+        alphabet, matrix, fallback = "ATGCN", DNA_MATRIX, 0
+    else:
+        alphabet, matrix, fallback = BLOSUM62_ALPHABET, BLOSUM62_MATRIX, -4
+
+    index = {ch: i for i, ch in enumerate(alphabet)}
+    unknown_idx = len(alphabet)
+    size = len(alphabet) + 1
+    table = np.full((size, size), fallback, dtype=np.int32)
+    for a in alphabet:
+        for b in alphabet:
+            table[index[a], index[b]] = matrix.get(a, {}).get(b, fallback)
+    return index, unknown_idx, table
+
+
+def _encode_sequence(sequence: str, index: dict[str, int], unknown_idx: int) -> np.ndarray:
+    """Map a sequence string to an int array of lookup-table indices."""
+    return np.array([index.get(ch, unknown_idx) for ch in sequence], dtype=np.int64)
 
 
 def alignment_statistics(aligned1: str, aligned2: str) -> Dict:
@@ -97,43 +141,119 @@ def build_alignment_map(aligned1: str, aligned2: str) -> Dict[str, object]:
     }
 
 
-def needleman_wunsch(seq1: str, seq2: str, gap_penalty: int = -2, seq_type: str = "dna") -> Dict:
-    """Global alignment (Needleman-Wunsch)."""
+def needleman_wunsch(
+    seq1: str,
+    seq2: str,
+    gap_penalty: int | None = None,
+    seq_type: str = "dna",
+    gap_open: int = -10,
+    gap_extend: int = -1,
+) -> Dict:
+    """Global alignment (Needleman-Wunsch) with affine gap penalties (Gotoh's algorithm).
+
+    Affine gaps score opening a gap (gap_open) separately from extending an
+    already-open one (gap_extend, applied to each additional consecutive
+    gap position). This matches real indel biology far better than a flat
+    per-position penalty: one long insertion/deletion is much more likely
+    than many scattered single-base gaps, but a linear penalty scores both
+    identically, which fragments alignments unrealistically.
+
+    gap_penalty is kept for backward compatibility: if given explicitly, it
+    is used as BOTH gap_open and gap_extend, reproducing this function's
+    previous linear-gap behavior exactly (verified against it — see the
+    test suite).
+
+    Memory note: uses six (m+1)x(n+1) matrices (three DP score matrices +
+    three traceback matrices) — O(n*m) space, not just O(n*m) time. dtype
+    is pinned (int32 for scores, int8 for traceback codes) rather than
+    relying on the platform-dependent numpy default. Callers should cap
+    input length well before memory becomes an issue — see
+    config.MAX_ALIGNMENT_SEQUENCE_LENGTH, enforced below.
+    """
+    if gap_penalty is not None:
+        gap_open = gap_extend = gap_penalty
+
     seq1 = seq1.upper().replace(" ", "")
     seq2 = seq2.upper().replace(" ", "")
     m, n = len(seq1), len(seq2)
 
-    score_matrix = np.zeros((m + 1, n + 1), dtype=int)
-    traceback_matrix = np.zeros((m + 1, n + 1), dtype=int)
+    if max(m, n) > config.MAX_ALIGNMENT_SEQUENCE_LENGTH:
+        raise ValueError(
+            f"Sequence too long for pairwise alignment ({max(m, n):,} > "
+            f"{config.MAX_ALIGNMENT_SEQUENCE_LENGTH:,}). This guard applies "
+            "regardless of caller, so any direct use of this function (not "
+            "just the main analysis pipeline) is protected from excessive "
+            "memory/time use."
+        )
+
+    char_index, unknown_idx, score_table = _score_lookup_table(seq_type)
+    enc1 = _encode_sequence(seq1, char_index, unknown_idx)
+    enc2 = _encode_sequence(seq2, char_index, unknown_idx)
+
+    # Three DP matrices (Gotoh): M = best score ending in a match/mismatch,
+    # Ix = best score ending with seq1[i-1] aligned to a gap in seq2,
+    # Iy = best score ending with seq2[j-1] aligned to a gap in seq1.
+    M = np.full((m + 1, n + 1), NEG_INF, dtype=np.int32)
+    Ix = np.full((m + 1, n + 1), NEG_INF, dtype=np.int32)
+    Iy = np.full((m + 1, n + 1), NEG_INF, dtype=np.int32)
+    # Traceback codes — tb_M: 0=from M, 1=from Ix, 2=from Iy (diagonal step).
+    # tb_Ix/tb_Iy: 0=gap opened (from M), 1=gap extended (from same matrix).
+    tb_M = np.zeros((m + 1, n + 1), dtype=np.int8)
+    tb_Ix = np.zeros((m + 1, n + 1), dtype=np.int8)
+    tb_Iy = np.zeros((m + 1, n + 1), dtype=np.int8)
+
+    M[0, 0] = 0
 
     for i in range(1, m + 1):
-        score_matrix[i, 0] = i * gap_penalty
-        traceback_matrix[i, 0] = 1
+        open_ = M[i - 1, 0] + gap_open
+        extend_ = Ix[i - 1, 0] + gap_extend
+        if open_ >= extend_:
+            Ix[i, 0], tb_Ix[i, 0] = open_, 0
+        else:
+            Ix[i, 0], tb_Ix[i, 0] = extend_, 1
+
     for j in range(1, n + 1):
-        score_matrix[0, j] = j * gap_penalty
-        traceback_matrix[0, j] = 2
+        open_ = M[0, j - 1] + gap_open
+        extend_ = Iy[0, j - 1] + gap_extend
+        if open_ >= extend_:
+            Iy[0, j], tb_Iy[0, j] = open_, 0
+        else:
+            Iy[0, j], tb_Iy[0, j] = extend_, 1
 
     for i in range(1, m + 1):
+        row_score = score_table[enc1[i - 1], enc2]  # precompute row i's scores vs all of seq2
         for j in range(1, n + 1):
-            match_score = get_score(seq1[i - 1], seq2[j - 1], seq_type)
-            diagonal = score_matrix[i - 1, j - 1] + match_score
-            up = score_matrix[i - 1, j] + gap_penalty
-            left = score_matrix[i, j - 1] + gap_penalty
-            score_matrix[i, j] = max(diagonal, up, left)
-            if score_matrix[i, j] == diagonal:
-                traceback_matrix[i, j] = 0
-            elif score_matrix[i, j] == up:
-                traceback_matrix[i, j] = 1
-            else:
-                traceback_matrix[i, j] = 2
+            s = int(row_score[j - 1])
+            prevs = (M[i - 1, j - 1], Ix[i - 1, j - 1], Iy[i - 1, j - 1])
+            best_prev = max(prevs)
+            M[i, j] = s + best_prev
+            tb_M[i, j] = prevs.index(best_prev)
 
-    aligned_seq1, aligned_seq2 = _traceback(seq1, seq2, traceback_matrix, m, n, "nw")
+            open_ = M[i - 1, j] + gap_open
+            extend_ = Ix[i - 1, j] + gap_extend
+            if open_ >= extend_:
+                Ix[i, j], tb_Ix[i, j] = open_, 0
+            else:
+                Ix[i, j], tb_Ix[i, j] = extend_, 1
+
+            open_ = M[i, j - 1] + gap_open
+            extend_ = Iy[i, j - 1] + gap_extend
+            if open_ >= extend_:
+                Iy[i, j], tb_Iy[i, j] = open_, 0
+            else:
+                Iy[i, j], tb_Iy[i, j] = extend_, 1
+
+    finals = {"M": M[m, n], "Ix": Ix[m, n], "Iy": Iy[m, n]}
+    end_state = max(finals, key=finals.get)
+    final_score = int(finals[end_state])
+
+    aligned_seq1, aligned_seq2 = _affine_traceback(seq1, seq2, tb_M, tb_Ix, tb_Iy, m, n, end_state)
     stats = alignment_statistics(aligned_seq1, aligned_seq2)
     return {
-        "algorithm": "Needleman-Wunsch (Global)",
+        "algorithm": "Needleman-Wunsch (Global, affine gap)",
         "seq1_aligned": aligned_seq1,
         "seq2_aligned": aligned_seq2,
-        "alignment_score": float(score_matrix[m, n]),
+        "alignment_score": float(final_score),
         "match_count": stats["matches"],
         "gap_count": stats["gaps"],
         "identity_percent": stats["identity_percent"],
@@ -141,20 +261,76 @@ def needleman_wunsch(seq1: str, seq2: str, gap_penalty: int = -2, seq_type: str 
     }
 
 
+def _affine_traceback(
+    seq1: str,
+    seq2: str,
+    tb_M: np.ndarray,
+    tb_Ix: np.ndarray,
+    tb_Iy: np.ndarray,
+    end_i: int,
+    end_j: int,
+    end_state: str,
+) -> Tuple[str, str]:
+    aligned1: List[str] = []
+    aligned2: List[str] = []
+    i, j, state = end_i, end_j, end_state
+
+    while i > 0 or j > 0:
+        if state == "M":
+            aligned1.append(seq1[i - 1])
+            aligned2.append(seq2[j - 1])
+            state = ("M", "Ix", "Iy")[tb_M[i, j]]
+            i -= 1
+            j -= 1
+        elif state == "Ix":
+            aligned1.append(seq1[i - 1])
+            aligned2.append("-")
+            state = "M" if tb_Ix[i, j] == 0 else "Ix"
+            i -= 1
+        else:  # Iy
+            aligned1.append("-")
+            aligned2.append(seq2[j - 1])
+            state = "M" if tb_Iy[i, j] == 0 else "Iy"
+            j -= 1
+
+    return "".join(reversed(aligned1)), "".join(reversed(aligned2))
+
+
 def smith_waterman(seq1: str, seq2: str, gap_penalty: int = -2, seq_type: str = "dna") -> Dict:
-    """Local alignment (Smith-Waterman)."""
+    """Local alignment (Smith-Waterman), linear gap penalty. See
+    needleman_wunsch() for the memory note on dtype and O(n*m) space — it
+    applies equally here. (Kept on a linear gap penalty rather than affine:
+    this function is off by default for database comparisons — see
+    similarityengine.aligned_similarity's compute_local flag — so the
+    added traceback complexity/risk of affine gaps isn't justified here
+    yet; revisit if local alignment becomes a primary, always-on feature.)
+    """
     seq1 = seq1.upper().replace(" ", "")
     seq2 = seq2.upper().replace(" ", "")
     m, n = len(seq1), len(seq2)
 
-    score_matrix = np.zeros((m + 1, n + 1), dtype=int)
-    traceback_matrix = np.zeros((m + 1, n + 1), dtype=int)
+    if max(m, n) > config.MAX_ALIGNMENT_SEQUENCE_LENGTH:
+        raise ValueError(
+            f"Sequence too long for pairwise alignment ({max(m, n):,} > "
+            f"{config.MAX_ALIGNMENT_SEQUENCE_LENGTH:,}). This guard applies "
+            "regardless of caller, so any direct use of this function (not "
+            "just the main analysis pipeline) is protected from excessive "
+            "memory/time use."
+        )
+
+    char_index, unknown_idx, score_table = _score_lookup_table(seq_type)
+    enc1 = _encode_sequence(seq1, char_index, unknown_idx)
+    enc2 = _encode_sequence(seq2, char_index, unknown_idx)
+
+    score_matrix = np.zeros((m + 1, n + 1), dtype=np.int32)
+    traceback_matrix = np.zeros((m + 1, n + 1), dtype=np.int8)
     max_score = 0
     max_pos = (0, 0)
 
     for i in range(1, m + 1):
+        row_score = score_table[enc1[i - 1], enc2]
         for j in range(1, n + 1):
-            match_score = get_score(seq1[i - 1], seq2[j - 1], seq_type)
+            match_score = int(row_score[j - 1])
             diagonal = score_matrix[i - 1, j - 1] + match_score
             up = score_matrix[i - 1, j] + gap_penalty
             left = score_matrix[i, j - 1] + gap_penalty
