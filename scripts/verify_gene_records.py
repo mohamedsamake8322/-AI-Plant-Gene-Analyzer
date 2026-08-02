@@ -141,6 +141,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--limit", type=int, default=0, help="Limit number of records displayed (0 = all)")
     p.add_argument("--csv-out", help="Write CSV report to this file")
     p.add_argument("--json-out", help="Write JSON report to this file")
+    p.add_argument("--stats-out", help="Write the type-counts summary (and totals) as JSON to this file -- useful when the console output is too long to scroll back through (e.g. tens of thousands of records)")
     p.add_argument("--split-out-dir", help="Write separate JSON files by record type")
     p.add_argument("--show-seq", action="store_true", help="Show sequence (preview length controlled by --preview) if present")
     p.add_argument("--preview", type=int, default=80, help="Sequence preview length")
@@ -181,6 +182,18 @@ def main(argv: list[str] | None = None) -> None:
     print("\nType counts:")
     for rec_type, count in sorted(type_counts.items()):
         print(f"  {rec_type}: {count}")
+
+    if args.stats_out:
+        stats_path = Path(args.stats_out)
+        stats_path.parent.mkdir(parents=True, exist_ok=True)
+        stats_payload = {
+            "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
+            "total_records": total,
+            "displayed_records": len(rows),
+            "type_counts": dict(sorted(type_counts.items())),
+        }
+        stats_path.write_text(json.dumps(stats_payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        print(f"\nWrote stats summary to {stats_path}")
 
     print("\nSummary:")
     header = f"{'gene_id':<20} | {'symbol':<15} | {'organism':<30} | {'type':<15} | {'len':>6} | {'source':>15}"
