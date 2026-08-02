@@ -228,14 +228,14 @@ with st.sidebar:
 
 
 # ─── Main header ───────────────────────────────────────────────────────────────
+# ─── Main header ───────────────────────────────────────────────────────────────
 st.markdown(
-    "<h1>🧬 Plant Gene Analyzer</h1>",
-    unsafe_allow_html=True,
-)
-st.markdown(
-    "<p style='text-align:center;color:#a5d6a7;font-family:Courier New;'>"
-    "Bioinformatics · AI Interpretation · Agricultural Insights"
-    "</p>",
+    """
+    <div class="hero-panel">
+        <h1>🧬 Plant Gene Analyzer</h1>
+        <p class="hero-subtitle">Bioinformatics · AI Interpretation · Agricultural Insights</p>
+    </div>
+    """,
     unsafe_allow_html=True,
 )
 st.markdown("---")
@@ -1125,10 +1125,10 @@ else:
     # ── Welcome screen ──────────────────────────────────────────────────────────
     st.markdown(
         """
-        <div style='text-align:center;padding:3rem 1rem;'>
-            <p style='font-size:3rem;'>🧬</p>
-            <h3 style='color:#69f0ae;font-family:Courier New;'>Ready to Analyze</h3>
-            <p style='color:#a5d6a7;font-family:Courier New;'>
+        <div class="welcome-panel">
+            <p class="welcome-icon">🧬</p>
+            <h3 class="welcome-title">Ready to Analyze</h3>
+            <p class="welcome-text">
                 Paste a plant DNA sequence above or load a demo,<br>
                 then click <b>Analyze Sequence</b>.
             </p>
