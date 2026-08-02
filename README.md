@@ -1,4 +1,4 @@
-﻿# 🧬 AI-Powered Plant Gene Analyzer
+﻿# 🧬 Plant Gene Analyzer
 
 Application bioinformatique locale et web pour analyser des séquences ADN/ARN/protéines végétales, comparer les résultats à une base de référence, produire des interprétations biologiques et exporter des rapports professionnels.
 

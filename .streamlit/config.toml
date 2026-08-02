@@ -3,6 +3,7 @@ headless = true
 enableCORS = false
 enableXsrfProtection = true
 enableWebsocketCompression = true
+enableStaticServing = true
 address = "localhost"
 port = 8501
 

@@ -59,6 +59,34 @@ def load_css(css_file: str = "style.css") -> None:
         st.warning("⚠️ Could not load custom styling (CSS file error)")
 
 
+# ─── Load background video ──────────────────────────────────────────────────────
+def load_video_background(video_file: str = "images.mp4", static_dir: str = "static") -> None:
+    """
+    Inject a fixed, full-screen, looping, muted video as the app background.
+
+    Requires `enableStaticServing = true` under [server] in config.toml and the
+    video file placed in a `static/` folder next to app.py. Streamlit then
+    serves it at the relative URL `app/static/<filename>`.
+    """
+    video_path = Path(static_dir) / video_file
+    try:
+        if video_path.exists():
+            st.markdown(
+                f"""
+                <video autoplay loop muted playsinline class="bg-video">
+                    <source src="app/{static_dir}/{video_file}" type="video/mp4">
+                </video>
+                <div class="bg-video-overlay"></div>
+                """,
+                unsafe_allow_html=True,
+            )
+            logger.info(f"Background video loaded from {video_path}")
+        else:
+            logger.warning(f"Background video not found: {video_path}")
+    except Exception as e:
+        logger.error(f"Error loading background video: {e}")
+
+
 # analyze_sequence_record() and get_alignment_map() now live in pipeline.py
 # (see import below) — this keeps the analysis orchestration testable and
 # reusable independently of the Streamlit UI.
@@ -122,6 +150,7 @@ def load_gene_database_cached(db_path: str = "genes_database.json") -> dict:
 
 
 load_css()
+load_video_background()
 
 
 # ─── Demo sequences ────────────────────────────────────────────────────────────
