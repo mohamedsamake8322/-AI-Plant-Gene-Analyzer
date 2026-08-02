@@ -11,6 +11,7 @@ import streamlit as st
 import json
 import os
 import io
+import base64
 import logging
 import sys
 from pathlib import Path
@@ -60,29 +61,40 @@ def load_css(css_file: str = "style.css") -> None:
 
 
 # ─── Load background video ──────────────────────────────────────────────────────
-def load_video_background(video_file: str = "images.mp4", static_dir: str = "static") -> None:
+def load_video_background(video_path: str = "assets/images.mp4", max_mb: float = 30.0) -> None:
     """
     Inject a fixed, full-screen, looping, muted video as the app background.
 
-    Requires `enableStaticServing = true` under [server] in config.toml and the
-    video file placed in a `static/` folder next to app.py. Streamlit then
-    serves it at the relative URL `app/static/<filename>`.
+    The video is base64-embedded directly into the page as a data URI, so no
+    Streamlit static-file-serving configuration or specific folder name
+    (e.g. `static/`) is required — it works from wherever `video_path` points,
+    such as the existing `assets/` folder.
     """
-    video_path = Path(static_dir) / video_file
+    path = Path(video_path)
     try:
-        if video_path.exists():
-            st.markdown(
-                f"""
-                <video autoplay loop muted playsinline class="bg-video">
-                    <source src="app/{static_dir}/{video_file}" type="video/mp4">
-                </video>
-                <div class="bg-video-overlay"></div>
-                """,
-                unsafe_allow_html=True,
+        if not path.exists():
+            logger.warning(f"Background video not found: {path.resolve()}")
+            return
+
+        size_mb = path.stat().st_size / (1024 * 1024)
+        if size_mb > max_mb:
+            logger.warning(
+                f"Background video is {size_mb:.1f} MB — base64 embedding will "
+                f"slow down page load. Consider compressing it (e.g. with "
+                f"HandBrake, target < 10 MB, 1080p, no audio track)."
             )
-            logger.info(f"Background video loaded from {video_path}")
-        else:
-            logger.warning(f"Background video not found: {video_path}")
+
+        video_b64 = base64.b64encode(path.read_bytes()).decode("utf-8")
+        st.markdown(
+            f"""
+            <video autoplay loop muted playsinline class="bg-video">
+                <source src="data:video/mp4;base64,{video_b64}" type="video/mp4">
+            </video>
+            <div class="bg-video-overlay"></div>
+            """,
+            unsafe_allow_html=True,
+        )
+        logger.info(f"Background video loaded from {path} ({size_mb:.1f} MB)")
     except Exception as e:
         logger.error(f"Error loading background video: {e}")
 
