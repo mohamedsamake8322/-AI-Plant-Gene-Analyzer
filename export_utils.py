@@ -75,10 +75,10 @@ def export_results_csv(
     
     filepath = config.RESULTS_DIR / filename
     
-    stats = result.get("stats", {})
-    dist = result.get("dist", {})
+    stats = result.get("stats") or {}
+    dist = result.get("dist") or {}
     best_match = result.get("best_match")
-    mutation_report = result.get("mutation_report", {})
+    mutation_report = result.get("mutation_report") or {}
     sequence_type = result.get("sequence_type", "dna")
     
     with open(filepath, "w", newline="", encoding="utf-8") as f:
