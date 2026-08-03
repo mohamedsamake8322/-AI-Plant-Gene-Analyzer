@@ -113,6 +113,12 @@ def analyze_sequence_record(
     else:
         try:
             similarity_results = sim.compare_with_database(sequence, db, top_n=top_n_matches, logger=logger)
+            prefiltered_count = getattr(similarity_results, "prefiltered_count", 0)
+            if prefiltered_count:
+                pipeline_warnings.append(
+                    f"⚠️ {prefiltered_count} database entries were skipped by the length prefilter "
+                    f"(ratio > {sim.DEFAULT_MAX_LENGTH_RATIO}x). This can hide valid short/long matches from the current results."
+                )
             best_match = similarity_results[0] if similarity_results else None
         except Exception as e:
             if logger:

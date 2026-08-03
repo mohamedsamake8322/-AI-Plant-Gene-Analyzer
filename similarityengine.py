@@ -17,6 +17,15 @@ import sequence_loader
 import config
 
 
+DEFAULT_MAX_LENGTH_RATIO = 30.0
+
+
+class SimilarityResultList(list):
+    def __init__(self, iterable: list[dict] | None = None, prefiltered_count: int = 0):
+        super().__init__(iterable or [])
+        self.prefiltered_count = prefiltered_count
+
+
 def _normalize_database(raw: object) -> dict:
     if isinstance(raw, dict):
         if "genes" in raw and isinstance(raw["genes"], list):
@@ -104,7 +113,7 @@ def _load_database_from_fasta(db_path: str) -> dict:
                         "sequence_type": bio.detect_sequence_type(seq),
                     }
                 header_text = line[1:].strip()
-                header_metadata = sequence_loader._parse_header_metadata(header_text)
+                header_metadata = sequence_loader.parse_header_metadata(header_text)
                 sequence_parts = []
             else:
                 sequence_parts.append(line)
@@ -200,7 +209,7 @@ def compare_with_database(
     top_n: int = 3,
     compute_local: bool = False,
     enable_length_prefilter: bool = True,
-    max_length_ratio: float = 3.0,
+    max_length_ratio: float = DEFAULT_MAX_LENGTH_RATIO,
     logger=None,
 ) -> list[dict]:
     """Compare query against each gene using aligned percent identity.
@@ -296,7 +305,7 @@ def compare_with_database(
         logger.info(f"compare_with_database length-prefiltered {prefiltered_count} entries (ratio > {max_length_ratio}x)")
 
     results.sort(key=lambda x: x["similarity_score"], reverse=True)
-    return results[:top_n]
+    return SimilarityResultList(results[:top_n], prefiltered_count=prefiltered_count)
 
 
 def get_best_match(query: str, db_path: str = "genes_database.json") -> Optional[dict]:
