@@ -1,7 +1,7 @@
 """
 pipeline.py
 -----------
-Analysis orchestration for the Plant Gene Analyzer.
+Analysis orchestration for the AI-Powered Plant Gene Analyzer.
 
 This module wires together bioinformatics.py, similarityengine.py, and
 aiinterpreter.py into the single-sequence analysis pipeline used by the
@@ -18,6 +18,7 @@ import bioinformatics as bio
 import similarityengine as sim
 import aiinterpreter as ai_interp
 import sequence_loader as loader
+import variant_analysis
 import config
 
 
@@ -122,6 +123,7 @@ def analyze_sequence_record(
             )
             similarity_results = []
 
+        variant_report = None
         if best_match and db:
             try:
                 ref_seq = db[best_match["gene_name"]]["sequence"].upper().replace(" ", "")
@@ -136,6 +138,20 @@ def analyze_sequence_record(
                     "The Mutations tab will be empty for this sequence."
                 )
                 mutation_report = None
+
+            try:
+                variant_report = variant_analysis.analyze_variants(
+                    sequence, ref_seq, seq_type=mut_seq_type,
+                    reading_frame=reading_frame if mut_seq_type == "dna" else 0,
+                )
+            except Exception as e:
+                if logger:
+                    logger.warning(f"Variant analysis failed: {e}")
+                pipeline_warnings.append(
+                    "⚠️ Detailed variant classification (missense/silent/frameshift) could not be "
+                    "computed for this sequence (technical error)."
+                )
+                variant_report = None
 
     interpretation = {}
     try:
@@ -159,6 +175,7 @@ def analyze_sequence_record(
         "similarity_results": similarity_results,
         "best_match": best_match,
         "mutation_report": mutation_report,
+        "variant_report": variant_report,
         "interpretation": interpretation,
         "sequence_type": seq_type,
         "orfs": orfs,

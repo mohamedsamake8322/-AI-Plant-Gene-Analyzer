@@ -1,7 +1,7 @@
 """
 bioinformatics.py
 -----------------
-Core bioinformatics engine for the Plant Gene Analyzer.
+Core bioinformatics engine for the AI-Powered Plant Gene Analyzer.
 Handles sequence cleaning, GC content, nucleotide statistics,
 protein translation, and mutation detection.
 """
@@ -491,7 +491,7 @@ def detect_mutations(query: str, reference: str, seq_type: str = "dna") -> dict:
                     "position_query": query_pos,
                     "reference": rc,
                     "query": qc,
-                    "type": _classify_mutation(rc, qc),
+                    "type": _classify_mutation(rc, qc, seq_type),
                 })
         elif qc == "-" and rc != "-":
             ref_pos += 1
@@ -533,7 +533,45 @@ def detect_mutations(query: str, reference: str, seq_type: str = "dna") -> dict:
     }
 
 
-def _classify_mutation(ref: str, query: str) -> str:
+# Standard amino acid physicochemical property groups, used to classify a
+# protein substitution as "conservative" (same group -- similar chemistry,
+# structurally/functionally more likely to be tolerated) or "radical"
+# (different group -- more likely to disrupt structure/function).
+AA_PROPERTY_GROUPS: dict[str, str] = {}
+for _aa in "AVLIMFWPG":
+    AA_PROPERTY_GROUPS[_aa] = "nonpolar"
+for _aa in "STCYNQ":
+    AA_PROPERTY_GROUPS[_aa] = "polar"
+for _aa in "DE":
+    AA_PROPERTY_GROUPS[_aa] = "acidic"
+for _aa in "KRH":
+    AA_PROPERTY_GROUPS[_aa] = "basic"
+del _aa
+
+
+def _classify_mutation(ref: str, query: str, seq_type: str = "dna") -> str:
+    """Classify a single-position substitution.
+
+    DNA: transition (purine<->purine or pyrimidine<->pyrimidine) vs
+    transversion (purine<->pyrimidine) -- the standard nucleotide-level
+    distinction (transitions are more common and generally better
+    tolerated biologically).
+
+    Protein: conservative (same physicochemical property group, e.g.
+    Leu->Ile) vs radical (different group, e.g. Asp->Lys) substitution.
+    Previously this function always used the DNA transition/transversion
+    logic regardless of seq_type, which produced meaningless labels for
+    protein comparisons (amino acid letters like A/G/T/C happen to overlap
+    with nucleotide letters, so it never errored — it just silently
+    mislabeled every protein substitution).
+    """
+    if seq_type == "protein":
+        ref_group = AA_PROPERTY_GROUPS.get(ref)
+        query_group = AA_PROPERTY_GROUPS.get(query)
+        if ref_group is None or query_group is None:
+            return "substitution"  # unusual/ambiguous residue (X, B, Z, *) -- property group undefined
+        return "conservative" if ref_group == query_group else "radical"
+
     purines = {"A", "G"}
     pyrimidines = {"T", "C"}
     if (ref in purines and query in purines) or (ref in pyrimidines and query in pyrimidines):
