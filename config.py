@@ -87,20 +87,22 @@ PAGE_ICON = "🧬"
 DEFAULT_LAYOUT = "wide"
 DEFAULT_SIDEBAR_STATE = "expanded"
 
-# Color palette for nucleotides
+# Color palette for nucleotides (matches the app's dark bio-tech theme)
 NUCLEOTIDE_COLORS = {
-    "A": "#00c853",  # green
-    "T": "#2979ff",  # blue
-    "G": "#ffd600",  # yellow
-    "C": "#ff3d00",  # red
-    "N": "#9e9e9e",  # grey
+    "A": "#00d9a3",  # teal
+    "T": "#4fc3f7",  # cyan
+    "G": "#ffd166",  # amber
+    "C": "#ff6b6b",  # coral
+    "N": "#5f7a86",  # muted slate
 }
 
-# Light theme colors
-CHART_BG = "#ffffff"
-CHART_PAPER = "#ffffff"
-CHART_FONT_COLOR = "#111111"
-CHART_GRID_COLOR = "rgba(0,0,0,0.08)"
+# Dark theme colors (Plotly figures — must match style.css)
+CHART_BG = "rgba(0,0,0,0)"
+CHART_PAPER = "rgba(0,0,0,0)"
+CHART_FONT_COLOR = "#dfeee9"
+CHART_GRID_COLOR = "rgba(255,255,255,0.08)"
+CHART_LINE_COLOR = "rgba(255,255,255,0.15)"
+CHART_TITLE_COLOR = "#00d9a3"
 
 # ─── Export Settings ──────────────────────────────────────────────────────────
 EXPORT_FORMATS = ["JSON", "CSV", "XLSX", "HTML"]

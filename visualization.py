@@ -4,6 +4,12 @@ visualization.py
 Visualization module for the Plant Gene Analyzer.
 Produces Plotly and Matplotlib figures from analysis results.
 All functions return Plotly figures (compatible with st.plotly_chart).
+
+Layout colors (background, grid, font) and the nucleotide palette are read
+from config.py, which is the single source of truth for the app's dark
+bio-tech theme (also used by style.css). Semantic accent colors used only
+for chart-specific meaning (e.g. "high similarity" vs "low similarity") are
+defined locally below.
 """
 
 import plotly.graph_objects as go
@@ -13,41 +19,58 @@ from plotly.subplots import make_subplots
 import config
 
 
+# ─── Semantic accents (chart-only meaning, not part of the base UI theme) ─────
+TEAL = config.CHART_TITLE_COLOR   # "#00d9a3" — primary accent / good score
+CYAN = "#4fc3f7"     # secondary accent
+AMBER = "#ffd166"    # caution / mid-range
+CORAL = "#ff6b6b"    # mutation / mismatch / low-score
+MINT = "#69f0ae"     # success / match
+SLATE = "#5f7a86"    # muted / neutral (e.g. ambiguous bases)
+
+THEME = dict(
+    paper=config.CHART_PAPER,
+    plot_bg=config.CHART_BG,
+    font_color=config.CHART_FONT_COLOR,
+    grid_color=config.CHART_GRID_COLOR,
+    line_color=config.CHART_LINE_COLOR,
+    title_color=config.CHART_TITLE_COLOR,
+)
+
 # ─── Color palette ─────────────────────────────────────────────────────────────
 NUCLEOTIDE_COLORS: dict[str, str] = config.NUCLEOTIDE_COLORS
 
 
 def _base_layout(title: str = "") -> dict:
-    """Shared Plotly layout for the app theme."""
+    """Shared Plotly layout for the app's dark theme."""
     return dict(
-        title=dict(text=title, font=dict(color="#0f3d0f", size=16)),
-        paper_bgcolor=config.CHART_PAPER,
-        plot_bgcolor=config.CHART_BG,
-        font=dict(color=config.CHART_FONT_COLOR, family="Arial"),
+        title=dict(text=title, font=dict(color=THEME["title_color"], size=16, family="Space Grotesk, Arial")),
+        paper_bgcolor=THEME["paper"],
+        plot_bgcolor=THEME["plot_bg"],
+        font=dict(color=THEME["font_color"], family="Inter, Arial"),
         margin=dict(l=40, r=40, t=60, b=40),
-        xaxis=dict(gridcolor=config.CHART_GRID_COLOR, zerolinecolor=config.CHART_GRID_COLOR, linecolor="#cccccc"),
-        yaxis=dict(gridcolor=config.CHART_GRID_COLOR, zerolinecolor=config.CHART_GRID_COLOR, linecolor="#cccccc"),
+        xaxis=dict(gridcolor=THEME["grid_color"], zerolinecolor=THEME["grid_color"], linecolor=THEME["line_color"]),
+        yaxis=dict(gridcolor=THEME["grid_color"], zerolinecolor=THEME["grid_color"], linecolor=THEME["line_color"]),
     )
 
 
 def _normalize_plotly_color(color_value: str) -> str:
     """Normalize matplotlib-style color names for Plotly."""
     named_colors = {
-        'C0': '#1f77b4',
-        'C1': '#ff7f0e',
-        'C2': '#2ca02c',
-        'C3': '#d62728',
+        'C0': TEAL,
+        'C1': CYAN,
+        'C2': AMBER,
+        'C3': CORAL,
         'C4': '#9467bd',
         'C5': '#8c564b',
         'C6': '#e377c2',
-        'C7': '#7f7f7f',
+        'C7': SLATE,
         'C8': '#bcbd22',
         'C9': '#17becf',
     }
     if color_value in named_colors:
         return named_colors[color_value]
     if isinstance(color_value, str) and color_value.startswith('C') and color_value[1:].isdigit():
-        return named_colors.get(color_value, '#0f3d0f')
+        return named_colors.get(color_value, TEAL)
     return color_value
 
 
@@ -63,7 +86,7 @@ def plot_nucleotide_pie(dist: dict) -> go.Figure:
     counts = dist["counts"]
     labels = [k for k, v in counts.items() if v > 0]
     values = [counts[k] for k in labels]
-    colors = [NUCLEOTIDE_COLORS.get(k, "#9e9e9e") for k in labels]
+    colors = [NUCLEOTIDE_COLORS.get(k, SLATE) for k in labels]
 
     fig = go.Figure(
         go.Pie(
@@ -78,12 +101,12 @@ def plot_nucleotide_pie(dist: dict) -> go.Figure:
     fig.update_layout(
         **_base_layout("Nucleotide Composition"),
         showlegend=True,
-        legend=dict(font=dict(color=config.CHART_FONT_COLOR)),
+        legend=dict(font=dict(color=THEME["font_color"])),
         annotations=[
             dict(
                 text="DNA<br>Base",
                 x=0.5, y=0.5,
-                font=dict(size=13, color="#69f0ae"),
+                font=dict(size=13, color=TEAL),
                 showarrow=False,
             )
         ],
@@ -93,12 +116,14 @@ def plot_nucleotide_pie(dist: dict) -> go.Figure:
 
 def plot_nucleotide_bar(dist: dict) -> go.Figure:
     """
-    Bar chart of nucleotide counts.
+    Bar chart of nucleotide counts. Categories with a zero count are omitted
+    (e.g. "N" on a clean sequence) so they don't take up visual space with no
+    information to show.
     """
     counts = dist["counts"]
-    nucleotides = list(counts.keys())
+    nucleotides = [n for n, v in counts.items() if v > 0]
     values = [counts[n] for n in nucleotides]
-    colors = [NUCLEOTIDE_COLORS.get(n, "#9e9e9e") for n in nucleotides]
+    colors = [NUCLEOTIDE_COLORS.get(n, SLATE) for n in nucleotides]
 
     fig = go.Figure(
         go.Bar(
@@ -107,7 +132,7 @@ def plot_nucleotide_bar(dist: dict) -> go.Figure:
             marker=dict(color=colors, line=dict(color="#0d1b2a", width=1)),
             text=values,
             textposition="outside",
-            textfont=dict(color=config.CHART_FONT_COLOR),
+            textfont=dict(color=THEME["font_color"]),
             hovertemplate="<b>%{x}</b><br>Count: %{y}<extra></extra>",
         )
     )
@@ -123,7 +148,7 @@ def plot_amino_acid_bar(dist: dict) -> go.Figure:
     counts = dist["counts"]
     residues = [aa for aa, count in counts.items() if count > 0]
     values = [counts[aa] for aa in residues]
-    colors = ["#00c853" if aa in {"A", "G", "V", "L", "I", "M"} else "#2979ff" for aa in residues]
+    colors = [TEAL if aa in {"A", "G", "V", "L", "I", "M"} else CYAN for aa in residues]
 
     fig = go.Figure(
         go.Bar(
@@ -132,7 +157,7 @@ def plot_amino_acid_bar(dist: dict) -> go.Figure:
             marker=dict(color=colors, line=dict(color="#0d1b2a", width=1)),
             text=values,
             textposition="outside",
-            textfont=dict(color=config.CHART_FONT_COLOR),
+            textfont=dict(color=THEME["font_color"]),
             hovertemplate="<b>%{x}</b><br>Count: %{y}<extra></extra>",
         )
     )
@@ -148,55 +173,63 @@ def plot_amino_acid_bar(dist: dict) -> go.Figure:
 def plot_gc_gauge(gc_percent: float) -> go.Figure:
     """
     Gauge chart for GC content.
-    """
-    if gc_percent >= 60:
-        bar_color = "#ff3d00"
-    elif gc_percent <= 35:
-        bar_color = "#2979ff"
-    else:
-        bar_color = "#00c853"
 
+    The reference bands (low / balanced / high) are descriptive only — GC
+    content varies naturally by species and gene region, so a "high" reading
+    is not inherently good or bad. The caption below the gauge makes this
+    explicit instead of relying on a red/green traffic-light color scheme.
+    """
     fig = go.Figure(
         go.Indicator(
             mode="gauge+number+delta",
             value=gc_percent,
-            number=dict(suffix="%", font=dict(color="#69f0ae", size=36)),
+            number=dict(suffix="%", font=dict(color=TEAL, size=36)),
             delta=dict(
                 reference=50,
-                increasing=dict(color="#ff3d00"),
-                decreasing=dict(color="#2979ff"),
+                increasing=dict(color=AMBER),
+                decreasing=dict(color=CYAN),
             ),
             gauge=dict(
                 axis=dict(
                     range=[0, 100],
-                    tickcolor=config.CHART_FONT_COLOR,
-                    tickfont=dict(color=config.CHART_FONT_COLOR),
+                    tickcolor=THEME["font_color"],
+                    tickfont=dict(color=THEME["font_color"]),
                 ),
-                bar=dict(color=bar_color, thickness=0.25),
-                bgcolor=config.CHART_BG,
-                bordercolor="#69f0ae",
+                bar=dict(color=TEAL, thickness=0.25),
+                bgcolor=THEME["plot_bg"],
+                bordercolor=TEAL,
                 steps=[
-                    dict(range=[0, 35], color="rgba(41,121,255,0.15)"),
-                    dict(range=[35, 65], color="rgba(0,200,83,0.15)"),
-                    dict(range=[65, 100], color="rgba(255,61,0,0.15)"),
+                    dict(range=[0, 35], color="rgba(79,195,247,0.15)"),
+                    dict(range=[35, 65], color="rgba(0,217,163,0.15)"),
+                    dict(range=[65, 100], color="rgba(255,209,102,0.15)"),
                 ],
                 threshold=dict(
-                    line=dict(color="#ffd600", width=3),
+                    line=dict(color=AMBER, width=3),
                     thickness=0.8,
                     value=50,
                 ),
             ),
             title=dict(
                 text="GC Content",
-                font=dict(color="#69f0ae", size=16),
+                font=dict(color=TEAL, size=16),
             ),
         )
     )
     fig.update_layout(
-        paper_bgcolor=config.CHART_PAPER,
-        font=dict(color=config.CHART_FONT_COLOR, family="Courier New"),
-        margin=dict(l=20, r=20, t=60, b=20),
-        height=280,
+        paper_bgcolor=THEME["paper"],
+        font=dict(color=THEME["font_color"], family="JetBrains Mono, Consolas, monospace"),
+        margin=dict(l=20, r=20, t=60, b=50),
+        height=300,
+        annotations=[
+            dict(
+                text="Reference bands only — a high or low GC% reflects species/gene "
+                     "characteristics, not sequence quality.",
+                x=0.5, y=-0.08,
+                xref="paper", yref="paper",
+                showarrow=False,
+                font=dict(size=10, color=SLATE),
+            )
+        ],
     )
     return fig
 
@@ -218,7 +251,7 @@ def plot_similarity_scores(similarity_results: list[dict]) -> go.Figure:
     traits = [r["trait"] for r in similarity_results]
 
     colors = [
-        "#00c853" if s >= 75 else "#ffd600" if s >= 50 else "#ff3d00"
+        TEAL if s >= 75 else AMBER if s >= 50 else CORAL
         for s in scores
     ]
 
@@ -233,7 +266,7 @@ def plot_similarity_scores(similarity_results: list[dict]) -> go.Figure:
             ),
             text=[f"{s:.1f}%" for s in scores],
             textposition="outside",
-            textfont=dict(color=config.CHART_FONT_COLOR),
+            textfont=dict(color=THEME["font_color"]),
             customdata=traits,
             hovertemplate=(
                 "<b>%{y}</b><br>"
@@ -282,7 +315,7 @@ def plot_alignment(alignment_map: dict, max_chars: int = 60) -> go.Figure:
             x=positions,
             y=match_values,
             marker=dict(
-                color=["#00c853" if v else "#ff3d00" for v in match_values],
+                color=[TEAL if v else CORAL for v in match_values],
                 line=dict(width=0),
             ),
             name="Match / Mismatch",
@@ -328,7 +361,7 @@ def plot_mutation_map(mutation_report: dict, seq_length: int) -> go.Figure:
                     x=0.5, y=0.5,
                     xref="paper", yref="paper",
                     showarrow=False,
-                    font=dict(color="#69f0ae", size=16),
+                    font=dict(color=MINT, size=16),
                 )
             ],
         )
@@ -346,7 +379,7 @@ def plot_mutation_map(mutation_report: dict, seq_length: int) -> go.Figure:
 
         positions.append(position)
         mutation_type = m.get("type", "unknown")
-        colors.append("#ffd600" if mutation_type == "transition" else "#ff3d00")
+        colors.append(AMBER if mutation_type == "transition" else CORAL)
         hover_texts.append(
             f"Pos {position}: {m.get('reference', '?')} → {m.get('query', '?')} ({mutation_type})"
         )
@@ -361,7 +394,7 @@ def plot_mutation_map(mutation_report: dict, seq_length: int) -> go.Figure:
                     x=0.5, y=0.5,
                     xref="paper", yref="paper",
                     showarrow=False,
-                    font=dict(color="#ffab00", size=16),
+                    font=dict(color=AMBER, size=16),
                 )
             ],
         )
@@ -391,7 +424,7 @@ def plot_mutation_map(mutation_report: dict, seq_length: int) -> go.Figure:
             x=[0, seq_length],
             y=[1, 1],
             mode="lines",
-            line=dict(color="#69f0ae", width=2),
+            line=dict(color=TEAL, width=2),
             name="Sequence",
             hoverinfo="skip",
         )
@@ -431,31 +464,43 @@ def plot_gc_sliding_window(sequence: str, window: int = 20) -> go.Figure:
 
     fig = go.Figure()
 
-    fig.add_hrect(y0=60, y1=100, fillcolor="rgba(255,61,0,0.1)", line_width=0)
-    fig.add_hrect(y0=0, y1=35, fillcolor="rgba(41,121,255,0.1)", line_width=0)
-    fig.add_hrect(y0=35, y1=60, fillcolor="rgba(0,200,83,0.05)", line_width=0)
+    fig.add_hrect(y0=65, y1=100, fillcolor="rgba(255,209,102,0.08)", line_width=0)
+    fig.add_hrect(y0=0, y1=35, fillcolor="rgba(79,195,247,0.08)", line_width=0)
+    fig.add_hrect(y0=35, y1=65, fillcolor="rgba(0,217,163,0.06)", line_width=0)
 
     fig.add_trace(
         go.Scatter(
             x=positions,
             y=gc_values,
             mode="lines",
-            line=dict(color="#00c853", width=2),
+            line=dict(color=TEAL, width=2),
             fill="tozeroy",
-            fillcolor="rgba(0,200,83,0.1)",
+            fillcolor="rgba(0,217,163,0.12)",
             name=f"GC% (w={window}bp)",
             hovertemplate="Position %{x}<br>GC: %{y:.1f}%<extra></extra>",
         )
     )
 
-    fig.add_hline(y=50, line=dict(color="#ffd600", dash="dash", width=1))
+    fig.add_hline(y=50, line=dict(color=AMBER, dash="dash", width=1))
 
     layout = _base_layout(f"GC Content Profile (window = {window} bp)")
     layout["xaxis"]["title"] = "Position (bp)"
     layout["yaxis"]["title"] = "GC (%)"
     layout["yaxis"]["range"] = [0, 100]
     layout["yaxis"]["ticksuffix"] = "%"
-    fig.update_layout(**layout, height=300)
+    fig.update_layout(
+        **layout,
+        height=320,
+        annotations=[
+            dict(
+                text="Shaded bands are reference ranges, not a pass/fail score.",
+                x=0.5, y=1.12,
+                xref="paper", yref="paper",
+                showarrow=False,
+                font=dict(size=10, color=SLATE),
+            )
+        ],
+    )
     return fig
 
 
@@ -478,7 +523,7 @@ def plot_msa_table(aligned_sequences: list, labels: list | None = None) -> go.Fi
     # Build color map per cell
     fill_colors = []
     for row in rows:
-        colors = [NUCLEOTIDE_COLORS.get(base.upper(), "#eeeeee") for base in row]
+        colors = [NUCLEOTIDE_COLORS.get(base.upper(), SLATE) for base in row]
         fill_colors.append(colors)
 
     # Build header and cell values: show columns as positions
@@ -492,20 +537,22 @@ def plot_msa_table(aligned_sequences: list, labels: list | None = None) -> go.Fi
             go.Table(
                 header=dict(
                     values=["Sequence"] + header_values,
-                    fill_color="#dcedc8",
+                    fill_color="#0d1b2a",
                     align="center",
-                    font=dict(color=config.CHART_FONT_COLOR, size=12),
+                    font=dict(color=TEAL, size=12),
+                    line_color="rgba(0,217,163,0.25)",
                 ),
                 cells=dict(
                     values=[labels or [f"Seq {i+1}" for i in range(len(rows))]] + cell_values,
-                    fill_color=[["#ffffff"] * len(cell_values[0])] * 1 + cell_colors,
+                    fill_color=[["#0d1b2a"] * len(cell_values[0])] * 1 + cell_colors,
                     align="center",
-                    font=dict(color=config.CHART_FONT_COLOR, size=11),
+                    font=dict(color="#061019", size=11),
+                    line_color="rgba(0,217,163,0.15)",
                 ),
             )
         ]
     )
-    fig.update_layout(paper_bgcolor=config.CHART_PAPER, height= max(200, 40 * len(rows)))
+    fig.update_layout(paper_bgcolor=THEME["paper"], height=max(200, 40 * len(rows)))
     return fig
 
 
@@ -529,7 +576,7 @@ def plot_dendrogram(dendro: dict, labels: list | None = None) -> go.Figure:
     node_points = set()
     leaf_x = []
 
-    for xs, ys, col in zip(icoord, dcoord, color_list if color_list else ['#0f3d0f'] * len(icoord)):
+    for xs, ys, col in zip(icoord, dcoord, color_list if color_list else [TEAL] * len(icoord)):
         xs = list(xs)
         ys = list(ys)
         for x, y in zip(xs, ys):
@@ -557,7 +604,7 @@ def plot_dendrogram(dendro: dict, labels: list | None = None) -> go.Figure:
                 x=[x for x, _ in internal_nodes],
                 y=[y for _, y in internal_nodes],
                 mode='markers',
-                marker=dict(size=8, color='#0d1b2a', symbol='circle'),
+                marker=dict(size=8, color=CYAN, symbol='circle'),
                 hoverinfo='none',
                 showlegend=False,
             )
@@ -569,7 +616,7 @@ def plot_dendrogram(dendro: dict, labels: list | None = None) -> go.Figure:
                 x=[x for x, _ in leaves],
                 y=[y for _, y in leaves],
                 mode='markers',
-                marker=dict(size=10, color='#69f0ae', symbol='circle'),
+                marker=dict(size=10, color=MINT, symbol='circle'),
                 hoverinfo='none',
                 showlegend=False,
             )
@@ -585,7 +632,7 @@ def plot_dendrogram(dendro: dict, labels: list | None = None) -> go.Figure:
                 mode='text',
                 text=labels,
                 textposition='bottom center',
-                textfont=dict(color=config.CHART_FONT_COLOR, size=11),
+                textfont=dict(color=THEME["font_color"], size=11),
                 hoverinfo='skip',
                 showlegend=False,
             )
