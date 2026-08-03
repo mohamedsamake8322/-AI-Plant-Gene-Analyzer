@@ -31,12 +31,20 @@ def collect_and_clean_type(
     retmax: int,
     temp_raw: Path,
     temp_clean: Path,
+    max_length: int | None = None,
 ) -> list[dict]:
     """Collect one sequence type and return cleaned records.
 
     Returns an empty list (instead of raising) if this particular sequence
     type fails -- a problem collecting, say, protein sequences shouldn't
     throw away DNA/RNA records already gathered for the same species.
+
+    IMPORTANT: a plain species-name term search on NCBI's "nucleotide" db
+    (used for seq_type="dna", where mrna_only=False) returns EVERYTHING
+    catalogued under that organism -- including whole chromosome/scaffold
+    assembly entries (tens of millions of bp), not just individual genes.
+    This previously let e.g. 60,000,000+ bp "genes" into the pipeline. A
+    default max_length caps this out unless the caller overrides it.
     """
     print(f"\n[→] Collecting {seq_type.upper()} sequences for '{plant_term}'...")
 
@@ -50,12 +58,24 @@ def collect_and_clean_type(
     ncbi_db = opts["db"]
     mrna_only = opts["mrna_only"]
 
+    # Generous upper bounds for real plant genes/transcripts/proteins --
+    # comfortably above any legitimate single-locus record, but far below
+    # chromosome/scaffold scale (tens of millions of bp).
+    DEFAULT_MAX_LENGTH = {
+        "dna": 100_000,
+        "rna": 50_000,
+        "mrna": 50_000,
+        "protein": 20_000,
+    }
+    effective_max_length = max_length if max_length is not None else DEFAULT_MAX_LENGTH.get(seq_type, 100_000)
+
     pipeline_argv = [
         "--ncbi-term", plant_term,
         "--ncbi-db", ncbi_db,
         "--retmax", str(retmax),
         "--out-raw", str(temp_raw),
         "--out-clean", str(temp_clean),
+        "--max-length", str(effective_max_length),
         "--skip-load",
     ]
     if mrna_only:
@@ -93,6 +113,15 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--out-raw", default=None, help="Output raw JSON file")
     parser.add_argument("--create-tables", action="store_true", help="Create PostgreSQL tables")
     parser.add_argument("--skip-load", action="store_true", help="Skip PostgreSQL import")
+    parser.add_argument(
+        "--max-length", type=int, default=None,
+        help=(
+            "Max sequence length in bp/aa. Without this, sensible per-type "
+            "defaults apply (dna=100000, rna/mrna=50000, protein=20000) to "
+            "exclude whole chromosome/scaffold assembly entries that a plain "
+            "species-name NCBI search can otherwise return."
+        ),
+    )
     args = parser.parse_args(argv)
 
     plant_clean_name = args.plant.lower().replace(" ", "_")
@@ -119,7 +148,7 @@ def main(argv: list[str] | None = None) -> None:
             temp_clean = temp_dir / f"clean_{seq_type}.json"
 
             records = collect_and_clean_type(
-                args.plant, seq_type, args.retmax, temp_raw, temp_clean
+                args.plant, seq_type, args.retmax, temp_raw, temp_clean, max_length=args.max_length
             )
 
             for record in records:
