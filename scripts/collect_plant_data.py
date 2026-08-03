@@ -172,7 +172,15 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--atlas-gene", help="Gene symbol for Expression Atlas gene profile")
     parser.add_argument("--ensembl-symbol", help="Gene symbol for Ensembl Plants")
     parser.add_argument("--ensembl-id", help="Ensembl gene or transcript ID")
-    parser.add_argument("--ensembl-species", default=collect_ensembl.DEFAULT_SPECIES, help="Ensembl species (default: arabidopsis_thaliana)")
+    # NOTE: on ne référence plus collect_ensembl.DEFAULT_SPECIES directement ici.
+    # Cet attribut peut être absent (ou renommé) selon la version de
+    # scripts/collect_ensembl.py effectivement chargée, et comme cette ligne
+    # s'exécute à CHAQUE appel de main() -- y compris pour des runs qui ne
+    # touchent jamais Ensembl (--ncbi-term, --ncbi-accession, etc.) -- une
+    # collecte NCBI pure ne devrait jamais pouvoir planter à cause d'un
+    # souci côté Ensembl. getattr() avec fallback casse cette dépendance.
+    _ensembl_default_species = getattr(collect_ensembl, "DEFAULT_SPECIES", "arabidopsis_thaliana")
+    parser.add_argument("--ensembl-species", default=_ensembl_default_species, help="Ensembl species (default: arabidopsis_thaliana)")
     parser.add_argument(
         "--ensembl-seq-type",
         default="cdna",
