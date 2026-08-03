@@ -523,6 +523,28 @@ def main(argv: list[str] | None = None) -> None:
     print(f"   Retmax   : {args.retmax}")
     print(f"   Out dir  : {out_dir}\n")
 
+    # ── Write a pre-run plan, so a multi-hour run has a durable checklist to
+    # compare the final collection_report against -- e.g. to catch a species
+    # that silently never appears in the final report because a worker
+    # crashed, rather than relying on scrolling back through the console.
+    plan_path = out_dir / f"collection_plan_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
+    plan_payload = {
+        "planned_at": datetime.utcnow().isoformat() + "Z",
+        "configuration": {
+            "sources": sources,
+            "retmax": args.retmax,
+            "workers": args.workers,
+            "skip_existing": skip_existing,
+            "category": args.category or "all",
+        },
+        "species_planned_count": len(plants),
+        "species_planned": [p["name"] for p in plants],
+    }
+    plan_path.parent.mkdir(parents=True, exist_ok=True)
+    plan_path.write_text(json.dumps(plan_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"📋 Collection plan written to {plan_path}")
+    print(f"   (compare against collection_report_*.json once the run finishes)\n")
+
     start_time = time.time()
     results: list[dict] = []
 
