@@ -18,26 +18,52 @@ from psycopg import sql
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-DB_HOST = os.getenv("DB_HOST")
-DB_PORT = os.getenv("DB_PORT")
-DB_NAME = os.getenv("DB_NAME")
-DB_USER = os.getenv("DB_USER")
-DB_PASSWORD = os.getenv("DB_PASSWORD")
 
-if DB_HOST and DB_NAME and DB_USER and DB_PASSWORD:
-    DATABASE_URL = (
-        f"postgresql://{quote_plus(DB_USER)}:{quote_plus(DB_PASSWORD)}@{DB_HOST}"
-        f":{DB_PORT or 5432}/{quote_plus(DB_NAME)}"
-    )
-elif not DATABASE_URL:
+def _load_streamlit_secret(name: str) -> str | None:
+    try:
+        import streamlit as st
+
+        value = st.secrets.get(name)
+        return str(value) if value is not None else None
+    except Exception:
+        return None
+
+
+def _env_or_secret(name: str) -> str | None:
+    return os.getenv(name) or _load_streamlit_secret(name)
+
+
+DATABASE_URL = _env_or_secret("DATABASE_URL")
+DB_HOST = _env_or_secret("DB_HOST")
+DB_PORT = _env_or_secret("DB_PORT")
+DB_NAME = _env_or_secret("DB_NAME")
+DB_USER = _env_or_secret("DB_USER")
+DB_PASSWORD = _env_or_secret("DB_PASSWORD")
+
+
+def _resolve_database_url() -> str:
+    database_url = _env_or_secret("DATABASE_URL")
+    if database_url:
+        return database_url
+
+    db_host = _env_or_secret("DB_HOST")
+    db_port = _env_or_secret("DB_PORT")
+    db_name = _env_or_secret("DB_NAME")
+    db_user = _env_or_secret("DB_USER")
+    db_password = _env_or_secret("DB_PASSWORD")
+    if db_host and db_name and db_user and db_password:
+        return (
+            f"postgresql://{quote_plus(db_user)}:{quote_plus(db_password)}@{db_host}"
+            f":{db_port or 5432}/{quote_plus(db_name)}"
+        )
+
     raise RuntimeError(
         "DATABASE_URL not set and DB_HOST/DB_NAME/DB_USER/DB_PASSWORD are not all configured"
     )
 
 
 def get_connection() -> psycopg.Connection:
-    return psycopg.connect(DATABASE_URL, autocommit=True)
+    return psycopg.connect(_resolve_database_url(), autocommit=True)
 
 
 def create_tables() -> None:

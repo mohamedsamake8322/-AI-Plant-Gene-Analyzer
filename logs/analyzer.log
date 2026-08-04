@@ -273,3 +273,23 @@ Multiple connection attempts failed. All failures were:
 2026-06-15 22:18:49,297 - __main__ - INFO - CSS loaded successfully from style.css
 2026-06-15 22:21:29,134 - __main__ - WARNING - PostgreSQL load failed: canceling statement due to statement timeout
 2026-06-15 22:21:29,177 - __main__ - INFO - Loaded 13 genes from database
+2026-08-04 19:29:15,228 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-04 19:29:15,516 - __main__ - INFO - Background video loaded from assets\images.mp4 (1.2 MB)
+2026-08-04 19:30:55,531 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-04 19:30:55,691 - __main__ - INFO - Background video loaded from assets\images.mp4 (1.2 MB)
+2026-08-04 19:33:35,889 - __main__ - WARNING - PostgreSQL load failed: connection timeout expired
+Multiple connection attempts failed. All failures were:
+- host: 'localhost', port: '5433', hostaddr: '::1': connection timeout expired
+- host: 'localhost', port: '5433', hostaddr: '127.0.0.1': connection timeout expired
+2026-08-04 19:33:36,053 - __main__ - INFO - Loaded 13 genes from database
+2026-08-04 19:38:15,666 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-04 19:38:15,890 - __main__ - INFO - Background video loaded from assets\images.mp4 (1.2 MB)
+2026-08-04 19:39:51,593 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-04 19:39:51,762 - __main__ - INFO - Background video loaded from assets\images.mp4 (1.2 MB)
+2026-08-04 19:44:12,158 - __main__ - WARNING - PostgreSQL load failed: connection timeout expired
+Multiple connection attempts failed. All failures were:
+- host: 'localhost', port: '5433', hostaddr: '::1': connection timeout expired
+- host: 'localhost', port: '5433', hostaddr: '127.0.0.1': connection timeout expired
+2026-08-04 19:44:12,348 - __main__ - INFO - Loaded 13 genes from database
+2026-08-04 20:03:17,251 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-04 20:03:17,522 - __main__ - INFO - Background video loaded from assets\images.mp4 (1.2 MB)
