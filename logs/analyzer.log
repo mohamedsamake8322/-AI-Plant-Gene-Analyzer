@@ -293,3 +293,13 @@ Multiple connection attempts failed. All failures were:
 2026-08-04 19:44:12,348 - __main__ - INFO - Loaded 13 genes from database
 2026-08-04 20:03:17,251 - __main__ - INFO - CSS loaded successfully from style.css
 2026-08-04 20:03:17,522 - __main__ - INFO - Background video loaded from assets\images.mp4 (1.2 MB)
+2026-08-05 21:52:22,301 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-05 21:52:22,505 - __main__ - INFO - Background video loaded from assets\images.mp4 (1.2 MB)
+2026-08-05 21:52:36,566 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-05 21:52:36,707 - __main__ - INFO - Background video loaded from assets\images.mp4 (1.2 MB)
+2026-08-05 21:52:37,050 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-05 21:52:37,244 - __main__ - INFO - Background video loaded from assets\images.mp4 (1.2 MB)
+2026-08-05 21:52:39,611 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-05 21:52:39,750 - __main__ - INFO - Background video loaded from assets\images.mp4 (1.2 MB)
+2026-08-05 22:09:46,656 - __main__ - INFO - Loaded 55979 genes from PostgreSQL
+2026-08-05 22:10:38,812 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
