@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 
 import psycopg
+import json
 
 from postgres_utils import create_tables, get_connection, insert_gene_record, load_json_records
 
@@ -101,6 +102,27 @@ def main(argv: list[str] | None = None) -> None:
     failed = 0
     try:
         for i, record in enumerate(records, 1):
+            # Compute lightweight k-mer signature for faster DB-side prefilter
+            # and to allow candidate selection without fetching full sequences.
+            try:
+                seq = record.get("sequence") or (record.get("record") or {}).get("sequence")
+            except Exception:
+                seq = None
+            def _compute_kmer_set(sequence: str, k: int = 5) -> list:
+                if not sequence:
+                    return []
+                s = sequence.upper().replace(" ", "")
+                if len(s) < k:
+                    return []
+                # use a deterministic sorted list for stable DB storage
+                return sorted(set(s[i : i + k] for i in range(len(s) - k + 1)))
+
+            if "kmer_signature" not in record:
+                try:
+                    record["kmer_signature"] = _compute_kmer_set(seq, k=5)
+                except Exception:
+                    record["kmer_signature"] = []
+
             try:
                 success = insert_with_retry(record, conn=conn, max_retries=3, backoff_secs=5)
             except CONNECTION_ERRORS as e:

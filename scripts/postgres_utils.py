@@ -140,6 +140,7 @@ def create_tables() -> None:
                     source TEXT,
                     source_url TEXT,
                     external_links JSONB,
+                    kmer_signature JSONB,
                     expression_profiles JSONB,
                     pathways JSONB,
                     publications JSONB,
@@ -165,6 +166,9 @@ def create_tables() -> None:
             cur.execute("CREATE INDEX IF NOT EXISTS genes_organism_idx ON genes (organism);")
             cur.execute("CREATE INDEX IF NOT EXISTS genes_sequence_type_idx ON genes (sequence_type);")
             cur.execute("CREATE INDEX IF NOT EXISTS genes_source_idx ON genes (source);")
+            # Index on kmer_signature (JSONB) can speed up candidate selection
+            # using containment or expression indices in future queries.
+            cur.execute("CREATE INDEX IF NOT EXISTS genes_kmer_signature_idx ON genes USING gin (kmer_signature);")
 
             # Trigram indexes let the sidebar's "search gene ID, symbol, or
             # trait" box run as a fast server-side ILIKE query instead of
@@ -192,12 +196,12 @@ _UPSERT_SQL = sql.SQL(
     """
     INSERT INTO genes (
         gene_id, symbol, organism, sequence, sequence_type,
-        description, source, source_url, external_links,
+        description, source, source_url, external_links, kmer_signature,
         expression_profiles, pathways, publications,
         annotations, traits, length, date_added, record
     ) VALUES (
         %(gene_id)s, %(symbol)s, %(organism)s, %(sequence)s, %(sequence_type)s,
-        %(description)s, %(source)s, %(source_url)s, %(external_links)s,
+        %(description)s, %(source)s, %(source_url)s, %(external_links)s, %(kmer_signature)s,
         %(expression_profiles)s, %(pathways)s, %(publications)s,
         %(annotations)s, %(traits)s, %(length)s, %(date_added)s, %(record)s
     )
@@ -219,6 +223,8 @@ _UPSERT_SQL = sql.SQL(
         -- a later source add to what's already known rather than erasing it.
         external_links = genes.external_links || EXCLUDED.external_links,
         annotations = genes.annotations || EXCLUDED.annotations,
+        -- Keep existing kmer_signature when incoming one is null/empty.
+        kmer_signature = COALESCE(EXCLUDED.kmer_signature, genes.kmer_signature),
         -- JSONB arrays: keep the existing array if the incoming one is empty.
         expression_profiles = CASE WHEN EXCLUDED.expression_profiles = '[]'::jsonb
             THEN genes.expression_profiles ELSE EXCLUDED.expression_profiles END,
@@ -255,6 +261,7 @@ def _record_to_params(record: dict) -> dict:
         "publications": json.dumps(record.get("publications", [])),
         "annotations": json.dumps(record.get("annotations", {})),
         "traits": json.dumps(record.get("traits", [])),
+        "kmer_signature": json.dumps(record.get("kmer_signature", [])),
         "length": record.get("length") or (len(record.get("sequence", "")) if record.get("sequence") else None),
         "date_added": record.get("date_added"),
         "record": json.dumps(record),
@@ -511,6 +518,142 @@ def count_gene_metadata_matches(query: str) -> int:
             )
             (count,) = cur.fetchone()
             return int(count)
+
+
+def find_candidate_gene_ids_by_kmers(kmers: list[str], limit: int = 500) -> list[str]:
+    """Return a list of gene_id (or symbol) candidates ordered by k-mer overlap.
+
+    This executes a server-side aggregation that counts matching k-mers in
+    `kmer_signature` JSONB arrays and returns the top `limit` gene identifiers.
+    """
+    if not kmers:
+        return []
+    with pooled_connection() as conn:
+        with conn.cursor() as cur:
+            # Unnest the JSONB kmer_signature array and count overlaps with the
+            # provided kmers list. Use = ANY(%s) to pass the Python list safely.
+            cur.execute(
+                """
+                SELECT COALESCE(gene_id, symbol) AS gid, COUNT(*) AS common
+                FROM genes, jsonb_array_elements_text(kmer_signature) AS k(kmer)
+                WHERE k.kmer = ANY(%s)
+                GROUP BY gid
+                ORDER BY common DESC
+                LIMIT %s;
+                """,
+                (kmers, limit),
+            )
+            rows = cur.fetchall()
+            return [row[0] for row in rows]
+
+
+def find_candidate_gene_ids_by_kmers_weighted(kmers: list[str], limit: int = 500, min_jaccard: float = 0.01) -> list[str]:
+    """Return gene ids ordered by Jaccard similarity between provided `kmers` and stored `kmer_signature`.
+
+    Jaccard = |intersection| / (|query_kmers| + jsonb_array_length(kmer_signature) - |intersection|)
+    The query computes the intersection count and filters by minimum Jaccard.
+    """
+    if not kmers:
+        return []
+    with pooled_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT gid FROM (
+                  SELECT COALESCE(gene_id, symbol) AS gid,
+                         COUNT(*) AS common,
+                         jsonb_array_length(kmer_signature) AS ref_count
+                  FROM genes, jsonb_array_elements_text(kmer_signature) AS k(kmer)
+                  WHERE k.kmer = ANY(%s)
+                  GROUP BY gid, ref_count
+                ) t
+                WHERE (common::float / (%s + ref_count - common)) >= %s
+                ORDER BY (common::float / (%s + ref_count - common)) DESC
+                LIMIT %s;
+                """,
+                (kmers, len(kmers), min_jaccard, len(kmers), limit),
+            )
+            rows = cur.fetchall()
+            return [row[0] for row in rows]
+
+
+def load_gene_records_by_ids(ids: list[str]) -> dict:
+    """Load full gene records for the provided list of gene_id/symbol identifiers.
+
+    Returns a dict keyed by gene_id/symbol like `load_gene_database_from_postgres`.
+    """
+    if not ids:
+        return {}
+    placeholders = ','.join(['%s'] * len(ids))
+    query = (
+        f"SELECT gene_id, symbol, organism, sequence, sequence_type, description, source, source_url, "
+        f"external_links, expression_profiles, pathways, publications, annotations, traits, length, date_added, record "
+        f"FROM genes WHERE COALESCE(gene_id, symbol) IN ({placeholders});"
+    )
+    with pooled_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, ids)
+            records: dict[str, dict] = {}
+            for row in cur.fetchall():
+                (
+                    gene_id,
+                    symbol,
+                    organism,
+                    sequence,
+                    sequence_type,
+                    description,
+                    source,
+                    source_url,
+                    external_links,
+                    expression_profiles,
+                    pathways,
+                    publications,
+                    annotations,
+                    traits,
+                    length,
+                    date_added,
+                    record,
+                ) = row
+
+                if isinstance(external_links, str):
+                    external_links = json.loads(external_links)
+                if isinstance(expression_profiles, str):
+                    expression_profiles = json.loads(expression_profiles)
+                if isinstance(pathways, str):
+                    pathways = json.loads(pathways)
+                if isinstance(publications, str):
+                    publications = json.loads(publications)
+                if isinstance(annotations, str):
+                    annotations = json.loads(annotations)
+                if isinstance(traits, str):
+                    traits = json.loads(traits)
+                if isinstance(record, str):
+                    record = json.loads(record)
+
+                key = gene_id or symbol
+                if not key:
+                    continue
+
+                records[key] = {
+                    "gene_id": gene_id,
+                    "symbol": symbol,
+                    "organism": organism,
+                    "sequence": sequence,
+                    "sequence_type": sequence_type,
+                    "description": description,
+                    "source": source,
+                    "source_url": source_url,
+                    "external_links": external_links or {},
+                    "expression_profiles": expression_profiles or [],
+                    "pathways": pathways or [],
+                    "publications": publications or [],
+                    "annotations": annotations or {},
+                    "traits": traits or [],
+                    "length": length,
+                    "date_added": date_added,
+                    "record": record,
+                }
+            return records
 
 
 def load_json_records(path: Path) -> list[dict]:

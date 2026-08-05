@@ -159,6 +159,19 @@ def load_gene_database_cached(db_path: str = "genes_database.json") -> dict:
 
         db = sim.load_gene_database(db_path)
         logger.info(f"Loaded {len(db)} genes from database")
+        try:
+            # Build a k-mer index once per cached load to accelerate
+            # similarity prefilters. This mutates `db` in-place so the
+            # cached object contains the precomputed `_kmers` sets.
+            if isinstance(db, dict):
+                try:
+                    sim._ensure_kmer_index(db)
+                    logger.info("K-mer index built for database (cached)")
+                except Exception as e:
+                    logger.warning(f"K-mer index build failed: {e}")
+        except Exception:
+            # Keep original behavior if anything goes wrong here.
+            pass
         return db
 
     except json.JSONDecodeError as e:
