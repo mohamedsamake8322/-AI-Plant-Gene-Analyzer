@@ -224,7 +224,8 @@ def get_kmer_index_cached(_db: dict, k: int = sim.DEFAULT_KMER) -> dict:
 
 
 load_css()
-load_video_background()
+if os.getenv("ENABLE_VIDEO_BACKGROUND", "false").lower() in {"1", "true", "yes"}:
+    load_video_background()
 
 
 # ─── Demo sequences ────────────────────────────────────────────────────────────
