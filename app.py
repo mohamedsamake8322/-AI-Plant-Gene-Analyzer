@@ -31,10 +31,16 @@ try:
     from scripts.postgres_utils import (
         load_gene_database_from_postgres,
         load_gene_database_metadata_from_postgres,
+        get_gene_count,
+        search_gene_metadata,
+        count_gene_metadata_matches,
     )
 except ImportError:
     load_gene_database_from_postgres = None
     load_gene_database_metadata_from_postgres = None
+    get_gene_count = None
+    search_gene_metadata = None
+    count_gene_metadata_matches = None
 
 # ─── Configure logging ─────────────────────────────────────────────────────────
 logger = config.get_logger(__name__)
@@ -165,6 +171,45 @@ def load_gene_database_cached(db_path: str = "genes_database.json") -> dict:
         return {}
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def get_gene_count_cached() -> int:
+    """Cheap total-row count for the sidebar header. Cached for 5 minutes
+    so it isn't re-queried on every widget interaction/rerun."""
+    return get_gene_count()
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def search_gene_metadata_cached(query: str, limit: int = 20, offset: int = 0) -> list[dict]:
+    """Cached, server-side search — only `limit` rows ever get pulled from
+    Postgres and only `limit` rows ever get built into Python dicts,
+    regardless of how large the `genes` table is. A short TTL (rather than
+    the default indefinite cache) keeps results from going stale if the
+    table is being actively ingested into, while still absorbing the
+    repeated calls a Streamlit rerun triggers for an unchanged query."""
+    return search_gene_metadata(query or None, limit=limit, offset=offset)
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def count_gene_metadata_matches_cached(query: str) -> int:
+    return count_gene_metadata_matches(query)
+
+
+@st.cache_resource(show_spinner=False)
+def get_kmer_index_cached(_db: dict, k: int = sim.DEFAULT_KMER) -> dict:
+    """Build the k-mer prefilter index once per database load and keep it
+    as a shared resource (st.cache_resource, not st.cache_data).
+
+    st.cache_data returns a fresh deep copy on every call, which would
+    silently throw away sim._ensure_kmer_index's in-place `_kmers`
+    annotations and force the ~56k-sequence k-mer scan to redo itself on
+    every single analysis run. st.cache_resource instead caches the *same*
+    Python object across reruns/sessions, so the index is computed once
+    for the lifetime of the process (or until the DB argument changes).
+    """
+    sim._ensure_kmer_index(_db, k=k)
+    return _db
+
+
 load_css()
 load_video_background()
 
@@ -223,11 +268,14 @@ with st.sidebar:
     metadata = None
     metadata_available = False
 
-    if load_gene_database_from_postgres is not None and load_gene_database_metadata_from_postgres is not None:
+    if get_gene_count is not None and search_gene_metadata is not None:
         try:
-            metadata = load_gene_database_metadata_from_postgres()
-            metadata_available = bool(metadata)
-            st.success(f"✅ {len(metadata)} gene metadata records loaded")
+            # A cheap COUNT(*) rather than materializing all ~56k rows just
+            # to call len() on them. Cached for 5 minutes so a widget
+            # interaction elsewhere on the page doesn't re-issue it.
+            total_genes = get_gene_count_cached()
+            metadata_available = total_genes > 0
+            st.success(f"✅ {total_genes} gene metadata records available")
             st.markdown(
                 "The app loads lightweight gene metadata first for search and filtering. "
                 "Full sequence data is loaded only when an analysis is run."
@@ -239,18 +287,16 @@ with st.sidebar:
                 help="Filter the loaded gene database by gene_id, symbol, or trait.",
             )
             if gene_search:
-                query = gene_search.strip().lower()
-                filtered = [
-                    g for g in metadata.values()
-                    if query in str(g.get("gene_id", "")).lower()
-                    or query in str(g.get("symbol", "")).lower()
-                    or query in str(g.get("description", "")).lower()
-                    or query in str(g.get("source", "")).lower()
-                    or query in " ".join(str(x).lower() for x in g.get("traits", []))
-                ]
-                st.write(f"Showing {len(filtered)} matching gene metadata records")
+                query = gene_search.strip()
+                # Server-side ILIKE search (see postgres_utils.search_gene_metadata)
+                # -- only the ~20 rows actually shown ever leave Postgres,
+                # instead of pulling all ~56k rows into Python on every
+                # keystroke and filtering them in a list comprehension.
+                match_count = count_gene_metadata_matches_cached(query)
+                filtered = search_gene_metadata_cached(query, limit=20)
+                st.write(f"Showing {len(filtered)} of {match_count} matching gene metadata records")
             else:
-                filtered = list(metadata.values())[:20]
+                filtered = search_gene_metadata_cached("", limit=20)
                 st.info("Showing a sample of 20 gene metadata records. Use search to filter specific genes.")
 
             with st.expander("Preview gene metadata"):
@@ -409,9 +455,18 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
 
         try:
             if db is None and metadata_available:
-                db = load_gene_database_cached("genes_database.json")
+                with st.spinner("📥 Loading full gene database (first analysis this session)…"):
+                    db = load_gene_database_cached("genes_database.json")
                 if not db:
                     raise RuntimeError("Unable to load full gene database for analysis.")
+
+            # Build (or reuse) the k-mer prefilter index as a shared
+            # st.cache_resource object, so the ~56k-sequence k-mer scan
+            # that similarityengine.compare_with_database relies on for
+            # its prefilter runs once per process instead of once per
+            # analysis (see get_kmer_index_cached above for why
+            # st.cache_data alone isn't enough here).
+            db = get_kmer_index_cached(db)
 
             analysis_targets: list[dict[str, str]] = []
             if records and len(records) > 1:

@@ -22,12 +22,26 @@ import config
 # the search into an O(n*m) brute-force scan of the entire database.
 DEFAULT_MAX_LENGTH_RATIO = 3.0
 DEFAULT_CROSS_TYPE_LENGTH_RATIO = 6.0
+DEFAULT_KMER = 5
+KMER_JACCARD_THRESHOLD = 0.03
+
+# Safety net independent of the prefilters above. The length-ratio and
+# k-mer filters are heuristics tuned to be generous (biased toward false
+# positives) -- for a short/low-complexity query against a large database
+# they can still let through a big fraction of ~56k records, each of which
+# is a full O(n*m) global alignment. This cap bounds worst-case wall-clock
+# time for a single request regardless of how the heuristics behave on a
+# particular query; entries beyond the cap are skipped (not scored 0), and
+# the caller is told via `capped_count` on the returned SimilarityResultList
+# so the UI can surface it instead of the run just silently taking longer.
+DEFAULT_MAX_ALIGNMENTS_PER_QUERY = 2000
 
 
 class SimilarityResultList(list):
-    def __init__(self, iterable: list[dict] | None = None, prefiltered_count: int = 0):
+    def __init__(self, iterable: list[dict] | None = None, prefiltered_count: int = 0, capped_count: int = 0):
         super().__init__(iterable or [])
         self.prefiltered_count = prefiltered_count
+        self.capped_count = capped_count
 
 
 def _normalize_database(raw: object) -> dict:
@@ -52,6 +66,38 @@ def _normalize_database(raw: object) -> dict:
             continue
         records[key] = item
     return records
+
+
+def _compute_kmer_set(sequence: str, k: int = DEFAULT_KMER) -> set:
+    """Return the set of k-mers for `sequence`. Fast, O(len(sequence))."""
+    if not sequence:
+        return set()
+    s = sequence.upper().replace(" ", "")
+    if len(s) < k:
+        return set()
+    return {s[i : i + k] for i in range(len(s) - k + 1)}
+
+
+def _ensure_kmer_index(database: dict, k: int = DEFAULT_KMER) -> None:
+    """Ensure every database entry has a cached `_kmers` set for quick prefiltering.
+
+    The function mutates `database` in-place and is idempotent for a given `k`.
+    """
+    for key, info in database.items():
+        try:
+            # fast path: already indexed for this k
+            if info.get("_kmer_k") == k and "_kmers" in info:
+                continue
+        except Exception:
+            pass
+
+        seq = info.get("sequence")
+        # Some database records store the JSON record blob under `record`.
+        if not seq and isinstance(info.get("record"), dict):
+            seq = info["record"].get("sequence")
+
+        info["_kmers"] = _compute_kmer_set(seq, k)
+        info["_kmer_k"] = k
 
 
 def load_gene_database(db_path: str = "genes_database.json") -> dict:
@@ -214,6 +260,7 @@ def compare_with_database(
     compute_local: bool = False,
     enable_length_prefilter: bool = True,
     max_length_ratio: float = DEFAULT_MAX_LENGTH_RATIO,
+    max_alignments: int = DEFAULT_MAX_ALIGNMENTS_PER_QUERY,
     logger=None,
 ) -> list[dict]:
     """Compare query against each gene using aligned percent identity.
@@ -244,9 +291,22 @@ def compare_with_database(
     database = db_source if isinstance(db_source, dict) else load_gene_database(db_source)
     query_type = bio.detect_sequence_type(query)
     query_len = len(query)
+    # Build a quick k-mer index for cheap prefiltering (computed once per
+    # in-memory database load). This avoids performing slow O(n*m) global
+    # alignments against thousands of entries that are unlikely candidates.
+    try:
+        if isinstance(database, dict):
+            _ensure_kmer_index(database, DEFAULT_KMER)
+    except Exception:
+        # Non-fatal: fall back to alignment-only path if k-mer indexing fails
+        pass
+
+    query_kmers = _compute_kmer_set(query, DEFAULT_KMER)
     results: list[dict] = []
     skipped_entries: list[str] = []
     prefiltered_count = 0
+    capped_count = 0
+    alignments_run = 0
 
     for gene_name, gene_info in database.items():
         try:
@@ -273,7 +333,32 @@ def compare_with_database(
                     prefiltered_count += 1
                     continue
 
+        # K-mer Jaccard prefilter (only for same-type comparisons). This is
+        # much cheaper than a full alignment and rapidly rules out unrelated
+        # sequences. If a record lacks a k-mer index, _ensure_kmer_index will
+        # have created an empty set; in that case the filter is skipped.
         try:
+            if ref_type == query_type and query_kmers and gene_info.get("_kmers"):
+                ref_kmers = gene_info.get("_kmers", set())
+                union = len(query_kmers) + len(ref_kmers) - len(query_kmers & ref_kmers)
+                if union > 0:
+                    jaccard = len(query_kmers & ref_kmers) / union
+                else:
+                    jaccard = 0.0
+                if jaccard < KMER_JACCARD_THRESHOLD:
+                    prefiltered_count += 1
+                    continue
+        except Exception:
+            # If anything goes wrong with the cheap filter, ignore and fall
+            # through to the alignment path rather than failing the whole run.
+            pass
+
+        if alignments_run >= max_alignments:
+            capped_count += 1
+            continue
+
+        try:
+            alignments_run += 1
             match = aligned_similarity(
                 query, ref_seq, query_type=query_type, reference_type=ref_type, compute_local=compute_local
             )
@@ -312,9 +397,14 @@ def compare_with_database(
         logger.warning(f"compare_with_database skipped {len(skipped_entries)} malformed entries: {skipped_entries}")
     if logger and prefiltered_count:
         logger.info(f"compare_with_database length-prefiltered {prefiltered_count} entries (ratio > {max_length_ratio}x)")
+    if logger and capped_count:
+        logger.warning(
+            f"compare_with_database hit the {max_alignments}-alignment cap; "
+            f"{capped_count} candidate entries were skipped without being scored."
+        )
 
     results.sort(key=lambda x: x["similarity_score"], reverse=True)
-    return SimilarityResultList(results[:top_n], prefiltered_count=prefiltered_count)
+    return SimilarityResultList(results[:top_n], prefiltered_count=prefiltered_count, capped_count=capped_count)
 
 
 def get_best_match(query: str, db_path: str = "genes_database.json") -> Optional[dict]:

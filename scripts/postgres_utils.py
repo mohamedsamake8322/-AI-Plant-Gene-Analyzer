@@ -15,6 +15,15 @@ from dotenv import load_dotenv
 import psycopg
 from psycopg import sql
 
+try:
+    # Optional: pooled connections avoid paying a fresh TCP+TLS+auth
+    # handshake (and, on Neon, a possible compute cold-start) on every
+    # single query. Falls back to plain psycopg.connect() below if the
+    # package isn't installed -- nothing else changes.
+    from psycopg_pool import ConnectionPool
+except ImportError:  # pragma: no cover
+    ConnectionPool = None
+
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
 
@@ -66,6 +75,55 @@ def get_connection() -> psycopg.Connection:
     return psycopg.connect(_resolve_database_url(), autocommit=True)
 
 
+_POOL: "ConnectionPool | None" = None
+
+
+def get_pool() -> "ConnectionPool":
+    """Return a lazily-created, process-wide connection pool.
+
+    Use this (via `pooled_connection()` below) for short, frequent reads
+    such as the sidebar metadata search, where opening a brand-new
+    connection per Streamlit rerun/keystroke is the dominant cost against
+    a remote/serverless Postgres (e.g. Neon). Prefer Neon's pooled
+    connection string (port 6543 / pgbouncer) as DATABASE_URL when using
+    this, since it stacks with server-side pooling.
+    """
+    global _POOL
+    if ConnectionPool is None:
+        raise RuntimeError(
+            "psycopg_pool is not installed. Run `pip install psycopg[pool]` "
+            "to enable pooled connections, or use get_connection() instead."
+        )
+    if _POOL is None:
+        _POOL = ConnectionPool(
+            _resolve_database_url(),
+            min_size=1,
+            max_size=5,
+            kwargs={"autocommit": True},
+        )
+    return _POOL
+
+
+class _PooledOrPlainConnection:
+    """Context manager returning a pooled connection when available,
+    otherwise a regular one-off connection. Keeps call sites simple and
+    keeps this module usable even without psycopg_pool installed."""
+
+    def __enter__(self) -> psycopg.Connection:
+        if ConnectionPool is not None:
+            self._ctx = get_pool().connection()
+            return self._ctx.__enter__()
+        self._ctx = get_connection()
+        return self._ctx.__enter__() if hasattr(self._ctx, "__enter__") else self._ctx
+
+    def __exit__(self, *exc):
+        return self._ctx.__exit__(*exc)
+
+
+def pooled_connection() -> _PooledOrPlainConnection:
+    return _PooledOrPlainConnection()
+
+
 def create_tables() -> None:
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -107,6 +165,27 @@ def create_tables() -> None:
             cur.execute("CREATE INDEX IF NOT EXISTS genes_organism_idx ON genes (organism);")
             cur.execute("CREATE INDEX IF NOT EXISTS genes_sequence_type_idx ON genes (sequence_type);")
             cur.execute("CREATE INDEX IF NOT EXISTS genes_source_idx ON genes (source);")
+
+            # Trigram indexes let the sidebar's "search gene ID, symbol, or
+            # trait" box run as a fast server-side ILIKE query instead of
+            # pulling all ~56k metadata rows into Python and filtering with
+            # a list comprehension on every keystroke/rerun (see
+            # search_gene_metadata below).
+            cur.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm;")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS genes_gene_id_trgm_idx "
+                "ON genes USING gin (gene_id gin_trgm_ops);"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS genes_symbol_trgm_idx "
+                "ON genes USING gin (symbol gin_trgm_ops);"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS genes_description_trgm_idx "
+                "ON genes USING gin (description gin_trgm_ops);"
+            )
+            # GIN index on the traits JSONB array for containment/search.
+            cur.execute("CREATE INDEX IF NOT EXISTS genes_traits_gin_idx ON genes USING gin (traits);")
 
 
 _UPSERT_SQL = sql.SQL(
@@ -349,6 +428,90 @@ def load_gene_database_metadata_from_postgres(batch_size: int = 1000) -> dict:
         finally:
             conn.commit()
     return records
+
+def get_gene_count() -> int:
+    """Cheap COUNT(*) for sidebar display -- doesn't touch row data at all."""
+    with pooled_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM genes;")
+            (count,) = cur.fetchone()
+            return int(count)
+
+
+def _metadata_row_to_dict(row: tuple) -> dict:
+    gene_id, symbol, organism, description, source, traits, length = row
+    if isinstance(traits, str):
+        traits = json.loads(traits)
+    return {
+        "gene_id": gene_id,
+        "symbol": symbol,
+        "organism": organism,
+        "description": description,
+        "source": source,
+        "traits": traits or [],
+        "length": length,
+    }
+
+
+def search_gene_metadata(query: str | None = None, limit: int = 20, offset: int = 0) -> list[dict]:
+    """Search/paginate gene metadata server-side.
+
+    Replaces the pattern of loading all ~56k metadata rows into Python and
+    filtering them with a list comprehension on every sidebar keystroke.
+    Only `limit` rows ever cross the wire. `query` is matched against
+    gene_id, symbol, description, source, and traits using the trigram/GIN
+    indexes created in create_tables(); pass `query=None` (or "") for a
+    plain paginated browse (e.g. the "sample of 20" preview).
+    """
+    base_select = """
+        SELECT gene_id, symbol, organism, description, source, traits, length
+        FROM genes
+    """
+    with pooled_connection() as conn:
+        with conn.cursor() as cur:
+            if query:
+                like = f"%{query}%"
+                cur.execute(
+                    base_select
+                    + """
+                    WHERE gene_id ILIKE %(like)s
+                       OR symbol ILIKE %(like)s
+                       OR description ILIKE %(like)s
+                       OR source ILIKE %(like)s
+                       OR traits::text ILIKE %(like)s
+                    ORDER BY gene_id NULLS LAST
+                    LIMIT %(limit)s OFFSET %(offset)s;
+                    """,
+                    {"like": like, "limit": limit, "offset": offset},
+                )
+            else:
+                cur.execute(
+                    base_select + " ORDER BY gene_id NULLS LAST LIMIT %(limit)s OFFSET %(offset)s;",
+                    {"limit": limit, "offset": offset},
+                )
+            return [_metadata_row_to_dict(row) for row in cur.fetchall()]
+
+
+def count_gene_metadata_matches(query: str) -> int:
+    """Count matches for `query` without fetching the matching rows themselves
+    (used to show "Showing N matching records" without loading N of them)."""
+    like = f"%{query}%"
+    with pooled_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT COUNT(*) FROM genes
+                WHERE gene_id ILIKE %(like)s
+                   OR symbol ILIKE %(like)s
+                   OR description ILIKE %(like)s
+                   OR source ILIKE %(like)s
+                   OR traits::text ILIKE %(like)s;
+                """,
+                {"like": like},
+            )
+            (count,) = cur.fetchone()
+            return int(count)
+
 
 def load_json_records(path: Path) -> list[dict]:
     import json
