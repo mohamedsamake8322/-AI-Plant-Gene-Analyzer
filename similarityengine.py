@@ -288,7 +288,34 @@ def compare_with_database(
     gracefully instead of taking down every analysis.
     """
     top_n = max(1, min(top_n, config.MAX_TOP_N_MATCHES))
-    database = db_source if isinstance(db_source, dict) else load_gene_database(db_source)
+    database = db_source if isinstance(db_source, dict) else None
+    # If db_source indicates PostgreSQL, ask the DB for candidates by k-mer
+    if isinstance(db_source, str) and (db_source == "postgres" or db_source.startswith("postgresql")):
+        try:
+            import sys
+            from pathlib import Path
+
+            script_root = Path(__file__).resolve().parent
+            scripts_path = script_root / "scripts"
+            if str(scripts_path) not in sys.path:
+                sys.path.insert(0, str(scripts_path))
+            # Prefer the weighted Jaccard-based selector if available.
+            try:
+                from postgres_utils import find_candidate_gene_ids_by_kmers_weighted as _find_weighted, load_gene_records_by_ids
+                candidate_ids = _find_weighted(list(query_kmers), limit=max_alignments * 4, min_jaccard=0.01)
+            except Exception:
+                from postgres_utils import find_candidate_gene_ids_by_kmers as _find_simple, load_gene_records_by_ids
+                candidate_ids = _find_simple(list(query_kmers), limit=max_alignments * 4)
+            if candidate_ids:
+                database = load_gene_records_by_ids(candidate_ids)
+            else:
+                # No candidates from DB-side prefilter; fall back to loading the full DB
+                database = load_gene_database(db_source)
+        except Exception:
+            # Any DB-side error -> fall back to in-memory full DB load
+            database = load_gene_database(db_source)
+    else:
+        database = load_gene_database(db_source) if database is None else database
     query_type = bio.detect_sequence_type(query)
     query_len = len(query)
     # Build a quick k-mer index for cheap prefiltering (computed once per
