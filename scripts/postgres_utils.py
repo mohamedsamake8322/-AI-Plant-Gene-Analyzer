@@ -166,6 +166,7 @@ def create_tables() -> None:
             cur.execute("CREATE INDEX IF NOT EXISTS genes_organism_idx ON genes (organism);")
             cur.execute("CREATE INDEX IF NOT EXISTS genes_sequence_type_idx ON genes (sequence_type);")
             cur.execute("CREATE INDEX IF NOT EXISTS genes_source_idx ON genes (source);")
+            cur.execute("ALTER TABLE genes ADD COLUMN IF NOT EXISTS kmer_signature JSONB;")
             # Index on kmer_signature (JSONB) can speed up candidate selection
             # using containment or expression indices in future queries.
             cur.execute("CREATE INDEX IF NOT EXISTS genes_kmer_signature_idx ON genes USING gin (kmer_signature);")
