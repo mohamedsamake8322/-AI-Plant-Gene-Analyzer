@@ -17,7 +17,11 @@ import sequence_loader
 import config
 
 
-DEFAULT_MAX_LENGTH_RATIO = 30.0
+# 3x length ratio prefilter is intentionally generous for same-type
+# comparisons; a much larger ratio defeats the optimization and turns
+# the search into an O(n*m) brute-force scan of the entire database.
+DEFAULT_MAX_LENGTH_RATIO = 3.0
+DEFAULT_CROSS_TYPE_LENGTH_RATIO = 6.0
 
 
 class SimilarityResultList(list):
@@ -258,11 +262,16 @@ def compare_with_database(
 
         ref_type = gene_info.get("sequence_type") or bio.detect_sequence_type(ref_seq)
 
-        if enable_length_prefilter and ref_type == query_type and query_len > 0 and len(ref_seq) > 0:
+        if enable_length_prefilter and query_len > 0 and len(ref_seq) > 0:
             ratio = max(len(ref_seq), query_len) / min(len(ref_seq), query_len)
-            if ratio > max_length_ratio:
-                prefiltered_count += 1
-                continue
+            if ref_type == query_type:
+                if ratio > max_length_ratio:
+                    prefiltered_count += 1
+                    continue
+            elif {query_type, ref_type} == {"dna", "protein"}:
+                if ratio > DEFAULT_CROSS_TYPE_LENGTH_RATIO:
+                    prefiltered_count += 1
+                    continue
 
         try:
             match = aligned_similarity(
