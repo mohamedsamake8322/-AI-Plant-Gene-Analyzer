@@ -1,0 +1,11 @@
+#Collecte des données
+python collect/collect_all_sources.py --plant-file toutes_especes.txt --workers 4 --retmax 300 --create-tables
+ 2. Import — celui qu'on utilise depuis le début, pas load_to_postgres.py
+.\.venv\Scripts\python.exe .\scripts\import_species_to_postgres.py --species-dir data\clean\species
+
+# 3. Validation finale
+.\.venv\Scripts\python.exe .\scripts\verify_gene_records.py --db --csv-out data\clean\rapport_final.csv --stats-out data\clean\stats_final.json
+
+
+#1. D'abord, une fois la collecte terminée — la comparaison plan/rapport :
+python compare_collection_plan.py --plan data\clean\species\collection_plan_20260803_215839.json --report data\clean\species\collection_report_<horodatage_final>.json

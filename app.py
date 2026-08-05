@@ -28,9 +28,13 @@ import pipeline
 SCRIPT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_ROOT / "scripts"))
 try:
-    from scripts.postgres_utils import load_gene_database_from_postgres
+    from scripts.postgres_utils import (
+        load_gene_database_from_postgres,
+        load_gene_database_metadata_from_postgres,
+    )
 except ImportError:
     load_gene_database_from_postgres = None
+    load_gene_database_metadata_from_postgres = None
 
 # ─── Configure logging ─────────────────────────────────────────────────────────
 logger = config.get_logger(__name__)
@@ -214,15 +218,65 @@ with st.sidebar:
     st.markdown("---")
 
     st.markdown("### Database")
-    db = load_gene_database_cached("genes_database.json")
-    if db:
-        genes = list(db.values()) if isinstance(db, dict) else db
-        st.success(f"✅ {len(genes)} genes loaded")
-        with st.expander("View gene names"):
-            for gene in genes:
-                symbol = gene.get("symbol", "Unknown")
-                trait = gene.get("trait", "No trait specified")
-                st.markdown(f"- **{symbol}** — {trait}")
+
+    db = None
+    metadata = None
+    metadata_available = False
+
+    if load_gene_database_from_postgres is not None and load_gene_database_metadata_from_postgres is not None:
+        try:
+            metadata = load_gene_database_metadata_from_postgres()
+            metadata_available = bool(metadata)
+            st.success(f"✅ {len(metadata)} gene metadata records loaded")
+            st.markdown(
+                "The app loads lightweight gene metadata first for search and filtering. "
+                "Full sequence data is loaded only when an analysis is run."
+            )
+
+            gene_search = st.text_input(
+                "Search gene ID, symbol, or trait",
+                value="",
+                help="Filter the loaded gene database by gene_id, symbol, or trait.",
+            )
+            if gene_search:
+                query = gene_search.strip().lower()
+                filtered = [
+                    g for g in metadata.values()
+                    if query in str(g.get("gene_id", "")).lower()
+                    or query in str(g.get("symbol", "")).lower()
+                    or query in str(g.get("description", "")).lower()
+                    or query in str(g.get("source", "")).lower()
+                    or query in " ".join(str(x).lower() for x in g.get("traits", []))
+                ]
+                st.write(f"Showing {len(filtered)} matching gene metadata records")
+            else:
+                filtered = list(metadata.values())[:20]
+                st.info("Showing a sample of 20 gene metadata records. Use search to filter specific genes.")
+
+            with st.expander("Preview gene metadata"):
+                for gene in filtered:
+                    symbol = gene.get("symbol", "Unknown")
+                    gene_id = gene.get("gene_id", "n/a")
+                    trait = ", ".join(gene.get("traits", [])[:3]) or "No trait specified"
+                    description = gene.get("description", "No description")
+                    st.markdown(f"- **{symbol}** (`{gene_id}`) — {trait} — {description}")
+
+            st.info("Full gene database with sequences will be loaded when you start an analysis.")
+
+        except Exception as e:
+            logger.warning(f"Lightweight gene metadata load failed: {e}")
+            st.warning("Could not load gene metadata preview. Falling back to full database load.")
+            db = load_gene_database_cached("genes_database.json")
+    else:
+        db = load_gene_database_cached("genes_database.json")
+
+    if db is not None:
+        if not db:
+            st.error("❌ No genes available in database")
+        elif isinstance(db, dict) and db:
+            st.success(f"✅ {len(db)} genes loaded")
+    elif metadata_available:
+        st.info("✅ Lightweight gene metadata available. Full database will load on analysis.")
     else:
         st.error("❌ No genes available in database")
 
@@ -354,6 +408,11 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
     if analyze_btn and (raw_sequence or records):
 
         try:
+            if db is None and metadata_available:
+                db = load_gene_database_cached("genes_database.json")
+                if not db:
+                    raise RuntimeError("Unable to load full gene database for analysis.")
+
             analysis_targets: list[dict[str, str]] = []
             if records and len(records) > 1:
                 if analyze_all:

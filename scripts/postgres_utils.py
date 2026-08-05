@@ -238,8 +238,6 @@ def load_gene_database_from_postgres(batch_size: int = 1000) -> dict:
     """
     records: dict[str, dict] = {}
     with get_connection() as conn:
-        # Named (server-side) cursors need a real transaction -- autocommit=True
-        # (the default from get_connection()) would close it prematurely.
         conn.autocommit = False
         try:
             with conn.cursor(name="gene_export_cursor") as cur:
@@ -315,6 +313,41 @@ def load_gene_database_from_postgres(batch_size: int = 1000) -> dict:
         finally:
             conn.commit()  # read-only, just closes the transaction cleanly
 
+    return records
+
+
+def load_gene_database_metadata_from_postgres(batch_size: int = 1000) -> dict:
+    """Load only metadata needed for UI search without reading full sequences."""
+    records: dict[str, dict] = {}
+    with get_connection() as conn:
+        conn.autocommit = False
+        try:
+            with conn.cursor(name="gene_metadata_cursor") as cur:
+                cur.itersize = batch_size
+                cur.execute(
+                    """
+                    SELECT gene_id, symbol, organism, description, source, traits, length
+                    FROM genes;
+                    """
+                )
+                for row in cur:
+                    gene_id, symbol, organism, description, source, traits, length = row
+                    if isinstance(traits, str):
+                        traits = json.loads(traits)
+                    key = gene_id or symbol
+                    if not key:
+                        continue
+                    records[key] = {
+                        "gene_id": gene_id,
+                        "symbol": symbol,
+                        "organism": organism,
+                        "description": description,
+                        "source": source,
+                        "traits": traits or [],
+                        "length": length,
+                    }
+        finally:
+            conn.commit()
     return records
 
 def load_json_records(path: Path) -> list[dict]:
