@@ -517,10 +517,9 @@ def find_similar_genes(
         return {}
 
     query_type = bio.detect_sequence_type(query)
-    query_kmers = pg._kmer_hashes(query, k, "protein" if query_type == "protein" else "dna")
     pool_size = max(1, top_n) * candidate_pool_multiplier
 
-    ranked = pg.find_candidate_genes_by_kmer(query_kmers, limit=pool_size)
+    ranked = pg.find_candidate_genes_by_kmer(query, limit=pool_size)
     if ranked:
         keys = [key for key, _shared in ranked]
         candidates = pg.load_gene_sequences_by_keys(keys)
