@@ -535,7 +535,10 @@ def count_gene_metadata_matches(query: str | None) -> int:
 
 
 def populate_kmer_index(
-    k: int = KMER_K, batch_size: int = 500, flush_every: int = 50_000, rebuild: bool = False
+    k: int = KMER_K,
+    batch_size: int = 2_000,
+    flush_every: int = 200_000,
+    rebuild: bool = False,
 ) -> int:
     """Batch job: stream every (not-yet-indexed) gene's sequence, compute
     its k-mer hash set, and store (kmer, gene_key) rows in gene_kmers.
@@ -562,6 +565,7 @@ def populate_kmer_index(
     indexed_genes = 0
     kmer_rows: list[tuple[int, str]] = []
     pending_keys: list[str] = []
+    progress_every = max(1_000, min(10_000, batch_size * 5))
 
     def _flush(write_cur) -> None:
         if kmer_rows:
@@ -595,6 +599,8 @@ def populate_kmer_index(
                         kmer_rows.append((h, gene_key))
                     pending_keys.append(gene_key)
                     indexed_genes += 1
+                    if indexed_genes % progress_every == 0:
+                        print(f"Indexed {indexed_genes} gene(s) so far...")
                     if len(kmer_rows) >= flush_every:
                         _flush(write_cur)
                         conn.commit()
@@ -720,6 +726,14 @@ if __name__ == "__main__":
     parser.add_argument("command", choices=["create-tables", "populate-kmer-index"])
     parser.add_argument("--k", type=int, default=KMER_K, help=f"k-mer length (default {KMER_K})")
     parser.add_argument(
+        "--batch-size", type=int, default=2_000,
+        help="Rows to read per cursor fetch before flushing (default 2000)",
+    )
+    parser.add_argument(
+        "--flush-every", type=int, default=200_000,
+        help="How many k-mer rows to accumulate before flushing to Postgres (default 200000)",
+    )
+    parser.add_argument(
         "--rebuild", action="store_true",
         help="Re-index every gene from scratch (needed after changing --k)",
     )
@@ -729,5 +743,10 @@ if __name__ == "__main__":
         create_tables()
         print("Tables and indexes ensured.")
     elif args.command == "populate-kmer-index":
-        n = populate_kmer_index(k=args.k, rebuild=args.rebuild)
+        n = populate_kmer_index(
+            k=args.k,
+            batch_size=args.batch_size,
+            flush_every=args.flush_every,
+            rebuild=args.rebuild,
+        )
         print(f"Indexed {n} gene(s) with k={args.k}.")
