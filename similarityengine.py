@@ -22,26 +22,103 @@ import config
 # the search into an O(n*m) brute-force scan of the entire database.
 DEFAULT_MAX_LENGTH_RATIO = 3.0
 DEFAULT_CROSS_TYPE_LENGTH_RATIO = 6.0
-DEFAULT_KMER = 5
-KMER_JACCARD_THRESHOLD = 0.03
 
-# Safety net independent of the prefilters above. The length-ratio and
-# k-mer filters are heuristics tuned to be generous (biased toward false
-# positives) -- for a short/low-complexity query against a large database
-# they can still let through a big fraction of ~56k records, each of which
-# is a full O(n*m) global alignment. This cap bounds worst-case wall-clock
-# time for a single request regardless of how the heuristics behave on a
-# particular query; entries beyond the cap are skipped (not scored 0), and
-# the caller is told via `capped_count` on the returned SimilarityResultList
-# so the UI can surface it instead of the run just silently taking longer.
-DEFAULT_MAX_ALIGNMENTS_PER_QUERY = 2000
+# Must match postgres_utils.KMER_K — this is the k-mer length the
+# Postgres-side gene_kmers inverted index was built with (see
+# populate_kmer_index there). A query's k-mers are hashed the same way
+# (same base-B encoding) so they land on the same integers as the ones
+# stored in the index; a mismatched k here would silently return zero
+# candidates instead of an error, so keep this in sync if k ever changes.
+DEFAULT_KMER = 12
+# How many candidates to pull back per requested top_n match before running
+# full alignment on them. Generous on purpose: the k-mer/length prefilters
+# are heuristics, not exact scores, so keeping extra headroom protects
+# against a real match with a slightly weaker k-mer signature getting cut.
+DEFAULT_CANDIDATE_POOL_MULTIPLIER = 15
+DEFAULT_KMER_PREFILTER_MIN_CANDIDATES = 150
+
+
+def _postgres_utils():
+    """Lazy import of scripts.postgres_utils, mirroring the pattern already
+    used by load_gene_database() below — keeps this module importable
+    (e.g. for the JSON-file-only deployment mode) even when scripts/ isn't
+    on the path or psycopg isn't installed."""
+    import sys
+    from pathlib import Path
+
+    script_root = Path(__file__).resolve().parent
+    scripts_path = script_root / "scripts"
+    if str(scripts_path) not in sys.path:
+        sys.path.insert(0, str(scripts_path))
+    import postgres_utils
+
+    return postgres_utils
+
+
+def _ensure_kmer_index(db: dict, k: int = DEFAULT_KMER) -> dict:
+    """Build (or reuse) an in-memory k-mer set per entry of `db`, stored
+    in-place under an "_kmers" key.
+
+    This is only used for the JSON-file fallback path (no Postgres
+    configured), where the whole database already has to live in memory
+    anyway — for the Postgres-backed path, the equivalent index lives in
+    the gene_kmers table (see postgres_utils.populate_kmer_index /
+    find_candidate_genes_by_kmer) and candidates are looked up there
+    instead of scanned here. Skips entries that already have "_kmers" set
+    (from a previous call on the same cached `db` object), so calling this
+    again on an already-indexed database is cheap.
+    """
+    pg = None
+    try:
+        pg = _postgres_utils()
+    except Exception:
+        pg = None
+
+    for gene_name, gene_info in db.items():
+        if not isinstance(gene_info, dict) or "_kmers" in gene_info:
+            continue
+        seq = (gene_info.get("sequence") or "").upper().replace(" ", "")
+        seq_type = gene_info.get("sequence_type") or (bio.detect_sequence_type(seq) if seq else "dna")
+        if pg is not None:
+            gene_info["_kmers"] = pg._kmer_hashes(seq, k, "protein" if seq_type == "protein" else "dna")
+        else:
+            gene_info["_kmers"] = _local_kmer_hashes(seq, k, seq_type)
+    return db
+
+
+def _local_kmer_hashes(sequence: str, k: int, seq_type: str) -> set[int]:
+    """Self-contained fallback k-mer hashing, used only if postgres_utils
+    can't be imported at all (e.g. psycopg not installed in a JSON-only
+    deployment). Encoding must match postgres_utils._kmer_hashes exactly
+    so candidates found this way and via the Postgres index are
+    comparable; keep the two in sync if either changes.
+    """
+    dna_code = {"A": 0, "C": 1, "G": 2, "T": 3}
+    protein_code = {c: i for i, c in enumerate("ACDEFGHIKLMNPQRSTVWY")}
+    code = protein_code if seq_type == "protein" else dna_code
+    base = 20 if seq_type == "protein" else 4
+    n = len(sequence)
+    if n < k:
+        return set()
+    hashes: set[int] = set()
+    for i in range(n - k + 1):
+        value = 0
+        valid = True
+        for ch in sequence[i:i + k]:
+            c = code.get(ch)
+            if c is None:
+                valid = False
+                break
+            value = value * base + c
+        if valid:
+            hashes.add(value)
+    return hashes
 
 
 class SimilarityResultList(list):
-    def __init__(self, iterable: list[dict] | None = None, prefiltered_count: int = 0, capped_count: int = 0):
+    def __init__(self, iterable: list[dict] | None = None, prefiltered_count: int = 0):
         super().__init__(iterable or [])
         self.prefiltered_count = prefiltered_count
-        self.capped_count = capped_count
 
 
 def _normalize_database(raw: object) -> dict:
@@ -66,38 +143,6 @@ def _normalize_database(raw: object) -> dict:
             continue
         records[key] = item
     return records
-
-
-def _compute_kmer_set(sequence: str, k: int = DEFAULT_KMER) -> set:
-    """Return the set of k-mers for `sequence`. Fast, O(len(sequence))."""
-    if not sequence:
-        return set()
-    s = sequence.upper().replace(" ", "")
-    if len(s) < k:
-        return set()
-    return {s[i : i + k] for i in range(len(s) - k + 1)}
-
-
-def _ensure_kmer_index(database: dict, k: int = DEFAULT_KMER) -> None:
-    """Ensure every database entry has a cached `_kmers` set for quick prefiltering.
-
-    The function mutates `database` in-place and is idempotent for a given `k`.
-    """
-    for key, info in database.items():
-        try:
-            # fast path: already indexed for this k
-            if info.get("_kmer_k") == k and "_kmers" in info:
-                continue
-        except Exception:
-            pass
-
-        seq = info.get("sequence")
-        # Some database records store the JSON record blob under `record`.
-        if not seq and isinstance(info.get("record"), dict):
-            seq = info["record"].get("sequence")
-
-        info["_kmers"] = _compute_kmer_set(seq, k)
-        info["_kmer_k"] = k
 
 
 def load_gene_database(db_path: str = "genes_database.json") -> dict:
@@ -260,7 +305,6 @@ def compare_with_database(
     compute_local: bool = False,
     enable_length_prefilter: bool = True,
     max_length_ratio: float = DEFAULT_MAX_LENGTH_RATIO,
-    max_alignments: int = DEFAULT_MAX_ALIGNMENTS_PER_QUERY,
     logger=None,
 ) -> list[dict]:
     """Compare query against each gene using aligned percent identity.
@@ -288,52 +332,12 @@ def compare_with_database(
     gracefully instead of taking down every analysis.
     """
     top_n = max(1, min(top_n, config.MAX_TOP_N_MATCHES))
-    database = db_source if isinstance(db_source, dict) else None
-    # If db_source indicates PostgreSQL, ask the DB for candidates by k-mer
-    if isinstance(db_source, str) and (db_source == "postgres" or db_source.startswith("postgresql")):
-        try:
-            import sys
-            from pathlib import Path
-
-            script_root = Path(__file__).resolve().parent
-            scripts_path = script_root / "scripts"
-            if str(scripts_path) not in sys.path:
-                sys.path.insert(0, str(scripts_path))
-            # Prefer the weighted Jaccard-based selector if available.
-            try:
-                from postgres_utils import find_candidate_gene_ids_by_kmers_weighted as _find_weighted, load_gene_records_by_ids
-                candidate_ids = _find_weighted(list(query_kmers), limit=max_alignments * 4, min_jaccard=0.01)
-            except Exception:
-                from postgres_utils import find_candidate_gene_ids_by_kmers as _find_simple, load_gene_records_by_ids
-                candidate_ids = _find_simple(list(query_kmers), limit=max_alignments * 4)
-            if candidate_ids:
-                database = load_gene_records_by_ids(candidate_ids)
-            else:
-                # No candidates from DB-side prefilter; fall back to loading the full DB
-                database = load_gene_database(db_source)
-        except Exception:
-            # Any DB-side error -> fall back to in-memory full DB load
-            database = load_gene_database(db_source)
-    else:
-        database = load_gene_database(db_source) if database is None else database
+    database = db_source if isinstance(db_source, dict) else load_gene_database(db_source)
     query_type = bio.detect_sequence_type(query)
     query_len = len(query)
-    # Build a quick k-mer index for cheap prefiltering (computed once per
-    # in-memory database load). This avoids performing slow O(n*m) global
-    # alignments against thousands of entries that are unlikely candidates.
-    try:
-        if isinstance(database, dict):
-            _ensure_kmer_index(database, DEFAULT_KMER)
-    except Exception:
-        # Non-fatal: fall back to alignment-only path if k-mer indexing fails
-        pass
-
-    query_kmers = _compute_kmer_set(query, DEFAULT_KMER)
     results: list[dict] = []
     skipped_entries: list[str] = []
     prefiltered_count = 0
-    capped_count = 0
-    alignments_run = 0
 
     for gene_name, gene_info in database.items():
         try:
@@ -360,32 +364,7 @@ def compare_with_database(
                     prefiltered_count += 1
                     continue
 
-        # K-mer Jaccard prefilter (only for same-type comparisons). This is
-        # much cheaper than a full alignment and rapidly rules out unrelated
-        # sequences. If a record lacks a k-mer index, _ensure_kmer_index will
-        # have created an empty set; in that case the filter is skipped.
         try:
-            if ref_type == query_type and query_kmers and gene_info.get("_kmers"):
-                ref_kmers = gene_info.get("_kmers", set())
-                union = len(query_kmers) + len(ref_kmers) - len(query_kmers & ref_kmers)
-                if union > 0:
-                    jaccard = len(query_kmers & ref_kmers) / union
-                else:
-                    jaccard = 0.0
-                if jaccard < KMER_JACCARD_THRESHOLD:
-                    prefiltered_count += 1
-                    continue
-        except Exception:
-            # If anything goes wrong with the cheap filter, ignore and fall
-            # through to the alignment path rather than failing the whole run.
-            pass
-
-        if alignments_run >= max_alignments:
-            capped_count += 1
-            continue
-
-        try:
-            alignments_run += 1
             match = aligned_similarity(
                 query, ref_seq, query_type=query_type, reference_type=ref_type, compute_local=compute_local
             )
@@ -424,19 +403,159 @@ def compare_with_database(
         logger.warning(f"compare_with_database skipped {len(skipped_entries)} malformed entries: {skipped_entries}")
     if logger and prefiltered_count:
         logger.info(f"compare_with_database length-prefiltered {prefiltered_count} entries (ratio > {max_length_ratio}x)")
-    if logger and capped_count:
-        logger.warning(
-            f"compare_with_database hit the {max_alignments}-alignment cap; "
-            f"{capped_count} candidate entries were skipped without being scored."
-        )
 
     results.sort(key=lambda x: x["similarity_score"], reverse=True)
-    return SimilarityResultList(results[:top_n], prefiltered_count=prefiltered_count, capped_count=capped_count)
+    return SimilarityResultList(results[:top_n], prefiltered_count=prefiltered_count)
 
 
 def get_best_match(query: str, db_path: str = "genes_database.json") -> Optional[dict]:
     matches = compare_with_database(query, db_path, top_n=1)
     return matches[0] if matches else None
+
+
+def compare_with_database_from_metadata(
+    query: str,
+    metadata: dict,
+    top_n: int = 3,
+    compute_local: bool = False,
+    max_length_ratio: float = DEFAULT_MAX_LENGTH_RATIO,
+    logger=None,
+) -> "SimilarityResultList":
+    """Fallback candidate search that never needs the gene_kmers index:
+    prefilter by length directly against lightweight metadata (gene_id,
+    length, sequence_type — everything the sidebar already loads), fetch
+    only the surviving candidate sequences from Postgres, then align.
+
+    Used by find_similar_genes() when the k-mer index hasn't been
+    populated yet (e.g. right after a fresh deploy, before
+    postgres_utils.populate_kmer_index has been run). Coarser than the
+    k-mer path — a 3x length window on a 55k+ gene database can still
+    leave hundreds of candidates — but still avoids ever loading every
+    full sequence into the app.
+    """
+    top_n = max(1, min(top_n, config.MAX_TOP_N_MATCHES))
+    candidates = _metadata_length_prefiltered_candidates(query, metadata, max_length_ratio, logger=logger)
+    if not candidates:
+        return SimilarityResultList([])
+    return compare_with_database(
+        query, db_source=candidates, top_n=top_n, compute_local=compute_local,
+        enable_length_prefilter=False,  # already length-filtered against metadata above
+        logger=logger,
+    )
+
+
+def _metadata_length_prefiltered_candidates(
+    query: str,
+    metadata: dict,
+    max_length_ratio: float = DEFAULT_MAX_LENGTH_RATIO,
+    logger=None,
+) -> dict:
+    """Length-prefilter against lightweight metadata (no sequences needed
+    yet), then fetch only the surviving candidates' full sequences from
+    Postgres in one batched query. Shared by compare_with_database_from_metadata
+    and find_similar_genes' fallback path.
+    """
+    query_type = bio.detect_sequence_type(query)
+    query_len = len(query)
+
+    candidate_keys: list[str] = []
+    for gene_name, gene_info in metadata.items():
+        ref_len = gene_info.get("length")
+        ref_type = gene_info.get("sequence_type")
+        if query_len > 0 and ref_len:
+            ratio = max(ref_len, query_len) / min(ref_len, query_len)
+            same_type = ref_type == query_type or ref_type is None
+            limit = max_length_ratio if same_type else DEFAULT_CROSS_TYPE_LENGTH_RATIO
+            if ratio > limit:
+                continue
+        candidate_keys.append(gene_name)
+
+    if not candidate_keys:
+        return {}
+
+    pg = _postgres_utils()
+    candidates = pg.load_gene_sequences_by_keys(candidate_keys)
+    if logger:
+        logger.info(
+            f"length-prefiltered to {len(candidate_keys)} of {len(metadata)} metadata "
+            f"candidates, fetched {len(candidates)} sequences from Postgres"
+        )
+    return candidates
+
+
+def find_similar_genes(
+    query: str,
+    top_n: int = 3,
+    metadata: Optional[dict] = None,
+    candidate_pool_multiplier: int = DEFAULT_CANDIDATE_POOL_MULTIPLIER,
+    k: int = DEFAULT_KMER,
+    logger=None,
+) -> dict:
+    """Build a small candidate gene database for a single query sequence,
+    suitable for passing straight into compare_with_database (or as the
+    `db=` argument to pipeline.analyze_sequence_record).
+
+    This is the main entry point for the Postgres-backed deployment: it
+    never loads the full ~56k-gene database. Instead:
+      1. Hash the query into k-mers and look up gene_kmers for genes that
+         share k-mers with it (postgres_utils.find_candidate_genes_by_kmer)
+         — a single indexed SQL query.
+      2. Fetch only those candidate sequences (load_gene_sequences_by_keys).
+      3. If the k-mer index hasn't been populated yet (empty result) and
+         `metadata` was supplied, fall back to the coarser length-prefilter
+         path over metadata instead.
+
+    Returns a dict of {gene_key: gene_record} — typically tens to a couple
+    hundred entries, not tens of thousands — ready to hand to
+    compare_with_database as db_source.
+    """
+    try:
+        pg = _postgres_utils()
+    except Exception as e:
+        if logger:
+            logger.warning(f"find_similar_genes: Postgres unavailable ({e}); no candidates found")
+        return {}
+
+    query_type = bio.detect_sequence_type(query)
+    query_kmers = pg._kmer_hashes(query, k, "protein" if query_type == "protein" else "dna")
+    pool_size = max(1, top_n) * candidate_pool_multiplier
+
+    ranked = pg.find_candidate_genes_by_kmer(query_kmers, limit=pool_size)
+    if ranked:
+        keys = [key for key, _shared in ranked]
+        candidates = pg.load_gene_sequences_by_keys(keys)
+        if logger:
+            logger.info(f"find_similar_genes: k-mer index returned {len(candidates)} candidates for top_n={top_n}")
+        return candidates
+
+    if logger:
+        logger.info(
+            "find_similar_genes: k-mer index returned no candidates (not populated yet, or a "
+            "cross-type query) — falling back to a length-range lookup"
+        )
+    if metadata:
+        # Caller already has a metadata dict in hand (e.g. JSON-file mode
+        # keeping everything local) — reuse it instead of a second Postgres
+        # round trip.
+        return _metadata_length_prefiltered_candidates(query, metadata, logger=logger)
+
+    # No metadata dict required: ask Postgres directly for gene keys whose
+    # length falls within the usual prefilter window, using the
+    # genes_length_idx index (see postgres_utils.create_tables). This is
+    # what keeps find_similar_genes from ever needing a full metadata dict
+    # in memory, even as a fallback.
+    query_len = len(query)
+    if query_len == 0:
+        return {}
+    min_len = max(1, int(query_len / DEFAULT_MAX_LENGTH_RATIO))
+    max_len = int(query_len * DEFAULT_MAX_LENGTH_RATIO)
+    keys = pg.find_gene_keys_by_length_range(min_len, max_len, sequence_type=query_type, limit=pool_size)
+    if not keys:
+        return {}
+    candidates = pg.load_gene_sequences_by_keys(keys)
+    if logger:
+        logger.info(f"find_similar_genes: length-range fallback returned {len(candidates)} candidates")
+    return candidates
 
 
 def classify_similarity(score: float) -> dict[str, str]:

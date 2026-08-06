@@ -15,17 +15,56 @@ from dotenv import load_dotenv
 import psycopg
 from psycopg import sql
 
-try:
-    # Optional: pooled connections avoid paying a fresh TCP+TLS+auth
-    # handshake (and, on Neon, a possible compute cold-start) on every
-    # single query. Falls back to plain psycopg.connect() below if the
-    # package isn't installed -- nothing else changes.
-    from psycopg_pool import ConnectionPool
-except ImportError:  # pragma: no cover
-    ConnectionPool = None
-
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
+
+# k-mer size for the Postgres-side inverted index (see gene_kmers table /
+# populate_kmer_index / find_candidate_genes_by_kmer below). 12 is a
+# reasonable default for DNA: 4^12 ≈ 16.7M possible k-mers, long enough
+# that unrelated sequences rarely share many by chance, short enough that
+# a real homolog still shares plenty. Protein sequences use the same k
+# over a 20-letter alphabet, which is far more specific per position.
+KMER_K = 12
+_DNA_CODE = {"A": 0, "C": 1, "G": 2, "T": 3}
+_PROTEIN_CODE = {c: i for i, c in enumerate("ACDEFGHIKLMNPQRSTVWY")}
+
+
+def _kmer_hashes(sequence: str, k: int = KMER_K, seq_type: str = "dna") -> set[int]:
+    """Deterministic integer encoding of every k-mer in `sequence`.
+
+    Each k-mer is encoded as a base-B number (B=4 for DNA's ACGT, B=20 for
+    the standard amino acids), so the same k-mer always hashes to the same
+    integer across processes and machines. This matters because the index
+    is built once (populate_kmer_index) and looked up later from a
+    different process (the Streamlit app, possibly a different worker) —
+    Python's built-in hash() is randomized per-process (PYTHONHASHSEED)
+    and would silently break every lookup if used here instead.
+
+    Windows containing a character outside the core alphabet (N, ambiguity
+    codes, non-standard residues) are skipped rather than mapped to a
+    fallback slot, so those low-information k-mers don't create spurious
+    matches between otherwise unrelated sequences.
+    """
+    seq = sequence.upper()
+    code = _PROTEIN_CODE if seq_type == "protein" else _DNA_CODE
+    base = 20 if seq_type == "protein" else 4
+    n = len(seq)
+    if n < k:
+        return set()
+
+    hashes: set[int] = set()
+    for i in range(n - k + 1):
+        value = 0
+        valid = True
+        for ch in seq[i:i + k]:
+            c = code.get(ch)
+            if c is None:
+                valid = False
+                break
+            value = value * base + c
+        if valid:
+            hashes.add(value)
+    return hashes
 
 
 def _load_streamlit_secret(name: str) -> str | None:
@@ -75,55 +114,6 @@ def get_connection() -> psycopg.Connection:
     return psycopg.connect(_resolve_database_url(), autocommit=True)
 
 
-_POOL: "ConnectionPool | None" = None
-
-
-def get_pool() -> "ConnectionPool":
-    """Return a lazily-created, process-wide connection pool.
-
-    Use this (via `pooled_connection()` below) for short, frequent reads
-    such as the sidebar metadata search, where opening a brand-new
-    connection per Streamlit rerun/keystroke is the dominant cost against
-    a remote/serverless Postgres (e.g. Neon). Prefer Neon's pooled
-    connection string (port 6543 / pgbouncer) as DATABASE_URL when using
-    this, since it stacks with server-side pooling.
-    """
-    global _POOL
-    if ConnectionPool is None:
-        raise RuntimeError(
-            "psycopg_pool is not installed. Run `pip install psycopg[pool]` "
-            "to enable pooled connections, or use get_connection() instead."
-        )
-    if _POOL is None:
-        _POOL = ConnectionPool(
-            _resolve_database_url(),
-            min_size=1,
-            max_size=5,
-            kwargs={"autocommit": True},
-        )
-    return _POOL
-
-
-class _PooledOrPlainConnection:
-    """Context manager returning a pooled connection when available,
-    otherwise a regular one-off connection. Keeps call sites simple and
-    keeps this module usable even without psycopg_pool installed."""
-
-    def __enter__(self) -> psycopg.Connection:
-        if ConnectionPool is not None:
-            self._ctx = get_pool().connection()
-            return self._ctx.__enter__()
-        self._ctx = get_connection()
-        return self._ctx.__enter__() if hasattr(self._ctx, "__enter__") else self._ctx
-
-    def __exit__(self, *exc):
-        return self._ctx.__exit__(*exc)
-
-
-def pooled_connection() -> _PooledOrPlainConnection:
-    return _PooledOrPlainConnection()
-
-
 def create_tables() -> None:
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -140,7 +130,6 @@ def create_tables() -> None:
                     source TEXT,
                     source_url TEXT,
                     external_links JSONB,
-                    kmer_signature JSONB,
                     expression_profiles JSONB,
                     pathways JSONB,
                     publications JSONB,
@@ -166,43 +155,58 @@ def create_tables() -> None:
             cur.execute("CREATE INDEX IF NOT EXISTS genes_organism_idx ON genes (organism);")
             cur.execute("CREATE INDEX IF NOT EXISTS genes_sequence_type_idx ON genes (sequence_type);")
             cur.execute("CREATE INDEX IF NOT EXISTS genes_source_idx ON genes (source);")
-            cur.execute("ALTER TABLE genes ADD COLUMN IF NOT EXISTS kmer_signature JSONB;")
-            # Index on kmer_signature (JSONB) can speed up candidate selection
-            # using containment or expression indices in future queries.
-            cur.execute("CREATE INDEX IF NOT EXISTS genes_kmer_signature_idx ON genes USING gin (kmer_signature);")
+            # Supports the length-ratio prefilter in similarityengine.compare_with_database:
+            # that filter is currently applied in Python after loading metadata, but this
+            # index lets a future range-query version (WHERE length BETWEEN ...) push the
+            # same filter down to Postgres instead of scanning all 55k+ rows in the app.
+            cur.execute("CREATE INDEX IF NOT EXISTS genes_length_idx ON genes (length);")
 
-            # Trigram indexes let the sidebar's "search gene ID, symbol, or
-            # trait" box run as a fast server-side ILIKE query instead of
-            # pulling all ~56k metadata rows into Python and filtering with
-            # a list comprehension on every keystroke/rerun (see
-            # search_gene_metadata below).
-            cur.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm;")
+            # Trigram indexes so search_gene_metadata's ILIKE '%...%' queries
+            # (symbol/gene_id/description search from the sidebar) use an
+            # index scan instead of a sequential scan over the whole table —
+            # matters once the table is in the tens/hundreds of thousands of
+            # rows. Wrapped in try/except: CREATE EXTENSION requires a
+            # privilege some managed Postgres roles don't have, and search
+            # still works (just slower) without it.
+            try:
+                cur.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm;")
+                cur.execute("CREATE INDEX IF NOT EXISTS genes_symbol_trgm_idx ON genes USING GIN (symbol gin_trgm_ops);")
+                cur.execute("CREATE INDEX IF NOT EXISTS genes_gene_id_trgm_idx ON genes USING GIN (gene_id gin_trgm_ops);")
+                cur.execute("CREATE INDEX IF NOT EXISTS genes_description_trgm_idx ON genes USING GIN (description gin_trgm_ops);")
+            except Exception as e:
+                logging.getLogger("postgres_utils").warning(f"pg_trgm indexes not created (missing privilege?): {e}")
+
+            # Inverted k-mer index: (kmer -> gene_key), populated separately
+            # by populate_kmer_index() since hashing every sequence is a
+            # one-time-ish batch job, not something to redo on every table
+            # creation. This is the table that lets similarity search find
+            # candidates with a single indexed query instead of ever
+            # comparing a submitted sequence against all rows in `genes`.
             cur.execute(
-                "CREATE INDEX IF NOT EXISTS genes_gene_id_trgm_idx "
-                "ON genes USING gin (gene_id gin_trgm_ops);"
+                """
+                CREATE TABLE IF NOT EXISTS gene_kmers (
+                    kmer BIGINT NOT NULL,
+                    gene_key TEXT NOT NULL
+                );
+                """
             )
+            cur.execute("CREATE INDEX IF NOT EXISTS gene_kmers_kmer_idx ON gene_kmers (kmer);")
             cur.execute(
-                "CREATE INDEX IF NOT EXISTS genes_symbol_trgm_idx "
-                "ON genes USING gin (symbol gin_trgm_ops);"
+                "CREATE UNIQUE INDEX IF NOT EXISTS gene_kmers_unique_idx ON gene_kmers (kmer, gene_key);"
             )
-            cur.execute(
-                "CREATE INDEX IF NOT EXISTS genes_description_trgm_idx "
-                "ON genes USING gin (description gin_trgm_ops);"
-            )
-            # GIN index on the traits JSONB array for containment/search.
-            cur.execute("CREATE INDEX IF NOT EXISTS genes_traits_gin_idx ON genes USING gin (traits);")
+            cur.execute("ALTER TABLE genes ADD COLUMN IF NOT EXISTS kmer_indexed BOOLEAN DEFAULT FALSE;")
 
 
 _UPSERT_SQL = sql.SQL(
     """
     INSERT INTO genes (
         gene_id, symbol, organism, sequence, sequence_type,
-        description, source, source_url, external_links, kmer_signature,
+        description, source, source_url, external_links,
         expression_profiles, pathways, publications,
         annotations, traits, length, date_added, record
     ) VALUES (
         %(gene_id)s, %(symbol)s, %(organism)s, %(sequence)s, %(sequence_type)s,
-        %(description)s, %(source)s, %(source_url)s, %(external_links)s, %(kmer_signature)s,
+        %(description)s, %(source)s, %(source_url)s, %(external_links)s,
         %(expression_profiles)s, %(pathways)s, %(publications)s,
         %(annotations)s, %(traits)s, %(length)s, %(date_added)s, %(record)s
     )
@@ -224,8 +228,6 @@ _UPSERT_SQL = sql.SQL(
         -- a later source add to what's already known rather than erasing it.
         external_links = genes.external_links || EXCLUDED.external_links,
         annotations = genes.annotations || EXCLUDED.annotations,
-        -- Keep existing kmer_signature when incoming one is null/empty.
-        kmer_signature = COALESCE(EXCLUDED.kmer_signature, genes.kmer_signature),
         -- JSONB arrays: keep the existing array if the incoming one is empty.
         expression_profiles = CASE WHEN EXCLUDED.expression_profiles = '[]'::jsonb
             THEN genes.expression_profiles ELSE EXCLUDED.expression_profiles END,
@@ -262,7 +264,6 @@ def _record_to_params(record: dict) -> dict:
         "publications": json.dumps(record.get("publications", [])),
         "annotations": json.dumps(record.get("annotations", {})),
         "traits": json.dumps(record.get("traits", [])),
-        "kmer_signature": json.dumps(record.get("kmer_signature", [])),
         "length": record.get("length") or (len(record.get("sequence", "")) if record.get("sequence") else None),
         "date_added": record.get("date_added"),
         "record": json.dumps(record),
@@ -403,6 +404,263 @@ def load_gene_database_from_postgres(batch_size: int = 1000) -> dict:
     return records
 
 
+def load_gene_sequences_by_keys(keys: list[str]) -> dict:
+    """Fetch full sequence data for a specific, already-known-small set of
+    gene_id/symbol keys.
+
+    This is the counterpart to load_gene_database_metadata_from_postgres():
+    the UI loads lightweight metadata for all ~56k genes up front, the
+    similarity search prefilters candidates against that metadata (length
+    ratio, then k-mer/composition), and only the surviving handful of keys
+    (typically tens to low hundreds, not tens of thousands) are looked up
+    here with a single indexed query. This avoids ever pulling every full
+    sequence over the network/into memory just to score one query sequence.
+
+    A single round trip via `= ANY(%s)` against the same
+    `COALESCE(gene_id, symbol)` expression used for upserts (so it hits the
+    genes_dedup_key_idx unique index) is used rather than one query per key.
+    """
+    if not keys:
+        return {}
+
+    records: dict[str, dict] = {}
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT gene_id, symbol, organism, sequence, sequence_type,
+                       description, source, source_url, traits, length
+                FROM genes
+                WHERE COALESCE(gene_id, symbol) = ANY(%s);
+                """,
+                (list(keys),),
+            )
+            for row in cur.fetchall():
+                (
+                    gene_id, symbol, organism, sequence, sequence_type,
+                    description, source, source_url, traits, length,
+                ) = row
+                if isinstance(traits, str):
+                    traits = json.loads(traits)
+                key = gene_id or symbol
+                if not key:
+                    continue
+                records[key] = {
+                    "gene_id": gene_id,
+                    "symbol": symbol,
+                    "organism": organism,
+                    "sequence": sequence,
+                    "sequence_type": sequence_type,
+                    "description": description,
+                    "source": source,
+                    "source_url": source_url,
+                    "traits": traits or [],
+                    "length": length,
+                }
+    return records
+
+
+def get_gene_count() -> int:
+    """Cheap COUNT(*) for the sidebar header — never materializes rows."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM genes;")
+            return cur.fetchone()[0]
+
+
+def search_gene_metadata(query: str | None, limit: int = 20, offset: int = 0) -> list[dict]:
+    """Server-side metadata search: only `limit` rows are ever pulled into
+    the app, regardless of how large the genes table is. Runs ILIKE across
+    the indexed text columns (see the pg_trgm GIN indexes in create_tables)
+    instead of loading every row into Python and filtering there.
+    """
+    q = (query or "").strip()
+    where_sql = ""
+    params: dict = {"limit": limit, "offset": offset}
+    if q:
+        where_sql = (
+            "WHERE gene_id ILIKE %(pattern)s OR symbol ILIKE %(pattern)s "
+            "OR description ILIKE %(pattern)s OR source ILIKE %(pattern)s "
+            "OR traits::text ILIKE %(pattern)s"
+        )
+        params["pattern"] = f"%{q}%"
+
+    records: list[dict] = []
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT gene_id, symbol, organism, description, source, traits, length
+                FROM genes
+                {where_sql}
+                ORDER BY id
+                LIMIT %(limit)s OFFSET %(offset)s;
+                """,
+                params,
+            )
+            for row in cur.fetchall():
+                gene_id, symbol, organism, description, source, traits, length = row
+                if isinstance(traits, str):
+                    traits = json.loads(traits)
+                records.append({
+                    "gene_id": gene_id,
+                    "symbol": symbol,
+                    "organism": organism,
+                    "description": description,
+                    "source": source,
+                    "traits": traits or [],
+                    "length": length,
+                })
+    return records
+
+
+def count_gene_metadata_matches(query: str | None) -> int:
+    """Matching row count for the same filter search_gene_metadata applies —
+    lets the UI show "showing 20 of N" without pulling all N rows."""
+    q = (query or "").strip()
+    if not q:
+        return get_gene_count()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT COUNT(*) FROM genes
+                WHERE gene_id ILIKE %(pattern)s OR symbol ILIKE %(pattern)s
+                   OR description ILIKE %(pattern)s OR source ILIKE %(pattern)s
+                   OR traits::text ILIKE %(pattern)s;
+                """,
+                {"pattern": f"%{q}%"},
+            )
+            return cur.fetchone()[0]
+
+
+def populate_kmer_index(
+    k: int = KMER_K, batch_size: int = 500, flush_every: int = 50_000, rebuild: bool = False
+) -> int:
+    """Batch job: stream every (not-yet-indexed) gene's sequence, compute
+    its k-mer hash set, and store (kmer, gene_key) rows in gene_kmers.
+
+    This is what makes find_candidate_genes_by_kmer() possible — the app
+    never has to compare a submitted sequence against all rows in `genes`;
+    it looks up which genes share k-mers with it via this index instead.
+
+    Run this once after the initial data collection finishes, and again
+    (without rebuild=True) whenever a batch of new genes is ingested — it
+    only processes rows where kmer_indexed is not TRUE, so re-running is
+    cheap once the backlog is caught up. Pass rebuild=True after changing
+    `k`, since existing rows were hashed with the old k and are no longer
+    comparable to new queries.
+
+    Returns the number of genes indexed in this run.
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            if rebuild:
+                cur.execute("UPDATE genes SET kmer_indexed = FALSE;")
+                cur.execute("TRUNCATE gene_kmers;")
+
+    indexed_genes = 0
+    kmer_rows: list[tuple[int, str]] = []
+    pending_keys: list[str] = []
+
+    def _flush(write_cur) -> None:
+        if kmer_rows:
+            write_cur.executemany(
+                "INSERT INTO gene_kmers (kmer, gene_key) VALUES (%s, %s) ON CONFLICT DO NOTHING;",
+                kmer_rows,
+            )
+        if pending_keys:
+            write_cur.execute(
+                "UPDATE genes SET kmer_indexed = TRUE WHERE COALESCE(gene_id, symbol) = ANY(%s);",
+                (pending_keys,),
+            )
+        kmer_rows.clear()
+        pending_keys.clear()
+
+    with get_connection() as conn:
+        conn.autocommit = False
+        try:
+            with conn.cursor(name="kmer_populate_cursor") as read_cur, conn.cursor() as write_cur:
+                read_cur.itersize = batch_size
+                read_cur.execute(
+                    """
+                    SELECT COALESCE(gene_id, symbol) AS gene_key, sequence, sequence_type
+                    FROM genes
+                    WHERE (kmer_indexed IS NOT TRUE) AND sequence IS NOT NULL AND sequence <> '';
+                    """
+                )
+                for gene_key, sequence, sequence_type in read_cur:
+                    seq_type = "protein" if sequence_type == "protein" else "dna"
+                    for h in _kmer_hashes(sequence, k, seq_type):
+                        kmer_rows.append((h, gene_key))
+                    pending_keys.append(gene_key)
+                    indexed_genes += 1
+                    if len(kmer_rows) >= flush_every:
+                        _flush(write_cur)
+                        conn.commit()
+                _flush(write_cur)
+                conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+
+    return indexed_genes
+
+
+def find_candidate_genes_by_kmer(kmers: set[int] | list[int], limit: int = 200) -> list[tuple[str, int]]:
+    """Return up to `limit` (gene_key, shared_kmer_count) pairs ranked by how
+    many k-mers each gene shares with the query — a single indexed SQL
+    query against gene_kmers instead of scanning/aligning every row in
+    `genes`.
+
+    Returns [] if `kmers` is empty (e.g. query shorter than k) or if the
+    index hasn't been populated yet (see populate_kmer_index) — callers
+    should fall back to the length-prefilter path over metadata in that
+    case rather than treating an empty result as "no similar genes".
+    """
+    kmer_list = list(kmers)
+    if not kmer_list:
+        return []
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT gene_key, COUNT(*) AS shared
+                FROM gene_kmers
+                WHERE kmer = ANY(%s)
+                GROUP BY gene_key
+                ORDER BY shared DESC
+                LIMIT %s;
+                """,
+                (kmer_list, limit),
+            )
+            return [(row[0], row[1]) for row in cur.fetchall()]
+
+
+def find_gene_keys_by_length_range(
+    min_length: int, max_length: int, sequence_type: str | None = None, limit: int = 500
+) -> list[str]:
+    """Server-side length-range candidate lookup — fallback path for when
+    gene_kmers hasn't been populated yet (see populate_kmer_index). Uses
+    the genes_length_idx index so this is a fast range scan on Postgres's
+    side instead of requiring the app to hold a full metadata dict in
+    memory just to filter by length in Python.
+    """
+    where = "WHERE length BETWEEN %(min_len)s AND %(max_len)s"
+    params: dict = {"min_len": min_length, "max_len": max_length, "limit": limit}
+    if sequence_type:
+        where += " AND sequence_type = %(seq_type)s"
+        params["seq_type"] = sequence_type
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT COALESCE(gene_id, symbol) FROM genes {where} LIMIT %(limit)s;",
+                params,
+            )
+            return [row[0] for row in cur.fetchall() if row[0]]
+
+
 def load_gene_database_metadata_from_postgres(batch_size: int = 1000) -> dict:
     """Load only metadata needed for UI search without reading full sequences."""
     records: dict[str, dict] = {}
@@ -437,226 +695,6 @@ def load_gene_database_metadata_from_postgres(batch_size: int = 1000) -> dict:
             conn.commit()
     return records
 
-def get_gene_count() -> int:
-    """Cheap COUNT(*) for sidebar display -- doesn't touch row data at all."""
-    with pooled_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM genes;")
-            (count,) = cur.fetchone()
-            return int(count)
-
-
-def _metadata_row_to_dict(row: tuple) -> dict:
-    gene_id, symbol, organism, description, source, traits, length = row
-    if isinstance(traits, str):
-        traits = json.loads(traits)
-    return {
-        "gene_id": gene_id,
-        "symbol": symbol,
-        "organism": organism,
-        "description": description,
-        "source": source,
-        "traits": traits or [],
-        "length": length,
-    }
-
-
-def search_gene_metadata(query: str | None = None, limit: int = 20, offset: int = 0) -> list[dict]:
-    """Search/paginate gene metadata server-side.
-
-    Replaces the pattern of loading all ~56k metadata rows into Python and
-    filtering them with a list comprehension on every sidebar keystroke.
-    Only `limit` rows ever cross the wire. `query` is matched against
-    gene_id, symbol, description, source, and traits using the trigram/GIN
-    indexes created in create_tables(); pass `query=None` (or "") for a
-    plain paginated browse (e.g. the "sample of 20" preview).
-    """
-    base_select = """
-        SELECT gene_id, symbol, organism, description, source, traits, length
-        FROM genes
-    """
-    with pooled_connection() as conn:
-        with conn.cursor() as cur:
-            if query:
-                like = f"%{query}%"
-                cur.execute(
-                    base_select
-                    + """
-                    WHERE gene_id ILIKE %(like)s
-                       OR symbol ILIKE %(like)s
-                       OR description ILIKE %(like)s
-                       OR source ILIKE %(like)s
-                       OR traits::text ILIKE %(like)s
-                    ORDER BY gene_id NULLS LAST
-                    LIMIT %(limit)s OFFSET %(offset)s;
-                    """,
-                    {"like": like, "limit": limit, "offset": offset},
-                )
-            else:
-                cur.execute(
-                    base_select + " ORDER BY gene_id NULLS LAST LIMIT %(limit)s OFFSET %(offset)s;",
-                    {"limit": limit, "offset": offset},
-                )
-            return [_metadata_row_to_dict(row) for row in cur.fetchall()]
-
-
-def count_gene_metadata_matches(query: str) -> int:
-    """Count matches for `query` without fetching the matching rows themselves
-    (used to show "Showing N matching records" without loading N of them)."""
-    like = f"%{query}%"
-    with pooled_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT COUNT(*) FROM genes
-                WHERE gene_id ILIKE %(like)s
-                   OR symbol ILIKE %(like)s
-                   OR description ILIKE %(like)s
-                   OR source ILIKE %(like)s
-                   OR traits::text ILIKE %(like)s;
-                """,
-                {"like": like},
-            )
-            (count,) = cur.fetchone()
-            return int(count)
-
-
-def find_candidate_gene_ids_by_kmers(kmers: list[str], limit: int = 500) -> list[str]:
-    """Return a list of gene_id (or symbol) candidates ordered by k-mer overlap.
-
-    This executes a server-side aggregation that counts matching k-mers in
-    `kmer_signature` JSONB arrays and returns the top `limit` gene identifiers.
-    """
-    if not kmers:
-        return []
-    with pooled_connection() as conn:
-        with conn.cursor() as cur:
-            # Unnest the JSONB kmer_signature array and count overlaps with the
-            # provided kmers list. Use = ANY(%s) to pass the Python list safely.
-            cur.execute(
-                """
-                SELECT COALESCE(gene_id, symbol) AS gid, COUNT(*) AS common
-                FROM genes, jsonb_array_elements_text(kmer_signature) AS k(kmer)
-                WHERE k.kmer = ANY(%s)
-                GROUP BY gid
-                ORDER BY common DESC
-                LIMIT %s;
-                """,
-                (kmers, limit),
-            )
-            rows = cur.fetchall()
-            return [row[0] for row in rows]
-
-
-def find_candidate_gene_ids_by_kmers_weighted(kmers: list[str], limit: int = 500, min_jaccard: float = 0.01) -> list[str]:
-    """Return gene ids ordered by Jaccard similarity between provided `kmers` and stored `kmer_signature`.
-
-    Jaccard = |intersection| / (|query_kmers| + jsonb_array_length(kmer_signature) - |intersection|)
-    The query computes the intersection count and filters by minimum Jaccard.
-    """
-    if not kmers:
-        return []
-    with pooled_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT gid FROM (
-                  SELECT COALESCE(gene_id, symbol) AS gid,
-                         COUNT(*) AS common,
-                         jsonb_array_length(kmer_signature) AS ref_count
-                  FROM genes, jsonb_array_elements_text(kmer_signature) AS k(kmer)
-                  WHERE k.kmer = ANY(%s)
-                  GROUP BY gid, ref_count
-                ) t
-                WHERE (common::float / (%s + ref_count - common)) >= %s
-                ORDER BY (common::float / (%s + ref_count - common)) DESC
-                LIMIT %s;
-                """,
-                (kmers, len(kmers), min_jaccard, len(kmers), limit),
-            )
-            rows = cur.fetchall()
-            return [row[0] for row in rows]
-
-
-def load_gene_records_by_ids(ids: list[str]) -> dict:
-    """Load full gene records for the provided list of gene_id/symbol identifiers.
-
-    Returns a dict keyed by gene_id/symbol like `load_gene_database_from_postgres`.
-    """
-    if not ids:
-        return {}
-    placeholders = ','.join(['%s'] * len(ids))
-    query = (
-        f"SELECT gene_id, symbol, organism, sequence, sequence_type, description, source, source_url, "
-        f"external_links, expression_profiles, pathways, publications, annotations, traits, length, date_added, record "
-        f"FROM genes WHERE COALESCE(gene_id, symbol) IN ({placeholders});"
-    )
-    with pooled_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(query, ids)
-            records: dict[str, dict] = {}
-            for row in cur.fetchall():
-                (
-                    gene_id,
-                    symbol,
-                    organism,
-                    sequence,
-                    sequence_type,
-                    description,
-                    source,
-                    source_url,
-                    external_links,
-                    expression_profiles,
-                    pathways,
-                    publications,
-                    annotations,
-                    traits,
-                    length,
-                    date_added,
-                    record,
-                ) = row
-
-                if isinstance(external_links, str):
-                    external_links = json.loads(external_links)
-                if isinstance(expression_profiles, str):
-                    expression_profiles = json.loads(expression_profiles)
-                if isinstance(pathways, str):
-                    pathways = json.loads(pathways)
-                if isinstance(publications, str):
-                    publications = json.loads(publications)
-                if isinstance(annotations, str):
-                    annotations = json.loads(annotations)
-                if isinstance(traits, str):
-                    traits = json.loads(traits)
-                if isinstance(record, str):
-                    record = json.loads(record)
-
-                key = gene_id or symbol
-                if not key:
-                    continue
-
-                records[key] = {
-                    "gene_id": gene_id,
-                    "symbol": symbol,
-                    "organism": organism,
-                    "sequence": sequence,
-                    "sequence_type": sequence_type,
-                    "description": description,
-                    "source": source,
-                    "source_url": source_url,
-                    "external_links": external_links or {},
-                    "expression_profiles": expression_profiles or [],
-                    "pathways": pathways or [],
-                    "publications": publications or [],
-                    "annotations": annotations or {},
-                    "traits": traits or [],
-                    "length": length,
-                    "date_added": date_added,
-                    "record": record,
-                }
-            return records
-
-
 def load_json_records(path: Path) -> list[dict]:
     import json
 
@@ -668,3 +706,28 @@ def load_json_records(path: Path) -> list[dict]:
     if isinstance(raw, dict) and raw.get("gene_id"):
         return [raw]
     raise ValueError("Unsupported JSON format for gene records")
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Postgres maintenance for the plant gene project. "
+        "Run 'create-tables' once after provisioning a new database, and "
+        "'populate-kmer-index' once after the initial data collection (and "
+        "again after ingesting new batches of genes)."
+    )
+    parser.add_argument("command", choices=["create-tables", "populate-kmer-index"])
+    parser.add_argument("--k", type=int, default=KMER_K, help=f"k-mer length (default {KMER_K})")
+    parser.add_argument(
+        "--rebuild", action="store_true",
+        help="Re-index every gene from scratch (needed after changing --k)",
+    )
+    args = parser.parse_args()
+
+    if args.command == "create-tables":
+        create_tables()
+        print("Tables and indexes ensured.")
+    elif args.command == "populate-kmer-index":
+        n = populate_kmer_index(k=args.k, rebuild=args.rebuild)
+        print(f"Indexed {n} gene(s) with k={args.k}.")

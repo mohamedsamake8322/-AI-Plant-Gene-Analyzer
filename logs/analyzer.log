@@ -303,3 +303,4 @@ Multiple connection attempts failed. All failures were:
 2026-08-05 21:52:39,750 - __main__ - INFO - Background video loaded from assets\images.mp4 (1.2 MB)
 2026-08-05 22:09:46,656 - __main__ - INFO - Loaded 55979 genes from PostgreSQL
 2026-08-05 22:10:38,812 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-08-05 22:34:59,578 - __main__ - WARNING - Alignment against 'XM_002955015.1' failed: Sequence too long for pairwise alignment (5,017 > 5,000). This guard applies regardless of caller, so any direct use of this function (not just the main analysis pipeline) is protected from excessive memory/time use.
