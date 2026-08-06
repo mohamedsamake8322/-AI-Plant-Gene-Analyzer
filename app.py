@@ -123,9 +123,10 @@ def _cached_analyze(record_json: str, input_type: str, reading_frame: int, top_n
     toggling a chart option) with the exact same sequence and settings.
     The record is passed as a JSON string (not a dict) because st.cache_data
     needs a hashable argument. `_db` is prefixed with an underscore, a
-    Streamlit convention meaning "don't hash this for the cache key" — it's
-    already stable for the session via load_gene_database_cached() above, so
-    re-hashing a potentially large dict on every single call would be wasted
+    Streamlit convention meaning "don't hash this for the cache key" — for
+    a fixed record + settings, sim.find_similar_genes() should return the
+    same small candidate set deterministically, so skipping the hash of a
+    (potentially large-ish) candidate dict on every call is safe and saves
     work.
     """
     record = json.loads(record_json)
@@ -205,22 +206,6 @@ def search_gene_metadata_cached(query: str, limit: int = 20, offset: int = 0) ->
 @st.cache_data(ttl=60, show_spinner=False)
 def count_gene_metadata_matches_cached(query: str) -> int:
     return count_gene_metadata_matches(query)
-
-
-@st.cache_resource(show_spinner=False)
-def get_kmer_index_cached(_db: dict, k: int = sim.DEFAULT_KMER) -> dict:
-    """Build the k-mer prefilter index once per database load and keep it
-    as a shared resource (st.cache_resource, not st.cache_data).
-
-    st.cache_data returns a fresh deep copy on every call, which would
-    silently throw away sim._ensure_kmer_index's in-place `_kmers`
-    annotations and force the ~56k-sequence k-mer scan to redo itself on
-    every single analysis run. st.cache_resource instead caches the *same*
-    Python object across reruns/sessions, so the index is computed once
-    for the lifetime of the process (or until the DB argument changes).
-    """
-    sim._ensure_kmer_index(_db, k=k)
-    return _db
 
 
 load_css()
@@ -468,20 +453,6 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
     if analyze_btn and (raw_sequence or records):
 
         try:
-            if db is None and metadata_available:
-                with st.spinner("📥 Loading full gene database (first analysis this session)…"):
-                    db = load_gene_database_cached("genes_database.json")
-                if not db:
-                    raise RuntimeError("Unable to load full gene database for analysis.")
-
-            # Build (or reuse) the k-mer prefilter index as a shared
-            # st.cache_resource object, so the ~56k-sequence k-mer scan
-            # that similarityengine.compare_with_database relies on for
-            # its prefilter runs once per process instead of once per
-            # analysis (see get_kmer_index_cached above for why
-            # st.cache_data alone isn't enough here).
-            db = get_kmer_index_cached(db)
-
             analysis_targets: list[dict[str, str]] = []
             if records and len(records) > 1:
                 if analyze_all:
@@ -497,11 +468,41 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                     logger.info(
                         f"Starting analysis for record {idx + 1}/{len(analysis_targets)}: {record.get('header', 'Sequence')}"
                     )
+
+                    if db is not None:
+                        # JSON-file deployment (no Postgres configured) —
+                        # the whole database already lives in memory, same
+                        # as before.
+                        target_db = db
+                    elif metadata_available:
+                        # Postgres-backed deployment: never load the full
+                        # ~56k-gene database. sim.find_similar_genes()
+                        # hashes this one sequence into k-mers, asks
+                        # Postgres which genes share k-mers with it (a
+                        # single indexed query against gene_kmers), and
+                        # fetches only that small candidate set — typically
+                        # tens to a couple hundred genes, not tens of
+                        # thousands. The 55k+ reference database itself
+                        # never leaves Neon.
+                        target_db = sim.find_similar_genes(
+                            record.get("sequence", ""),
+                            top_n=top_n_matches,
+                            logger=logger,
+                        )
+                        if not target_db:
+                            logger.warning(
+                                f"No candidate genes found for record {idx + 1} "
+                                "(k-mer index may not be populated yet — see "
+                                "postgres_utils.populate_kmer_index)"
+                            )
+                    else:
+                        target_db = {}
+
                     analyzed_results.append(
                         _cached_analyze(
                             json.dumps(record, sort_keys=True),
                             sequence_input_type, reading_frame, top_n_matches,
-                            _db=db,
+                            _db=target_db,
                         )
                     )
 
