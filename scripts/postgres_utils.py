@@ -632,7 +632,7 @@ def find_candidate_genes_by_kmer(query: str | set[int] | list[int], limit: int =
                     FROM genes
                     WHERE sequence IS NOT NULL
                       AND sequence <> ''
-                      AND sequence % %(query)s
+                      AND sequence %% %(query)s
                       AND length BETWEEN %(min_len)s AND %(max_len)s
                     ORDER BY score DESC
                     LIMIT %(limit)s;
