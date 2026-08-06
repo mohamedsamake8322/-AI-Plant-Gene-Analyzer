@@ -173,6 +173,7 @@ def create_tables() -> None:
                 cur.execute("CREATE INDEX IF NOT EXISTS genes_symbol_trgm_idx ON genes USING GIN (symbol gin_trgm_ops);")
                 cur.execute("CREATE INDEX IF NOT EXISTS genes_gene_id_trgm_idx ON genes USING GIN (gene_id gin_trgm_ops);")
                 cur.execute("CREATE INDEX IF NOT EXISTS genes_description_trgm_idx ON genes USING GIN (description gin_trgm_ops);")
+                cur.execute("CREATE INDEX IF NOT EXISTS genes_sequence_trgm_idx ON genes USING GIN (sequence gin_trgm_ops);")
             except Exception as e:
                 logging.getLogger("postgres_utils").warning(f"pg_trgm indexes not created (missing privilege?): {e}")
 
@@ -540,45 +541,36 @@ def populate_kmer_index(
     flush_every: int = 200_000,
     rebuild: bool = False,
 ) -> int:
-    """Batch job: stream every (not-yet-indexed) gene's sequence, compute
-    its k-mer hash set, and store (kmer, gene_key) rows in gene_kmers.
+    """Populate a compact, storage-safe candidate index for the Neon-backed app.
 
-    This is what makes find_candidate_genes_by_kmer() possible — the app
-    never has to compare a submitted sequence against all rows in `genes`;
-    it looks up which genes share k-mers with it via this index instead.
+    The previous implementation wrote one row per k-mer into `gene_kmers` for
+    every gene, which can exceed Neon's storage quota for a 55k+ gene catalog.
+    To keep the app functional within those limits, this function now performs
+    a lightweight marking pass: it only updates the `kmer_indexed` flag on the
+    genes table and leaves the actual candidate selection to the trigram-based
+    lookup implemented in find_candidate_genes_by_kmer().
 
-    Run this once after the initial data collection finishes, and again
-    (without rebuild=True) whenever a batch of new genes is ingested — it
-    only processes rows where kmer_indexed is not TRUE, so re-running is
-    cheap once the backlog is caught up. Pass rebuild=True after changing
-    `k`, since existing rows were hashed with the old k and are no longer
-    comparable to new queries.
-
-    Returns the number of genes indexed in this run.
+    Returns the number of genes marked as indexed in this run.
     """
     with get_connection() as conn:
         with conn.cursor() as cur:
             if rebuild:
                 cur.execute("UPDATE genes SET kmer_indexed = FALSE;")
-                cur.execute("TRUNCATE gene_kmers;")
+                try:
+                    cur.execute("TRUNCATE gene_kmers;")
+                except Exception:
+                    pass
 
     indexed_genes = 0
-    kmer_rows: list[tuple[int, str]] = []
     pending_keys: list[str] = []
     progress_every = max(1_000, min(10_000, batch_size * 5))
 
     def _flush(write_cur) -> None:
-        if kmer_rows:
-            write_cur.executemany(
-                "INSERT INTO gene_kmers (kmer, gene_key) VALUES (%s, %s) ON CONFLICT DO NOTHING;",
-                kmer_rows,
-            )
         if pending_keys:
             write_cur.execute(
                 "UPDATE genes SET kmer_indexed = TRUE WHERE COALESCE(gene_id, symbol) = ANY(%s);",
                 (pending_keys,),
             )
-        kmer_rows.clear()
         pending_keys.clear()
 
     with get_connection() as conn:
@@ -588,20 +580,17 @@ def populate_kmer_index(
                 read_cur.itersize = batch_size
                 read_cur.execute(
                     """
-                    SELECT COALESCE(gene_id, symbol) AS gene_key, sequence, sequence_type
+                    SELECT COALESCE(gene_id, symbol) AS gene_key
                     FROM genes
                     WHERE (kmer_indexed IS NOT TRUE) AND sequence IS NOT NULL AND sequence <> '';
                     """
                 )
-                for gene_key, sequence, sequence_type in read_cur:
-                    seq_type = "protein" if sequence_type == "protein" else "dna"
-                    for h in _kmer_hashes(sequence, k, seq_type):
-                        kmer_rows.append((h, gene_key))
+                for (gene_key,) in read_cur:
                     pending_keys.append(gene_key)
                     indexed_genes += 1
                     if indexed_genes % progress_every == 0:
-                        print(f"Indexed {indexed_genes} gene(s) so far...")
-                    if len(kmer_rows) >= flush_every:
+                        print(f"Marked {indexed_genes} gene(s) as indexed (compact trigram prefilter active)...")
+                    if len(pending_keys) >= flush_every:
                         _flush(write_cur)
                         conn.commit()
                 _flush(write_cur)
@@ -610,25 +599,56 @@ def populate_kmer_index(
             conn.rollback()
             raise
 
+    print("Compact trigram-based candidate prefilter is active; no full k-mer row table was populated.")
     return indexed_genes
 
 
-def find_candidate_genes_by_kmer(kmers: set[int] | list[int], limit: int = 200) -> list[tuple[str, int]]:
-    """Return up to `limit` (gene_key, shared_kmer_count) pairs ranked by how
-    many k-mers each gene shares with the query — a single indexed SQL
-    query against gene_kmers instead of scanning/aligning every row in
-    `genes`.
+def find_candidate_genes_by_kmer(query: str | set[int] | list[int], limit: int = 200) -> list[tuple[str, float]]:
+    """Return up to `limit` candidate genes for a query sequence.
 
-    Returns [] if `kmers` is empty (e.g. query shorter than k) or if the
-    index hasn't been populated yet (see populate_kmer_index) — callers
-    should fall back to the length-prefilter path over metadata in that
-    case rather than treating an empty result as "no similar genes".
+    The preferred path uses a compact trigram similarity search on the
+    `genes.sequence` column (backed by a GIN trigram index) rather than the
+    storage-heavy `gene_kmers` table. This keeps candidate selection working
+    on Neon without hitting the storage quota while still avoiding a full
+    O(n*m) scan over every gene sequence.
+
+    A legacy list of k-mer hashes is still accepted for backward
+    compatibility; in that case it falls back to the old `gene_kmers` table
+    if present, otherwise returns an empty list.
     """
-    kmer_list = list(kmers)
+    if isinstance(query, str):
+        sequence = query.upper().replace(" ", "")
+        if not sequence:
+            return []
+        query_len = len(sequence)
+        min_len = max(1, int(query_len / 3.0))
+        max_len = int(query_len * 3.0)
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT COALESCE(gene_id, symbol) AS gene_key,
+                           similarity(sequence, %(query)s) AS score
+                    FROM genes
+                    WHERE sequence IS NOT NULL
+                      AND sequence <> ''
+                      AND sequence % %(query)s
+                      AND length BETWEEN %(min_len)s AND %(max_len)s
+                    ORDER BY score DESC
+                    LIMIT %(limit)s;
+                    """,
+                    {"query": sequence, "min_len": min_len, "max_len": max_len, "limit": limit},
+                )
+                return [(row[0], float(row[1])) for row in cur.fetchall()]
+
+    kmer_list = list(query)
     if not kmer_list:
         return []
     with get_connection() as conn:
         with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM gene_kmers;")
+            if cur.fetchone()[0] == 0:
+                return []
             cur.execute(
                 """
                 SELECT gene_key, COUNT(*) AS shared
@@ -640,7 +660,7 @@ def find_candidate_genes_by_kmer(kmers: set[int] | list[int], limit: int = 200) 
                 """,
                 (kmer_list, limit),
             )
-            return [(row[0], row[1]) for row in cur.fetchall()]
+            return [(row[0], float(row[1])) for row in cur.fetchall()]
 
 
 def find_gene_keys_by_length_range(
