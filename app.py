@@ -545,6 +545,8 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
     mutation_report = result["mutation_report"]
     interpretation = result["interpretation"]
     sequence_type = result.get("sequence_type", "dna")
+    similarity_search_source = result.get("similarity_search_source", "unknown")
+    similarity_candidate_count = result.get("similarity_candidate_count")
 
     if batch_mode:
         average_gc = round(sum(r["stats"].get("gc_content", 0) for r in last_results if r["sequence_type"] == "dna") / max(1, sum(1 for r in last_results if r["sequence_type"] == "dna")), 2)
@@ -707,6 +709,12 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
     if result.get("metadata_warnings"):
         for warning_msg in result["metadata_warnings"]:
             st.warning(warning_msg)
+
+    if similarity_search_source != "unknown":
+        info_lines = [f"Similarity search source: **{similarity_search_source}**"]
+        if similarity_candidate_count is not None:
+            info_lines.append(f"Candidates evaluated: **{similarity_candidate_count}**")
+        st.info(" — ".join(info_lines))
 
     st.markdown("---")
 

@@ -121,6 +121,15 @@ class SimilarityResultList(list):
         self.prefiltered_count = prefiltered_count
 
 
+class CandidateDatabase(dict):
+    """Dictionary-like candidate set with metadata for debug and UI display."""
+
+    def __init__(self, data: dict[str, dict], source: str, candidate_count: int):
+        super().__init__(data)
+        self.source = source
+        self.candidate_count = candidate_count
+
+
 def _normalize_database(raw: object) -> dict:
     if isinstance(raw, dict):
         if "genes" in raw and isinstance(raw["genes"], list):
@@ -514,7 +523,7 @@ def find_similar_genes(
     except Exception as e:
         if logger:
             logger.warning(f"find_similar_genes: Postgres unavailable ({e}); no candidates found")
-        return {}
+        return CandidateDatabase({}, source="postgres_unavailable", candidate_count=0)
 
     query_type = bio.detect_sequence_type(query)
     pool_size = max(1, top_n) * candidate_pool_multiplier
@@ -525,7 +534,7 @@ def find_similar_genes(
         candidates = pg.load_gene_sequences_by_keys(keys)
         if logger:
             logger.info(f"find_similar_genes: k-mer index returned {len(candidates)} candidates for top_n={top_n}")
-        return candidates
+        return CandidateDatabase(candidates, source="kmer_index", candidate_count=len(candidates))
 
     if logger:
         logger.info(
@@ -536,7 +545,8 @@ def find_similar_genes(
         # Caller already has a metadata dict in hand (e.g. JSON-file mode
         # keeping everything local) — reuse it instead of a second Postgres
         # round trip.
-        return _metadata_length_prefiltered_candidates(query, metadata, logger=logger)
+        candidates = _metadata_length_prefiltered_candidates(query, metadata, logger=logger)
+        return CandidateDatabase(candidates, source="metadata_length_filter", candidate_count=len(candidates))
 
     # No metadata dict required: ask Postgres directly for gene keys whose
     # length falls within the usual prefilter window, using the
@@ -550,11 +560,11 @@ def find_similar_genes(
     max_len = int(query_len * DEFAULT_MAX_LENGTH_RATIO)
     keys = pg.find_gene_keys_by_length_range(min_len, max_len, sequence_type=query_type, limit=pool_size)
     if not keys:
-        return {}
+        return CandidateDatabase({}, source="length_range_fallback", candidate_count=0)
     candidates = pg.load_gene_sequences_by_keys(keys)
     if logger:
         logger.info(f"find_similar_genes: length-range fallback returned {len(candidates)} candidates")
-    return candidates
+    return CandidateDatabase(candidates, source="length_range_fallback", candidate_count=len(candidates))
 
 
 def classify_similarity(score: float) -> dict[str, str]:
