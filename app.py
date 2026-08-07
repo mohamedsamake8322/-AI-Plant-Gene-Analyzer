@@ -813,6 +813,18 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
     with tabs[1]:
         st.markdown("#### Database Similarity Search")
 
+        if similarity_results:
+            source_label = similarity_search_source.replace("_", " ").title()
+            candidate_count = similarity_candidate_count if similarity_candidate_count is not None else len(similarity_results)
+            trust_level = "High" if best_match and best_match.get("similarity_score", 0) >= 95 else "Medium"
+            if similarity_search_source in {"length_range_fallback", "metadata_length_filter", "postgres_unavailable"}:
+                trust_level = "Low"
+
+            st.info(
+                f"Trust check: results were generated from **{source_label}** and evaluated against **{candidate_count}** candidates. "
+                f"Confidence: **{trust_level}**."
+            )
+
         if not similarity_results:
             st.warning("No similarity results available.")
         else:
