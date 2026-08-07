@@ -103,6 +103,8 @@ def analyze_sequence_record(
         except ValueError:
             pass
 
+    similarity_search_source = "local_database"
+    similarity_candidate_count = None
     if len(sequence) > config.MAX_ALIGNMENT_SEQUENCE_LENGTH:
         pipeline_warnings.append(
             f"Sequence ({len(sequence):,} {'aa' if seq_type == 'protein' else 'bp'}) exceeds the "
@@ -114,6 +116,10 @@ def analyze_sequence_record(
         try:
             similarity_results = sim.compare_with_database(sequence, db, top_n=top_n_matches, logger=logger)
             prefiltered_count = getattr(similarity_results, "prefiltered_count", 0)
+            if hasattr(db, "source"):
+                similarity_search_source = db.source
+            if hasattr(db, "candidate_count"):
+                similarity_candidate_count = db.candidate_count
             if prefiltered_count:
                 pipeline_warnings.append(
                     f"⚠️ {prefiltered_count} database entries were skipped by the length prefilter "
@@ -187,6 +193,8 @@ def analyze_sequence_record(
         "orfs": orfs,
         "header_metadata": header_metadata,
         "metadata_warnings": pipeline_warnings,
+        "similarity_search_source": similarity_search_source,
+        "similarity_candidate_count": similarity_candidate_count,
     }
 
 
