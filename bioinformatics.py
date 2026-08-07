@@ -152,25 +152,60 @@ def sequence_statistics(sequence: str) -> dict:
     """Compute DNA sequence metrics."""
     dist = nucleotide_distribution(sequence)
     gc = calculate_gc_content(sequence)
-    at = dist["percentages"]["A"] + dist["percentages"]["T"]
+    total = dist["total_length"]
+    # Bug fix: this used to be dist["percentages"]["A"] + dist["percentages"]["T"],
+    # i.e. two values each already rounded to 2 decimals, then summed. Rounding
+    # before summing accumulates error (e.g. 20.6667 -> 20.67 and 11.6667 ->
+    # 11.67 sum to 32.34, when the true combined AT% is 32.3333... -> 32.33).
+    # Computing straight from the raw counts avoids the double-rounding.
+    at_count = dist["counts"]["A"] + dist["counts"]["T"]
+    at = round(at_count / total * 100, 2) if total else 0.0
     orfs = find_orfs(sequence, include_reverse=True)
     has_start, has_stop = _scan_start_stop_codons(sequence)
+    ambiguous_count = total - sum(dist["counts"][b] for b in "ATGC")
+    gc3 = gc_content_third_position(sequence)
     return {
         "length": len(sequence),
         "gc_content": gc,
-        "at_content": round(at, 2),
+        "at_content": at,
         "gc_ratio": round(gc / at, 3) if at > 0 else None,
         "nucleotide_counts": dist["counts"],
         "nucleotide_percentages": dist["percentages"],
         "is_coding_length": len(sequence) % 3 == 0,
+        # has_start_codon / has_stop_codon: an ATG or stop codon found
+        # *anywhere* in *any* of the 6 reading frames (see
+        # _scan_start_stop_codons) -- they are independent existence
+        # checks, not evidence of a start and stop belonging to the same
+        # ORF. Displaying them side by side invites reading them as "this
+        # sequence has a complete gene", which is not what they check.
+        # Use has_complete_orf below for that claim instead.
         "has_start_codon": has_start,
         "has_stop_codon": has_stop,
+        "has_complete_orf": any(orf["complete"] for orf in orfs),
+        "ambiguous_base_count": ambiguous_count,
+        "ambiguous_base_percent": round(ambiguous_count / total * 100, 2) if total else 0.0,
+        "gc_content_3rd_position": gc3,
         "sequence_type": "dna",
         "orf_count": len(orfs),
         "longest_orf_length": orfs[0]["length"] if orfs else 0,
         "longest_orf_frame": orfs[0]["frame"] if orfs else None,
         "orfs": orfs,
     }
+
+
+def gc_content_third_position(sequence: str) -> Optional[float]:
+    """GC content restricted to the 3rd position of each codon (frame 0),
+    a standard plant/codon-usage-bias metric (GC3) — codon third positions
+    are largely synonymous (wobble), so GC3 reflects mutational/selective
+    pressure on codon usage more directly than whole-sequence GC%, which is
+    diluted by 1st/2nd positions that are under much stronger amino-acid-
+    identity constraint. Returns None if the sequence has no complete codons.
+    """
+    third_positions = sequence[2::3]
+    if not third_positions:
+        return None
+    gc = third_positions.count("G") + third_positions.count("C")
+    return round(gc / len(third_positions) * 100, 2)
 
 
 def amino_acid_distribution(sequence: str) -> dict[str, dict[str, int | float]]:
@@ -420,6 +455,77 @@ def complement(sequence: str) -> str:
 
 def reverse_complement(sequence: str) -> str:
     return complement(sequence)[::-1]
+
+
+def estimate_melting_temperature(sequence: str) -> Optional[float]:
+    """Estimate primer/probe melting temperature (Tm, °C).
+
+    Uses the Wallace rule (Tm = 2*(A+T) + 4*(G+C)) for short sequences
+    (<=13 nt, e.g. a typical PCR primer), where it's a widely used quick
+    estimate, and switches to a GC%-based formula
+    (Tm = 64.9 + 41*(GC-16.4)/length) for longer sequences, since the
+    Wallace rule systematically overestimates Tm past that length. Neither
+    accounts for salt/ion concentration or nearest-neighbor thermodynamics
+    (the accurate method), so treat this as a rough estimate for primer
+    screening, not a substitute for a dedicated primer-design tool.
+    Returns None for an empty sequence.
+    """
+    seq = sequence.upper()
+    n = len(seq)
+    if n == 0:
+        return None
+    a_t = seq.count("A") + seq.count("T")
+    g_c = seq.count("G") + seq.count("C")
+    if n <= 13:
+        return float(2 * a_t + 4 * g_c)
+    return round(64.9 + 41 * (g_c - 16.4) / n, 2)
+
+
+def find_repeats(sequence: str, min_run_length: int = 6, min_unit_repeats: int = 3) -> dict[str, list[dict[str, object]]]:
+    """Flag simple repetitive regions, for quality-control purposes.
+
+    Two categories, both common causes of sequencing/assembly artifacts or
+    low-complexity regions that can confuse alignment and motif search if
+    not flagged for review:
+      - homopolymer_runs: a single base repeated >= min_run_length times
+        (e.g. "AAAAAAA") — a classic indicator of a homopolymer-associated
+        sequencing error region in many platforms.
+      - tandem_repeats: a short unit (1-4 bp) repeated consecutively
+        >= min_unit_repeats times (e.g. "CACACACA", "AGCAGCAGC") — simple
+        sequence repeats (microsatellites), which are biologically real
+        but also a common source of alignment ambiguity.
+    """
+    seq = sequence.upper()
+    n = len(seq)
+    homopolymers: list[dict[str, object]] = []
+    i = 0
+    while i < n:
+        j = i + 1
+        while j < n and seq[j] == seq[i]:
+            j += 1
+        if j - i >= min_run_length:
+            homopolymers.append({"base": seq[i], "start": i + 1, "end": j, "length": j - i})
+        i = j
+
+    tandem_repeats: list[dict[str, object]] = []
+    for unit_len in range(2, 5):  # unit_len 1 is already covered by homopolymer_runs above
+        i = 0
+        while i < n - unit_len:
+            unit = seq[i:i + unit_len]
+            repeats = 1
+            j = i + unit_len
+            while seq[j:j + unit_len] == unit and j + unit_len <= n:
+                repeats += 1
+                j += unit_len
+            if repeats >= min_unit_repeats:
+                tandem_repeats.append({
+                    "unit": unit, "start": i + 1, "end": j, "repeats": repeats, "length": j - i,
+                })
+                i = j
+            else:
+                i += 1
+
+    return {"homopolymer_runs": homopolymers, "tandem_repeats": tandem_repeats}
 
 
 def translate_dna(sequence: str, frame: int = 0) -> dict[str, object]:
