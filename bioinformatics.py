@@ -624,8 +624,21 @@ def detect_mutations(query: str, reference: str, seq_type: str = "dna") -> dict:
         "total_mutations": len(mutations),
         "total_indels": len(indels),
         "mutation_rate_percent": substitution_rate,
+        # identity_percent: matches / FULL alignment length (BLAST convention --
+        # gap columns count against you, so an indel-heavy alignment scores
+        # lower even with zero substitutions).
+        # non_gap_identity_percent: matches / aligned columns ONLY (= compared_length
+        # below), ignoring gaps entirely -- "of the bases that actually lined up,
+        # how many matched". These can differ substantially whenever there are
+        # indels (e.g. 0 substitutions + a 5bp indel still shows <100% on the
+        # first metric, 100% on the second) -- expose both rather than picking
+        # one silently, since callers displaying "identity" next to "aligned
+        # columns" need the metric whose denominator actually IS that column
+        # count (non_gap_identity_percent), not identity_percent.
         "identity_percent": stats["identity_percent"],
+        "non_gap_identity_percent": stats["non_gap_identity_percent"],
         "compared_length": aligned_cols,
+        "alignment_length": stats["aligned_length"],
         "query_length": len(query),
         "reference_length": len(reference),
         "length_difference": abs(len(query) - len(reference)),
@@ -706,12 +719,24 @@ def find_motifs(sequence: str) -> list[dict[str, object]]:
     reporting the same DNA span twice under different names, matches at an
     identical position/pattern are merged into a single entry whose "name"
     lists every biological label that applies.
+
+    Uses a zero-width lookahead ("(?=pattern)") instead of searching the
+    pattern directly, so overlapping occurrences of the same motif are all
+    reported. re.finditer with a plain pattern only finds non-overlapping
+    matches (it resumes scanning after the end of each match), which
+    silently drops real regulatory sites: e.g. "GGGCGGGCGG" contains two
+    overlapping GC-boxes (at position 0 and position 4), but a plain
+    re.finditer("GGGCGG", ...) only reports the first. Regulatory elements
+    can legitimately tile like this in real promoter sequences, so missing
+    them isn't a negligible edge case.
     """
     hits_by_position: dict[tuple[int, int, str], list[str]] = {}
     for name, motif in KNOWN_MOTIFS.items():
         pattern = motif.replace("N", "[ATGC]")
-        for match in re.finditer(pattern, sequence):
-            key = (match.start(), match.end(), motif)
+        for match in re.finditer(f"(?={pattern})", sequence):
+            start = match.start()
+            end = start + len(motif)
+            key = (start, end, motif)
             hits_by_position.setdefault(key, []).append(name)
 
     results: list[dict[str, object]] = []
