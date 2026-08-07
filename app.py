@@ -790,8 +790,8 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
 | Property | Value |
 |---|---|
 | Is coding length (×3) | `{'Yes' if stats['is_coding_length'] else 'No'}` |
-| Has start codon (ATG) | `{'Yes' if stats['has_start_codon'] else 'No'}` |
-| Has in-frame stop codon | `{'Yes' if stats['has_stop_codon'] else 'No'}` |
+| Contains ATG in any frame | `{'Yes' if stats['has_start_codon'] else 'No'}` |
+| Contains stop codon in any frame | `{'Yes' if stats['has_stop_codon'] else 'No'}` |
 | A count | `{dist['counts']['A']}` |
 | T count | `{dist['counts']['T']}` |
 | G count | `{dist['counts']['G']}` |
