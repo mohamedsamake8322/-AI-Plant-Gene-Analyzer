@@ -21,6 +21,7 @@ import bioinformatics as bio
 import similarityengine as sim
 import visualization as viz
 import export_utils as export_util
+import re
 import sequence_loader as loader
 import config
 import pipeline
@@ -431,14 +432,14 @@ with col_demo:
     if selected_demo != "Select a demo…":
         demo = DEMO_SEQUENCES[selected_demo]
         st.markdown(f"*{demo['desc']}*")
-        if st.button("Load Demo Sequence", use_container_width=True):
+        if st.button("Load Demo Sequence", width='stretch'):
             raw_sequence = demo["seq"]
             st.session_state["loaded_demo"] = demo["seq"]
 
     if "loaded_demo" in st.session_state and not raw_sequence:
         raw_sequence = st.session_state["loaded_demo"]
 
-analyze_btn = st.button("🔬 Analyze Sequence", use_container_width=True, type="primary")
+analyze_btn = st.button("🔬 Analyze Sequence", width='stretch', type="primary")
 
 st.markdown("---")
 
@@ -545,8 +546,6 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
     mutation_report = result["mutation_report"]
     interpretation = result["interpretation"]
     sequence_type = result.get("sequence_type", "dna")
-    similarity_search_source = result.get("similarity_search_source", "unknown")
-    similarity_candidate_count = result.get("similarity_candidate_count")
 
     if batch_mode:
         average_gc = round(sum(r["stats"].get("gc_content", 0) for r in last_results if r["sequence_type"] == "dna") / max(1, sum(1 for r in last_results if r["sequence_type"] == "dna")), 2)
@@ -593,7 +592,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
     export_col1, export_col2, export_col3, export_col4 = st.columns(4)
     
     with export_col1:
-        if st.button("📄 Download JSON", use_container_width=True):
+        if st.button("📄 Download JSON", width='stretch'):
             try:
                 json_path = export_util.export_results_json(result)
                 with open(json_path, "r", encoding="utf-8") as f:
@@ -602,7 +601,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                         f.read(),
                         file_name=f"analysis_{stats['length']}bp.json",
                         mime="application/json",
-                        use_container_width=True,
+                        width='stretch',
                     )
                 logger.info(f"JSON export created: {json_path}")
                 st.success("✅ JSON exported successfully")
@@ -611,7 +610,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 st.error(f"Export failed: {e}")
     
     with export_col2:
-        if st.button("📊 Download CSV", use_container_width=True):
+        if st.button("📊 Download CSV", width='stretch'):
             try:
                 csv_path = export_util.export_results_csv(result)
                 with open(csv_path, "r", encoding="utf-8") as f:
@@ -620,7 +619,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                         f.read(),
                         file_name=f"analysis_{stats['length']}bp.csv",
                         mime="text/csv",
-                        use_container_width=True,
+                        width='stretch',
                     )
                 logger.info(f"CSV export created: {csv_path}")
                 st.success("✅ CSV exported successfully")
@@ -629,7 +628,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 st.error(f"Export failed: {e}")
     
     with export_col3:
-        if st.button("🌐 Download HTML", use_container_width=True):
+        if st.button("🌐 Download HTML", width='stretch'):
             try:
                 html_path = export_util.export_results_html(result)
                 with open(html_path, "r", encoding="utf-8") as f:
@@ -638,7 +637,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                         f.read(),
                         file_name=f"analysis_{stats['length']}bp.html",
                         mime="text/html",
-                        use_container_width=True,
+                        width='stretch',
                     )
                 logger.info(f"HTML export created: {html_path}")
                 st.success("✅ HTML exported successfully")
@@ -646,7 +645,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 logger.error(f"HTML export failed: {e}")
                 st.error(f"Export failed: {e}")
     with export_col4:
-        if st.button("📑 Download XLSX", use_container_width=True):
+        if st.button("📑 Download XLSX", width='stretch'):
             try:
                 xlsx_path = export_util.export_results_xlsx(result)
                 with open(xlsx_path, "rb") as f:
@@ -655,7 +654,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                         f.read(),
                         file_name=f"analysis_{stats['length']}bp.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
+                        width='stretch',
                     )
                 logger.info(f"XLSX export created: {xlsx_path}")
                 st.success("✅ XLSX exported successfully")
@@ -710,12 +709,6 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
         for warning_msg in result["metadata_warnings"]:
             st.warning(warning_msg)
 
-    if similarity_search_source != "unknown":
-        info_lines = [f"Similarity search source: **{similarity_search_source}**"]
-        if similarity_candidate_count is not None:
-            info_lines.append(f"Candidates evaluated: **{similarity_candidate_count}**")
-        st.info(" — ".join(info_lines))
-
     st.markdown("---")
 
     # ── Tabs ───────────────────────────────────────────────────────────────────
@@ -739,7 +732,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
 
             col1, col2 = st.columns([1, 1])
             with col1:
-                st.plotly_chart(viz.plot_amino_acid_bar(dist), use_container_width=True)
+                st.plotly_chart(viz.plot_amino_acid_bar(dist), width='stretch')
             with col2:
                 st.markdown("#### Protein Statistics")
                 st.markdown(f"**Sequence Length:** {stats['length']} aa")
@@ -763,15 +756,15 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
 
             col1, col2, col3 = st.columns([1, 1, 1])
             with col1:
-                st.plotly_chart(viz.plot_nucleotide_pie(dist), use_container_width=True)
+                st.plotly_chart(viz.plot_nucleotide_pie(dist), width='stretch')
             with col2:
-                st.plotly_chart(viz.plot_nucleotide_bar(dist), use_container_width=True)
+                st.plotly_chart(viz.plot_nucleotide_bar(dist), width='stretch')
             with col3:
-                st.plotly_chart(viz.plot_gc_gauge(stats["gc_content"]), use_container_width=True)
+                st.plotly_chart(viz.plot_gc_gauge(stats["gc_content"]), width='stretch')
 
             st.plotly_chart(
                 viz.plot_gc_sliding_window(sequence, window=window_size),
-                use_container_width=True,
+                width='stretch',
             )
 
             st.markdown("#### Detailed Statistics")
@@ -792,11 +785,24 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
 | Is coding length (×3) | `{'Yes' if stats['is_coding_length'] else 'No'}` |
 | Contains ATG in any frame | `{'Yes' if stats['has_start_codon'] else 'No'}` |
 | Contains stop codon in any frame | `{'Yes' if stats['has_stop_codon'] else 'No'}` |
+| Complete ORF found (start→stop, same frame) | `{'Yes' if stats.get('has_complete_orf') else 'No'}` |
 | A count | `{dist['counts']['A']}` |
 | T count | `{dist['counts']['T']}` |
 | G count | `{dist['counts']['G']}` |
 | C count | `{dist['counts']['C']}` |
                 """)
+                # "Contains ATG/stop in any frame" above are independent
+                # existence checks across all 6 reading frames — they don't
+                # imply a start and stop belong to the same ORF. Only
+                # "Complete ORF found" (from bioinformatics.find_orfs, which
+                # actually pairs a start with its in-frame stop) supports a
+                # "this sequence contains a real gene" claim; see
+                # sequence_statistics()'s has_complete_orf docstring.
+                if stats['has_start_codon'] and stats['has_stop_codon'] and not stats.get('has_complete_orf'):
+                    st.caption(
+                        "⚠️ An ATG and a stop codon both exist somewhere in the sequence, but not as "
+                        "a matching start→stop pair in the same frame — see the ORFs tab/section for what was actually found."
+                    )
 
             if motifs:
                 st.markdown("#### Regulatory Motifs Found")
@@ -813,35 +819,28 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
     with tabs[1]:
         st.markdown("#### Database Similarity Search")
 
-        if similarity_results:
-            source_label = similarity_search_source.replace("_", " ").title()
-            candidate_count = similarity_candidate_count if similarity_candidate_count is not None else len(similarity_results)
-            trust_level = "High" if best_match and best_match.get("similarity_score", 0) >= 95 else "Medium"
-            if similarity_search_source in {"length_range_fallback", "metadata_length_filter", "postgres_unavailable"}:
-                trust_level = "Low"
-
-            st.info(
-                f"Trust check: results were generated from **{source_label}** and evaluated against **{candidate_count}** candidates. "
-                f"Confidence: **{trust_level}**."
-            )
-
         if not similarity_results:
             st.warning("No similarity results available.")
         else:
             st.plotly_chart(
                 viz.plot_similarity_scores(similarity_results),
-                use_container_width=True,
+                width='stretch',
             )
 
             for i, match in enumerate(similarity_results):
                 classification = sim.classify_similarity(match["similarity_score"])
+                # Clean up gene name display: remove leading underscore-tag tokens
+                # (e.g. _arr_, _arrow_) that can appear as artifact prefixes
+                raw_name = match.get("gene_name", "") or ""
+                clean_name = re.sub(r"^_[a-z]{2,20}[_-]", "", raw_name, flags=re.IGNORECASE)
+                # Fallback to original if cleaning produced empty string
+                display_name = clean_name if clean_name else raw_name
                 with st.expander(
-                    f"{classification['emoji']}  "
-                    f"{match['gene_name']} — {match['similarity_score']:.1f}% similarity"
+                    f"{classification['emoji']}  {display_name} — {match['similarity_score']:.1f}% similarity"
                 ):
                     c1, c2 = st.columns(2)
                     with c1:
-                        st.markdown(f"**Gene:** {match['gene_name']}")
+                        st.markdown(f"**Gene:** {display_name}")
                         st.markdown(f"**Trait:** {match['trait']}")
                         st.markdown(f"**Organism:** {match['organism']}")
                         st.markdown(f"**Accession:** {match['accession']}")
@@ -858,7 +857,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                         st.markdown("**Alignment Map:**")
                         st.plotly_chart(
                             viz.plot_alignment(match["alignment"]["alignment_map"]),
-                            use_container_width=True,
+                            width='stretch',
                             key=f"alignment_{i}",
                         )
 
@@ -869,15 +868,27 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
         if not mutation_report:
             st.info("No mutation report — run analysis with a database match first.")
         else:
-            mc1, mc2, mc3, mc4 = st.columns(4)
+            mc1, mc2, mc3, mc4, mc5 = st.columns(5)
             mc1.metric("Substitutions", mutation_report["total_mutations"])
             mc2.metric("Indels", mutation_report.get("total_indels", 0))
-            mc3.metric("Identity (aligned)", f"{mutation_report['identity_percent']}%")
-            mc4.metric("Aligned columns", f"{mutation_report['compared_length']}")
+            mc3.metric(
+                "Identity (aligned bases only)",
+                f"{mutation_report.get('non_gap_identity_percent', mutation_report['identity_percent'])}%",
+                help="Matches ÷ compared positions only (gaps excluded) — matches the "
+                     "'Compared positions' count shown below.",
+            )
+            mc4.metric(
+                "Identity (full alignment)",
+                f"{mutation_report['identity_percent']}%",
+                help="Matches ÷ full alignment length, gaps included in the denominator "
+                     "(BLAST-style) — will read lower than the aligned-bases-only identity "
+                     "whenever there are indels, even with zero substitutions.",
+            )
+            mc5.metric("Compared positions (no gaps)", f"{mutation_report['compared_length']}")
 
             st.plotly_chart(
                 viz.plot_mutation_map(mutation_report, mutation_report["compared_length"]),
-                use_container_width=True,
+                width='stretch',
             )
 
             if mutation_report.get("alignment"):
@@ -893,7 +904,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                         "reference": aln_data["reference_aligned"],
                         "match_line": match_line,
                     }),
-                    use_container_width=True,
+                    width='stretch',
                 )
 
             mutations = mutation_report.get("mutations", [])
@@ -1136,7 +1147,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 labels = [r.get('header', f"Seq{i+1}") for i, r in enumerate(records_msa)]
                 try:
                     fig_msa = viz.plot_msa_table(aligned, labels=labels)
-                    st.plotly_chart(fig_msa, use_container_width=True)
+                    st.plotly_chart(fig_msa, width='stretch')
                 except Exception:
                     for aseq in aligned:
                         st.code(aseq, language=None)
@@ -1160,7 +1171,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 # Build match line
                 match_line_nw = ''.join(['|' if a==b and a!='-' else ' ' for a,b in zip(nw['seq1_aligned'], nw['seq2_aligned'])])
                 try:
-                    st.plotly_chart(viz.plot_alignment({'query': nw['seq1_aligned'], 'reference': nw['seq2_aligned'], 'match_line': match_line_nw}), use_container_width=True)
+                    st.plotly_chart(viz.plot_alignment({'query': nw['seq1_aligned'], 'reference': nw['seq2_aligned'], 'match_line': match_line_nw}), width='stretch')
                 except Exception:
                     pass
                 st.markdown(f"Score: {nw['alignment_score']} — Matches: {nw['match_count']} — Gaps: {nw['gap_count']}")
@@ -1168,7 +1179,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 st.code(sw['seq1_aligned'] + "\n" + sw['seq2_aligned'])
                 match_line_sw = ''.join(['|' if a==b and a!='-' else ' ' for a,b in zip(sw['seq1_aligned'], sw['seq2_aligned'])])
                 try:
-                    st.plotly_chart(viz.plot_alignment({'query': sw['seq1_aligned'], 'reference': sw['seq2_aligned'], 'match_line': match_line_sw}), use_container_width=True)
+                    st.plotly_chart(viz.plot_alignment({'query': sw['seq1_aligned'], 'reference': sw['seq2_aligned'], 'match_line': match_line_sw}), width='stretch')
                 except Exception:
                     pass
 
@@ -1228,7 +1239,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 try:
                     if tree.get('dendrogram_data'):
                         fig = viz.plot_dendrogram(tree['dendrogram_data'], labels=tree.get('sequence_names'))
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, width='stretch')
                     else:
                         st.info('Dendrogram data not available for this method; showing edge list instead.')
                         if tree.get('edges'):
@@ -1267,7 +1278,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                     pcol2.metric("Molecular weight (Da)", props["molecular_weight"])
                     pcol3.metric("Isoelectric point", props["isoelectric_point"])
                     pcol4.metric("Avg hydrophobicity", props["hydrophobicity"])
-                    st.plotly_chart(viz.plot_amino_acid_bar(dist), use_container_width=True)
+                    st.plotly_chart(viz.plot_amino_acid_bar(dist), width='stretch')
                     st.json(stats)
 
 else:
