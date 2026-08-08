@@ -121,15 +121,6 @@ class SimilarityResultList(list):
         self.prefiltered_count = prefiltered_count
 
 
-class CandidateDatabase(dict):
-    """Dictionary-like candidate set with metadata for debug and UI display."""
-
-    def __init__(self, data: dict[str, dict], source: str, candidate_count: int):
-        super().__init__(data)
-        self.source = source
-        self.candidate_count = candidate_count
-
-
 def _normalize_database(raw: object) -> dict:
     if isinstance(raw, dict):
         if "genes" in raw and isinstance(raw["genes"], list):
@@ -315,6 +306,7 @@ def compare_with_database(
     enable_length_prefilter: bool = True,
     max_length_ratio: float = DEFAULT_MAX_LENGTH_RATIO,
     logger=None,
+    progress_every: Optional[int] = None,
 ) -> list[dict]:
     """Compare query against each gene using aligned percent identity.
 
@@ -339,6 +331,14 @@ def compare_with_database(
     database — the collection pipeline (collect/, scripts/) ingests data
     from many external sources, so occasional bad records should degrade
     gracefully instead of taking down every analysis.
+
+    progress_every: if set, log (or print, if no logger) progress every N
+    candidates *actually aligned* (after the length prefilter — this is
+    the expensive step). Off by default since the normal caller
+    (app.py, with a k-mer-prefiltered candidate set of tens to a couple
+    hundred entries) finishes fast enough not to need it; the offline
+    validation script (which intentionally runs this against a much larger
+    reference set) turns it on so a long run isn't silent.
     """
     top_n = max(1, min(top_n, config.MAX_TOP_N_MATCHES))
     database = db_source if isinstance(db_source, dict) else load_gene_database(db_source)
@@ -347,6 +347,7 @@ def compare_with_database(
     results: list[dict] = []
     skipped_entries: list[str] = []
     prefiltered_count = 0
+    aligned_count = 0
 
     for gene_name, gene_info in database.items():
         try:
@@ -382,6 +383,11 @@ def compare_with_database(
                 logger.warning(f"Alignment against '{gene_name}' failed: {e}")
             skipped_entries.append(gene_name)
             continue
+        finally:
+            aligned_count += 1
+            if progress_every and aligned_count % progress_every == 0:
+                msg = f"compare_with_database: aligned {aligned_count} candidates so far..."
+                logger.info(msg) if logger else print(f"  {msg}")
 
         alignment = match["alignment"]
         alignment_map = alignment.get("alignment_map", {}) if isinstance(alignment, dict) else {}
@@ -523,18 +529,19 @@ def find_similar_genes(
     except Exception as e:
         if logger:
             logger.warning(f"find_similar_genes: Postgres unavailable ({e}); no candidates found")
-        return CandidateDatabase({}, source="postgres_unavailable", candidate_count=0)
+        return {}
 
     query_type = bio.detect_sequence_type(query)
+    query_kmers = pg._kmer_hashes(query, k, "protein" if query_type == "protein" else "dna")
     pool_size = max(1, top_n) * candidate_pool_multiplier
 
-    ranked = pg.find_candidate_genes_by_kmer(query, limit=pool_size)
+    ranked = pg.find_candidate_genes_by_kmer(query_kmers, limit=pool_size)
     if ranked:
         keys = [key for key, _shared in ranked]
         candidates = pg.load_gene_sequences_by_keys(keys)
         if logger:
             logger.info(f"find_similar_genes: k-mer index returned {len(candidates)} candidates for top_n={top_n}")
-        return CandidateDatabase(candidates, source="kmer_index", candidate_count=len(candidates))
+        return candidates
 
     if logger:
         logger.info(
@@ -545,8 +552,7 @@ def find_similar_genes(
         # Caller already has a metadata dict in hand (e.g. JSON-file mode
         # keeping everything local) — reuse it instead of a second Postgres
         # round trip.
-        candidates = _metadata_length_prefiltered_candidates(query, metadata, logger=logger)
-        return CandidateDatabase(candidates, source="metadata_length_filter", candidate_count=len(candidates))
+        return _metadata_length_prefiltered_candidates(query, metadata, logger=logger)
 
     # No metadata dict required: ask Postgres directly for gene keys whose
     # length falls within the usual prefilter window, using the
@@ -560,11 +566,11 @@ def find_similar_genes(
     max_len = int(query_len * DEFAULT_MAX_LENGTH_RATIO)
     keys = pg.find_gene_keys_by_length_range(min_len, max_len, sequence_type=query_type, limit=pool_size)
     if not keys:
-        return CandidateDatabase({}, source="length_range_fallback", candidate_count=0)
+        return {}
     candidates = pg.load_gene_sequences_by_keys(keys)
     if logger:
         logger.info(f"find_similar_genes: length-range fallback returned {len(candidates)} candidates")
-    return CandidateDatabase(candidates, source="length_range_fallback", candidate_count=len(candidates))
+    return candidates
 
 
 def classify_similarity(score: float) -> dict[str, str]:

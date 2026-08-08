@@ -17,15 +17,22 @@ def sample_genes_from_postgres(sample_size: int = 5) -> list[dict[str, str]]:
 
 def compare_candidate_vs_bruteforce(sample: dict[str, str], top_n: int = 5) -> dict:
     query = sample["sequence"].strip().upper()
+    print("[debug] Starting find_similar_genes")
     hit_candidates = sim.find_similar_genes(query, top_n=top_n, logger=None)
+    print("[debug] find_similar_genes completed")
     candidate_info = {
         "source": getattr(hit_candidates, "source", "unknown"),
         "candidate_count": getattr(hit_candidates, "candidate_count", None),
         "keys": list(hit_candidates.keys()),
     }
 
+    print("[debug] Starting compare_with_database on candidate subset")
     candidate_results = sim.compare_with_database(query, hit_candidates, top_n=top_n)
+    print("[debug] Candidate subset comparison completed")
+
+    print("[debug] Starting full compare_with_database over Postgres")
     full_results = sim.compare_with_database(query, "postgres", top_n=top_n)
+    print("[debug] Full database comparison completed")
 
     return {
         "query_gene": sample["gene_name"],
