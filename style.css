@@ -154,6 +154,28 @@ p, .stMarkdown p, li {
     line-height: 1.65 !important;
 }
 
+/* ── Material Symbols icons ──
+   Streamlit renders icons (expander chevrons, upload icon, etc.) as <span
+   data-testid="stIconMaterial"> containing the icon's ligature name (e.g.
+   "upload", "double_arrow_right"), converted to a glyph by a special
+   ligature font. The broad `span` font-family rule above overrides that
+   font, so the raw ligature text shows instead of the icon. This rule
+   restores the correct font for icons specifically, after the broad rule
+   so it wins on source order. */
+[data-testid="stIconMaterial"] {
+    font-family: 'Material Symbols Rounded', 'Material Symbols Outlined', 'Material Icons' !important;
+    font-weight: normal !important;
+    font-style: normal !important;
+    letter-spacing: normal !important;
+    text-transform: none !important;
+    white-space: nowrap !important;
+    word-wrap: normal !important;
+    direction: ltr !important;
+    -webkit-font-feature-settings: 'liga';
+    font-feature-settings: 'liga';
+    -webkit-font-smoothing: antialiased;
+}
+
 /* ── Header title ── */
 h1 {
     color: #00d9a3 !important;
