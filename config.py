@@ -108,6 +108,8 @@ CHART_BG = "#ffffff"
 CHART_PAPER = "#ffffff"
 CHART_FONT_COLOR = "#111111"
 CHART_GRID_COLOR = "rgba(0,0,0,0.08)"
+CHART_LINE_COLOR = "#cccccc"
+CHART_TITLE_COLOR = "#00d9a3"
 
 # ─── Export Settings ──────────────────────────────────────────────────────────
 EXPORT_FORMATS = ["JSON", "CSV", "XLSX", "HTML"]
