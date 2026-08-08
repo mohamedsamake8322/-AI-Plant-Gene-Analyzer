@@ -12,6 +12,7 @@ for chart-specific meaning (e.g. "high similarity" vs "low similarity") are
 defined locally below.
 """
 
+import re
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -246,9 +247,13 @@ def plot_similarity_scores(similarity_results: list[dict]) -> go.Figure:
     if not similarity_results:
         return go.Figure()
 
-    genes = [r["gene_name"] for r in similarity_results]
+    def clean_gene_name(raw_name: str) -> str:
+        return re.sub(r"^_[a-z]{2,20}[_-]", "", raw_name or "", flags=re.IGNORECASE)
+
+    genes = [clean_gene_name(r["gene_name"]) for r in similarity_results]
     scores = [r["similarity_score"] for r in similarity_results]
     traits = [r["trait"] for r in similarity_results]
+    raw_genes = [r["gene_name"] for r in similarity_results]
 
     colors = [
         TEAL if s >= 75 else AMBER if s >= 50 else CORAL
@@ -267,10 +272,11 @@ def plot_similarity_scores(similarity_results: list[dict]) -> go.Figure:
             text=[f"{s:.1f}%" for s in scores],
             textposition="outside",
             textfont=dict(color=THEME["font_color"]),
-            customdata=traits,
+            customdata=list(zip(raw_genes, traits)),
             hovertemplate=(
-                "<b>%{y}</b><br>"
-                "Trait: %{customdata}<br>"
+                "<b>%{customdata[0]}</b><br>"
+                "Gene: %{y}<br>"
+                "Trait: %{customdata[1]}<br>"
                 "Similarity: %{x:.1f}%<extra></extra>"
             ),
         )

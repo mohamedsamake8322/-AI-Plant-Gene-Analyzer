@@ -1,7 +1,7 @@
 """
 config.py
 ---------
-Centralized configuration for the Plant Gene Analyzer.
+Centralized configuration for the AI-Powered Plant Gene Analyzer.
 Manages all constants, thresholds, and settings.
 """
 
@@ -38,7 +38,14 @@ MIN_SEQUENCE_LENGTH = 10  # bp, for DNA/RNA input
 MIN_PROTEIN_LENGTH = 5  # aa, for protein input
 MAX_SEQUENCE_LENGTH = 1_000_000  # 1 million bp — hard cap for O(n) stats (GC%, motifs, translation)
 
-# Pairwise alignment (Needleman-Wunsch / Smith-Waterman) used for database
+# Length-ratio prefilter for similarity search: a global alignment between
+# sequences differing in length by more than this factor is dominated by
+# forced gaps and essentially never ranks highly, so candidates outside this
+# ratio are skipped before running a full O(n*m) alignment against them.
+# Shared by similarityengine.compare_with_database (in-Python prefilter) and
+# postgres_utils.find_candidate_genes_by_kmer (server-side candidate lookup)
+# so both stay in sync -- previously each hardcoded its own copy of "3.0".
+LENGTH_RATIO_PREFILTER = 3.0
 # similarity search and mutation detection is O(n*m) in both time AND
 # memory (two full DP matrices), unlike the O(n) basic statistics above.
 # With int32 score + int8 traceback matrices (see alignment_engine.py),
@@ -87,22 +94,20 @@ PAGE_ICON = "🧬"
 DEFAULT_LAYOUT = "wide"
 DEFAULT_SIDEBAR_STATE = "expanded"
 
-# Color palette for nucleotides (matches the app's dark bio-tech theme)
+# Color palette for nucleotides
 NUCLEOTIDE_COLORS = {
-    "A": "#00d9a3",  # teal
-    "T": "#4fc3f7",  # cyan
-    "G": "#ffd166",  # amber
-    "C": "#ff6b6b",  # coral
-    "N": "#5f7a86",  # muted slate
+    "A": "#00c853",  # green
+    "T": "#2979ff",  # blue
+    "G": "#ffd600",  # yellow
+    "C": "#ff3d00",  # red
+    "N": "#9e9e9e",  # grey
 }
 
-# Dark theme colors (Plotly figures — must match style.css)
-CHART_BG = "rgba(0,0,0,0)"
-CHART_PAPER = "rgba(0,0,0,0)"
-CHART_FONT_COLOR = "#dfeee9"
-CHART_GRID_COLOR = "rgba(255,255,255,0.08)"
-CHART_LINE_COLOR = "rgba(255,255,255,0.15)"
-CHART_TITLE_COLOR = "#00d9a3"
+# Light theme colors
+CHART_BG = "#ffffff"
+CHART_PAPER = "#ffffff"
+CHART_FONT_COLOR = "#111111"
+CHART_GRID_COLOR = "rgba(0,0,0,0.08)"
 
 # ─── Export Settings ──────────────────────────────────────────────────────────
 EXPORT_FORMATS = ["JSON", "CSV", "XLSX", "HTML"]

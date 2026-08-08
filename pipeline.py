@@ -28,6 +28,7 @@ def analyze_sequence_record(
     reading_frame: int,
     db: dict,
     top_n_matches: int = config.DEFAULT_TOP_N_MATCHES,
+    enable_length_prefilter: bool = True,
     logger=None,
 ) -> dict:
     """Analyze a single sequence record and return a structured result.
@@ -105,6 +106,10 @@ def analyze_sequence_record(
 
     similarity_search_source = "local_database"
     similarity_candidate_count = None
+    similarity_prefiltered_count = 0
+    similarity_search_mode = "Balanced"
+    if not enable_length_prefilter:
+        similarity_search_mode = "Deep search"
     if len(sequence) > config.MAX_ALIGNMENT_SEQUENCE_LENGTH:
         pipeline_warnings.append(
             f"Sequence ({len(sequence):,} {'aa' if seq_type == 'protein' else 'bp'}) exceeds the "
@@ -114,15 +119,20 @@ def analyze_sequence_record(
         )
     else:
         try:
-            similarity_results = sim.compare_with_database(sequence, db, top_n=top_n_matches, logger=logger)
-            prefiltered_count = getattr(similarity_results, "prefiltered_count", 0)
-            if hasattr(db, "source"):
-                similarity_search_source = db.source
-            if hasattr(db, "candidate_count"):
-                similarity_candidate_count = db.candidate_count
-            if prefiltered_count:
-                pipeline_warnings.append(
-                    f"⚠️ {prefiltered_count} database entries were skipped by the length prefilter "
+                similarity_results = sim.compare_with_database(
+                    sequence,
+                    db,
+                    top_n=top_n_matches,
+                    logger=logger,
+                    enable_length_prefilter=enable_length_prefilter,
+                )
+                prefiltered_count = getattr(similarity_results, "prefiltered_count", 0)
+                if hasattr(db, "source"):
+                    similarity_search_source = db.source
+                if hasattr(db, "candidate_count"):
+                    similarity_candidate_count = db.candidate_count
+                if prefiltered_count:
+                    similarity_prefiltered_count = prefiltered_count
                     f"(ratio > {sim.DEFAULT_MAX_LENGTH_RATIO}x). This can hide valid short/long matches from the current results."
                 )
             best_match = similarity_results[0] if similarity_results else None
@@ -195,6 +205,8 @@ def analyze_sequence_record(
         "metadata_warnings": pipeline_warnings,
         "similarity_search_source": similarity_search_source,
         "similarity_candidate_count": similarity_candidate_count,
+        "similarity_prefiltered_count": similarity_prefiltered_count,
+        "similarity_search_mode": similarity_search_mode,
     }
 
 
