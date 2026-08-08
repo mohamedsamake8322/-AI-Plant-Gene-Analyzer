@@ -163,9 +163,22 @@ def load_gene_database_cached(db_path: str = "genes_database.json") -> dict:
                 if db:
                     logger.info(f"Loaded {len(db)} genes from PostgreSQL")
                     return db
-                logger.warning("PostgreSQL database returned no records, falling back to JSON")
+                logger.error(
+                    "PostgreSQL database returned no records. "
+                    "Do not fall back to the local JSON database in production."
+                )
+                st.error(
+                    "❌ PostgreSQL database returned no records. "
+                    "Ensure the remote database is populated before using the app."
+                )
+                return {}
             except Exception as e:
-                logger.warning(f"PostgreSQL load failed: {e}")
+                logger.error(f"PostgreSQL load failed: {e}")
+                st.error(
+                    "❌ Could not load gene data from PostgreSQL. "
+                    "Check your database configuration and connection."
+                )
+                return {}
 
         if not os.path.exists(db_path):
             logger.warning(f"Database not found at {db_path}")
@@ -1333,6 +1346,7 @@ else:
             <p class="welcome-text">
                 Paste a plant DNA sequence above or load a demo,<br>
                 then click <b>Analyze Sequence</b>.
+         
             </p>
         </div>
         """,
