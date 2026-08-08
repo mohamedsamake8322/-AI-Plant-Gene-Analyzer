@@ -498,6 +498,29 @@ def _metadata_length_prefiltered_candidates(
     return candidates
 
 
+class SimilarityCandidates(dict):
+    """dict subclass returned by find_similar_genes, carrying provenance
+    metadata alongside the {gene_key: gene_record} candidates themselves.
+
+    A plain dict has no way to attach "how did we find these" without a
+    separate return value or a wrapper tuple, both of which break the
+    existing contract (compare_with_database expects db_source to BE a
+    dict, not a dict wrapped in something else). Subclassing dict keeps
+    every existing call site working unchanged (candidates.items(),
+    len(candidates), etc.) while adding .source / .candidate_count for
+    callers — the app's UI banner, or a validation script — that want to
+    report where the candidates came from.
+    """
+
+    def __init__(self, *args, source: str = "unknown", **kwargs):
+        super().__init__(*args, **kwargs)
+        self.source = source
+
+    @property
+    def candidate_count(self) -> int:
+        return len(self)
+
+
 def find_similar_genes(
     query: str,
     top_n: int = 3,
@@ -505,34 +528,45 @@ def find_similar_genes(
     candidate_pool_multiplier: int = DEFAULT_CANDIDATE_POOL_MULTIPLIER,
     k: int = DEFAULT_KMER,
     logger=None,
-) -> dict:
+) -> "SimilarityCandidates":
     """Build a small candidate gene database for a single query sequence,
     suitable for passing straight into compare_with_database (or as the
     `db=` argument to pipeline.analyze_sequence_record).
 
     This is the main entry point for the Postgres-backed deployment: it
     never loads the full ~56k-gene database. Instead:
-      1. Hash the query into k-mers and look up gene_kmers for genes that
-         share k-mers with it (postgres_utils.find_candidate_genes_by_kmer)
-         — a single indexed SQL query.
+      1. Hash the query into its minimizer sketch (see
+         postgres_utils._sequence_minimizers / KMER_WINDOW) and look up
+         gene_kmers for genes that share a minimizer with it
+         (postgres_utils.find_candidate_genes_by_kmer) — a single indexed
+         SQL query. Uses the SAME minimizer scheme populate_kmer_index
+         used to build the index (not the exhaustive per-position k-mer
+         set) — using the exhaustive set here would still technically
+         work (a shared k-mer's hash value matches whether or not it was
+         selected as a minimizer on the query's side), but wastes CPU
+         computing ~w times more hashes than necessary for no recall
+         benefit, since the index side only ever has the sparse minimizer
+         set to match against anyway.
       2. Fetch only those candidate sequences (load_gene_sequences_by_keys).
       3. If the k-mer index hasn't been populated yet (empty result) and
          `metadata` was supplied, fall back to the coarser length-prefilter
          path over metadata instead.
 
-    Returns a dict of {gene_key: gene_record} — typically tens to a couple
-    hundred entries, not tens of thousands — ready to hand to
-    compare_with_database as db_source.
+    Returns a SimilarityCandidates (dict subclass) of {gene_key: gene_record}
+    — typically tens to a couple hundred entries, not tens of thousands —
+    ready to hand to compare_with_database as db_source. `.source` is one
+    of "kmer_index", "length_prefilter_metadata", "length_prefilter_sql",
+    or "unavailable"; `.candidate_count` is len(result).
     """
     try:
         pg = _postgres_utils()
     except Exception as e:
         if logger:
             logger.warning(f"find_similar_genes: Postgres unavailable ({e}); no candidates found")
-        return {}
+        return SimilarityCandidates(source="unavailable")
 
     query_type = bio.detect_sequence_type(query)
-    query_kmers = pg._kmer_hashes(query, k, "protein" if query_type == "protein" else "dna")
+    query_kmers = pg._sequence_minimizers(query, k, pg.KMER_WINDOW, "protein" if query_type == "protein" else "dna")
     pool_size = max(1, top_n) * candidate_pool_multiplier
 
     ranked = pg.find_candidate_genes_by_kmer(query_kmers, limit=pool_size)
@@ -541,7 +575,7 @@ def find_similar_genes(
         candidates = pg.load_gene_sequences_by_keys(keys)
         if logger:
             logger.info(f"find_similar_genes: k-mer index returned {len(candidates)} candidates for top_n={top_n}")
-        return candidates
+        return SimilarityCandidates(candidates, source="kmer_index")
 
     if logger:
         logger.info(
@@ -552,7 +586,8 @@ def find_similar_genes(
         # Caller already has a metadata dict in hand (e.g. JSON-file mode
         # keeping everything local) — reuse it instead of a second Postgres
         # round trip.
-        return _metadata_length_prefiltered_candidates(query, metadata, logger=logger)
+        fallback = _metadata_length_prefiltered_candidates(query, metadata, logger=logger)
+        return SimilarityCandidates(fallback, source="length_prefilter_metadata")
 
     # No metadata dict required: ask Postgres directly for gene keys whose
     # length falls within the usual prefilter window, using the
@@ -561,16 +596,16 @@ def find_similar_genes(
     # in memory, even as a fallback.
     query_len = len(query)
     if query_len == 0:
-        return {}
+        return SimilarityCandidates(source="unavailable")
     min_len = max(1, int(query_len / DEFAULT_MAX_LENGTH_RATIO))
     max_len = int(query_len * DEFAULT_MAX_LENGTH_RATIO)
     keys = pg.find_gene_keys_by_length_range(min_len, max_len, sequence_type=query_type, limit=pool_size)
     if not keys:
-        return {}
+        return SimilarityCandidates(source="length_prefilter_sql")
     candidates = pg.load_gene_sequences_by_keys(keys)
     if logger:
         logger.info(f"find_similar_genes: length-range fallback returned {len(candidates)} candidates")
-    return candidates
+    return SimilarityCandidates(candidates, source="length_prefilter_sql")
 
 
 def classify_similarity(score: float) -> dict[str, str]:
