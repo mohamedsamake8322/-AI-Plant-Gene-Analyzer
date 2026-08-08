@@ -116,7 +116,14 @@ def load_video_background(video_path: str = "assets/images.mp4", max_mb: float =
 
 
 @st.cache_data(show_spinner=False)
-def _cached_analyze(record_json: str, input_type: str, reading_frame: int, top_n_matches: int, _db: dict) -> dict:
+def _cached_analyze(
+    record_json: str,
+    input_type: str,
+    reading_frame: int,
+    top_n_matches: int,
+    similarity_deep_search: bool,
+    _db: dict,
+) -> dict:
     """Streamlit-cached wrapper around pipeline.analyze_sequence_record.
 
     Avoids recomputing GC%, ORFs, alignments, mutation detection, etc. when
@@ -132,8 +139,13 @@ def _cached_analyze(record_json: str, input_type: str, reading_frame: int, top_n
     """
     record = json.loads(record_json)
     return pipeline.analyze_sequence_record(
-        record, input_type, reading_frame,
-        db=_db, top_n_matches=top_n_matches, logger=logger,
+        record,
+        input_type,
+        reading_frame,
+        db=_db,
+        top_n_matches=top_n_matches,
+        enable_length_prefilter=not similarity_deep_search,
+        logger=logger,
     )
 
 
@@ -241,6 +253,14 @@ with st.sidebar:
         max_value=8,
         value=3,
         help="Number of best-matching genes to display",
+    )
+    similarity_deep_search = st.checkbox(
+        "Enable deep similarity search",
+        value=False,
+        help=(
+            "Disable the alignment length prefilter and evaluate more candidates. "
+            "This is slower, but increases sensitivity for short or divergent queries."
+        ),
     )
     window_size = st.slider(
         "Sliding window (GC profile)",
@@ -502,7 +522,10 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                     analyzed_results.append(
                         _cached_analyze(
                             json.dumps(record, sort_keys=True),
-                            sequence_input_type, reading_frame, top_n_matches,
+                            sequence_input_type,
+                            reading_frame,
+                            top_n_matches,
+                            similarity_deep_search,
                             _db=target_db,
                         )
                     )
@@ -819,6 +842,20 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
     with tabs[1]:
         st.markdown("#### Database Similarity Search")
 
+        similarity_source = result.get("similarity_search_source", "local_database")
+        similarity_candidate_count = result.get("similarity_candidate_count")
+        similarity_prefiltered_count = result.get("similarity_prefiltered_count", 0)
+        similarity_search_mode = result.get("similarity_search_mode", "Balanced")
+        info_lines = [f"**Search mode:** `{similarity_search_mode}`"]
+        if similarity_source:
+            info_lines.append(f"**Source:** `{similarity_source}`")
+        if similarity_candidate_count is not None:
+            info_lines.append(f"**Candidates evaluated:** `{similarity_candidate_count}`")
+        if similarity_prefiltered_count:
+            info_lines.append(f"**Skipped by prefilter:** `{similarity_prefiltered_count}`")
+        if info_lines:
+            st.markdown(" — ".join(info_lines))
+
         if not similarity_results:
             st.warning("No similarity results available.")
         else:
@@ -826,6 +863,13 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 viz.plot_similarity_scores(similarity_results),
                 width='stretch',
             )
+
+            if best_match:
+                best_class = sim.classify_similarity(best_match["similarity_score"])
+                st.markdown(
+                    f"**Result confidence:** {best_class['emoji']} "
+                    f"{best_class['label']} — {best_class['interpretation']}"
+                )
 
             for i, match in enumerate(similarity_results):
                 classification = sim.classify_similarity(match["similarity_score"])

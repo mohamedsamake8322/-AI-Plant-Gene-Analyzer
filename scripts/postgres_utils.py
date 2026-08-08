@@ -14,6 +14,7 @@ from urllib.parse import quote_plus
 from dotenv import load_dotenv
 import psycopg
 from psycopg import sql
+from psycopg_pool import ConnectionPool
 
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
@@ -110,8 +111,67 @@ def _resolve_database_url() -> str:
     )
 
 
-def get_connection() -> psycopg.Connection:
-    return psycopg.connect(_resolve_database_url(), autocommit=True)
+_pool: ConnectionPool | None = None
+
+
+def _reset_connection(conn: psycopg.Connection) -> None:
+    """Called by the pool whenever a connection is returned, so state left
+    behind by one caller can't leak into the next caller that borrows this
+    same physical connection. In particular: load_gene_database_from_postgres
+    and populate_kmer_index temporarily set autocommit=False (required for
+    named/server-side cursors) -- without this reset, that setting would
+    otherwise silently persist onto the next unrelated call that borrows the
+    same connection from the pool.
+    """
+    if not conn.closed:
+        conn.rollback()
+        conn.autocommit = True
+
+
+def _get_pool() -> ConnectionPool:
+    global _pool
+    if _pool is None:
+        # min_size/max_size are deliberately modest: Neon/Supabase already
+        # pool at the proxy level (e.g. pgbouncer on port 6543), so this
+        # app-level pool only needs to be big enough to cover concurrent
+        # requests within one Streamlit process, not to be the primary
+        # pooling layer. Override via PG_POOL_MAX_SIZE if a deployment
+        # genuinely needs more (e.g. many concurrent Streamlit sessions
+        # sharing one process).
+        max_size = int(os.getenv("PG_POOL_MAX_SIZE", "5"))
+        _pool = ConnectionPool(
+            _resolve_database_url(),
+            min_size=1,
+            max_size=max_size,
+            kwargs={"autocommit": True},
+            reset=_reset_connection,
+            open=True,
+        )
+    return _pool
+
+
+def get_connection():
+    """Borrow a pooled connection. Use exactly as before:
+
+        with get_connection() as conn:
+            ...
+
+    Returns the connection to the pool on exit instead of closing the
+    underlying TCP connection, so repeated calls (common in a Streamlit app,
+    which reruns its script on every widget interaction) reuse an existing
+    connection instead of paying a fresh connect+auth handshake each time.
+    """
+    return _get_pool().connection()
+
+
+def close_pool() -> None:
+    """Close the connection pool. Not required for a long-running Streamlit
+    process (the pool lives for the process's lifetime), but useful for
+    scripts/tests that want a clean shutdown."""
+    global _pool
+    if _pool is not None:
+        _pool.close()
+        _pool = None
 
 
 def create_tables() -> None:
@@ -603,7 +663,11 @@ def populate_kmer_index(
     return indexed_genes
 
 
-def find_candidate_genes_by_kmer(query: str | set[int] | list[int], limit: int = 200) -> list[tuple[str, float]]:
+def find_candidate_genes_by_kmer(
+    query: str | set[int] | list[int],
+    limit: int = 200,
+    length_ratio: float = 3.0,
+) -> list[tuple[str, float]]:
     """Return up to `limit` candidate genes for a query sequence.
 
     The preferred path uses a compact trigram similarity search on the
@@ -611,6 +675,16 @@ def find_candidate_genes_by_kmer(query: str | set[int] | list[int], limit: int =
     storage-heavy `gene_kmers` table. This keeps candidate selection working
     on Neon without hitting the storage quota while still avoiding a full
     O(n*m) scan over every gene sequence.
+
+    length_ratio: same length-ratio prefilter concept as
+    similarityengine.compare_with_database's max_length_ratio -- candidates
+    outside [query_len/length_ratio, query_len*length_ratio] are excluded
+    server-side before scoring. Kept as a plain parameter (default 3.0)
+    rather than importing config.py directly, so this module stays runnable
+    standalone (`python scripts/postgres_utils.py ...`) without depending on
+    the project root being on sys.path. Callers that already have config in
+    scope should pass config.LENGTH_RATIO_PREFILTER explicitly to keep this
+    in sync with similarityengine's own prefilter.
 
     A legacy list of k-mer hashes is still accepted for backward
     compatibility; in that case it falls back to the old `gene_kmers` table
@@ -621,8 +695,8 @@ def find_candidate_genes_by_kmer(query: str | set[int] | list[int], limit: int =
         if not sequence:
             return []
         query_len = len(sequence)
-        min_len = max(1, int(query_len / 3.0))
-        max_len = int(query_len * 3.0)
+        min_len = max(1, int(query_len / length_ratio))
+        max_len = int(query_len * length_ratio)
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
