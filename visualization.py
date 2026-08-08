@@ -699,22 +699,33 @@ def build_similarity_metrics_table(match: dict, query_len: int) -> dict:
     alignment = match.get("alignment", {})
     if not isinstance(alignment, dict):
         return {}
-    
-    seq1_aligned = alignment.get("seq1_aligned", "")
-    seq2_aligned = alignment.get("seq2_aligned", "")
-    
-    if not seq1_aligned or not seq2_aligned:
+
+    # similarityengine.compare_with_database nests the aligned strings (and
+    # precomputed match/mismatch/gap counts) inside alignment_map -- there
+    # is no top-level "seq1_aligned"/"seq2_aligned" key on `alignment`
+    # itself. Reading alignment_map also lets us reuse the counts
+    # alignment_engine.alignment_statistics() already computed instead of
+    # re-deriving them from the strings a second time.
+    alignment_map = alignment.get("alignment_map", {})
+    if not isinstance(alignment_map, dict):
         return {}
-    
-    aln_len = len(seq1_aligned)
-    matches = sum(1 for a, b in zip(seq1_aligned, seq2_aligned) if a == b and a != "-")
-    gaps = sum(1 for c in seq1_aligned if c == "-") + sum(1 for c in seq2_aligned if c == "-")
+
+    aligned_query = alignment_map.get("query", "")
+    aligned_reference = alignment_map.get("reference", "")
+
+    if not aligned_query or not aligned_reference:
+        return {}
+
+    aln_len = len(aligned_query)
+    matches = alignment_map.get("identity_count", 0)
+    mismatches = alignment_map.get("mismatch_count", 0)
+    gaps = alignment_map.get("gap_count", 0)
     coverage = (aln_len - gaps) / query_len * 100 if query_len > 0 else 0
-    
+
     return {
         "alignment_length": aln_len,
         "matches": matches,
-        "mismatches": max(0, aln_len - matches - gaps),
+        "mismatches": mismatches,
         "total_gaps": gaps,
         "gap_percent": (gaps / aln_len * 100) if aln_len > 0 else 0,
         "coverage_percent": coverage,
@@ -730,8 +741,9 @@ def plot_alignment_coverage_heatmap(match: dict, query_len: int, window: int = 5
     Helps identify if similarity is uniform or concentrated in domains.
     """
     alignment = match.get("alignment", {})
-    seq1 = alignment.get("seq1_aligned", "")
-    seq2 = alignment.get("seq2_aligned", "")
+    alignment_map = alignment.get("alignment_map", {}) if isinstance(alignment, dict) else {}
+    seq1 = alignment_map.get("query", "") if isinstance(alignment_map, dict) else ""
+    seq2 = alignment_map.get("reference", "") if isinstance(alignment_map, dict) else ""
     
     if not seq1 or not seq2 or len(seq1) < window:
         fig = go.Figure()
@@ -762,7 +774,7 @@ def plot_alignment_coverage_heatmap(match: dict, query_len: int, window: int = 5
                 color=identities,
                 colorscale=[[0, CORAL], [0.5, AMBER], [1, TEAL]],
                 showscale=True,
-                colorbar=dict(title="Identity %", titleside="right"),
+                colorbar=dict(title=dict(text="Identity %", side="right")),
             ),
             text=[f"{v:.0f}%" for v in identities],
             textposition="outside",

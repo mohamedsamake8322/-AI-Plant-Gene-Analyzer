@@ -526,7 +526,7 @@ def find_similar_genes(
     top_n: int = 3,
     metadata: Optional[dict] = None,
     candidate_pool_multiplier: int = DEFAULT_CANDIDATE_POOL_MULTIPLIER,
-    k: int = DEFAULT_KMER,
+    max_length_ratio: float = DEFAULT_MAX_LENGTH_RATIO,
     logger=None,
 ) -> "SimilarityCandidates":
     """Build a small candidate gene database for a single query sequence,
@@ -535,18 +535,21 @@ def find_similar_genes(
 
     This is the main entry point for the Postgres-backed deployment: it
     never loads the full ~56k-gene database. Instead:
-      1. Ask Postgres for candidate genes using the compact trigram-based
-         similarity search in postgres_utils.find_candidate_genes_by_kmer().
-         This is the production-ready lookup path, and it avoids the
-         storage-heavy gene_kmers table.
+      1. Ask Postgres for genes whose sequence shares enough trigram
+         similarity with the query (postgres_utils.find_candidate_genes_by_kmer,
+         backed by a pg_trgm GIN index — see that function's docstring for
+         why this replaced an exhaustive per-position k-mer table, which
+         exceeded Neon's storage quota at 55k+ genes) — a single indexed
+         SQL query.
       2. Fetch only those candidate sequences (load_gene_sequences_by_keys).
-      3. If no candidates are returned and `metadata` was supplied, fall
-         back to the coarser length-prefilter path over metadata instead.
+      3. If that returns nothing (extension unavailable, or no trigram
+         match) and `metadata` was supplied, fall back to the coarser
+         length-prefilter path over metadata instead.
 
     Returns a SimilarityCandidates (dict subclass) of {gene_key: gene_record}
     — typically tens to a couple hundred entries, not tens of thousands —
     ready to hand to compare_with_database as db_source. `.source` is one
-    of "trigram_index", "length_prefilter_metadata", "length_prefilter_sql",
+    of "trigram_prefilter", "length_prefilter_metadata", "length_prefilter_sql",
     or "unavailable"; `.candidate_count` is len(result).
     """
     try:
@@ -559,18 +562,27 @@ def find_similar_genes(
     query_type = bio.detect_sequence_type(query)
     pool_size = max(1, top_n) * candidate_pool_multiplier
 
-    ranked = pg.find_candidate_genes_by_kmer(query, limit=pool_size)
+    try:
+        ranked = pg.find_candidate_genes_by_kmer(query, limit=pool_size, length_ratio=max_length_ratio)
+    except Exception as e:
+        # e.g. pg_trgm extension not available on this Postgres instance
+        # (see create_tables()'s try/except around CREATE EXTENSION) --
+        # degrade to the length-range fallback below rather than crash.
+        if logger:
+            logger.warning(f"find_similar_genes: trigram candidate search failed ({e}); falling back")
+        ranked = []
+
     if ranked:
-        keys = [key for key, _shared in ranked]
+        keys = [key for key, _score in ranked]
         candidates = pg.load_gene_sequences_by_keys(keys)
         if logger:
-            logger.info(f"find_similar_genes: trigram index returned {len(candidates)} candidates for top_n={top_n}")
-        return SimilarityCandidates(candidates, source="trigram_index")
+            logger.info(f"find_similar_genes: trigram prefilter returned {len(candidates)} candidates for top_n={top_n}")
+        return SimilarityCandidates(candidates, source="trigram_prefilter")
 
     if logger:
         logger.info(
-            "find_similar_genes: k-mer index returned no candidates (not populated yet, or a "
-            "cross-type query) — falling back to a length-range lookup"
+            "find_similar_genes: trigram prefilter returned no candidates (pg_trgm not available, "
+            "or a cross-type query) — falling back to a length-range lookup"
         )
     if metadata:
         # Caller already has a metadata dict in hand (e.g. JSON-file mode

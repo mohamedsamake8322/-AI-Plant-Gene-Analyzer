@@ -1,15 +1,15 @@
 # ?? Plant Gene Analyzer
 
-Application bioinformatique locale et web pour analyser des séquences ADN/ARN/protéines végétales, comparer les résultats à une base de référence, produire des interprétations biologiques et exporter des rapports professionnels.
+Application bioinformatique locale et web pour analyser des sï¿½quences ADN/ARN/protï¿½ines vï¿½gï¿½tales, comparer les rï¿½sultats ï¿½ une base de rï¿½fï¿½rence, produire des interprï¿½tations biologiques et exporter des rapports professionnels.
 
 ---
 
-## ?? Démarrage rapide
+## ?? Dï¿½marrage rapide
 
-### Prérequis
+### Prï¿½requis
 - Python 3.8+
 - pip
-- Internet pour installer les dépendances
+- Internet pour installer les dï¿½pendances
 
 ### Installation en 2 minutes
 ```bash
@@ -26,31 +26,38 @@ L'application est disponible sur http://localhost:8501.
 
 ### Test rapide
 1. Ouvrir l'interface Streamlit
-2. Charger la démo "DREB-like"
+2. Charger la dï¿½mo "DREB-like"
 3. Cliquer sur "?? Analyze Sequence"
 4. Explorer les onglets Statistics, Similarity, AI Interpretation
 
 ---
 
-## ? Fonctionnalités principales
+## ? Fonctionnalitï¿½s principales
 
 ### Analyse bioinformatique
-- Calcul du GC%, AT%, distribution nucléotidique
-- Validation de séquences et détection d'erreurs
-- Traduction ADN ? protéines sur plusieurs cadres
-- Détection de mutations et comparaison de séquences
-- Recherche de motifs régulateurs (TATA-box, CAAT-box, etc.)
+- Calcul du GC%, AT%, distribution nuclï¿½otidique
+- Validation de sï¿½quences et dï¿½tection d'erreurs
+- Traduction ADN ? protï¿½ines sur plusieurs cadres
+- Dï¿½tection de mutations et comparaison de sï¿½quences
+- Recherche de motifs rï¿½gulateurs (TATA-box, CAAT-box, etc.)
 
-### Comparaison à une base de données
+### Comparaison ï¿½ une base de donnï¿½es
 - Alignement local et global
-- Scores de similarité
-- Meilleurs matchs avec métadonnées
-- Classification automatique des similarités
+- Scores de similaritÃ© basÃ©s sur pg_trgm (trigram index)
+- Meilleurs matchs avec mÃ©tadonnÃ©es (55,979 gÃ¨nes vegÃ©taux)
+- Classification automatique des similaritÃ©s
+- **Visualisations enrichies:**
+  - Heatmap de couverture d'alignement
+  - MÃ©triques dÃ©taillÃ©es (gaps%, coverage%, matches/mismatches)
+  - Tableau comparatif des 3 meilleurs matches
+  - Indicateur de confiance (0-100% composite)
+  - Contexte biologique complet
 
-### Interprétation IA
-- Analyse règle-based des caractéristiques biologiques
-- Prédiction de résistance au stress (sécheresse, chaleur, maladies)
+### InterprÃ©tation IA
+- Analyse rÃ¨gle-based des caractÃ©ristiques biologiques
+- PrÃ©diction de rÃ©sistance au stress (sÃ©cheresse, chaleur, maladies)
 - Suggestions agricoles et fonctionnelles
+- **Phase 2 en cours:** AI INTERPRETABLE (classification des similaritÃ©s, explications NLP)
 
 ### Visualisation et export
 - Graphiques Plotly interactifs
@@ -69,50 +76,94 @@ Streamlit UI (app.py)
    ?
 Analyse bioinformatique (bioinformatics.py)
    ?
-Comparaison base de données (similarityengine.py)
+Comparaison base de donnï¿½es (similarityengine.py)
    ?
-Interprétation IA (aiinterpreter.py)
+Interprï¿½tation IA (aiinterpreter.py)
    ?
 Export / visualisation / logs
 ```
 
 Le flux principal est le suivant :
-1. L'utilisateur fournit une séquence ADN/ARN/protéine
-2. L'application valide et nettoie la séquence
-3. Les analyses statistiques et comparatives sont calculées
-4. Un rapport est généré avec explications biologiques
-5. Les résultats peuvent être exportés ou sauvegardés
+1. L'utilisateur fournit une sï¿½quence ADN/ARN/protï¿½ine
+2. L'application valide et nettoie la sï¿½quence
+3. Les analyses statistiques et comparatives sont calculï¿½es
+4. Un rapport est gï¿½nï¿½rï¿½ avec explications biologiques
+5. Les rï¿½sultats peuvent ï¿½tre exportï¿½s ou sauvegardï¿½s
 
 ---
 
 ## ?? Modules principaux
 
 ### app.py
-Interface utilisateur Streamlit. Gère l'entrée de séquence, les paramètres, l'exécution du pipeline d'analyse, l'affichage des résultats et les exports.
+Interface utilisateur Streamlit. Gï¿½re l'entrï¿½e de sï¿½quence, les paramï¿½tres, l'exï¿½cution du pipeline d'analyse, l'affichage des rï¿½sultats et les exports.
 
 ### bioinformatics.py
 Moteur central de traitement biologique. Contient les fonctions de nettoyage, validation, calcul GC, distribution, traduction, mutations et motifs.
 
 ### similarityengine.py
-Moteur de comparaison aux gènes de référence. Fournit les scores de similarité, les alignements et la sélection des meilleurs matchs.
+Moteur de comparaison aux gï¿½nes de rï¿½fï¿½rence. Fournit les scores de similaritï¿½, les alignements et la sï¿½lection des meilleurs matchs.
 
 ### aiinterpreter.py
-Interprétation intelligente des résultats via logique de règles. Produit des commentaires biologiques, des prévisions fonctionnelles et des recommandations.
+Interprï¿½tation intelligente des rï¿½sultats via logique de rï¿½gles. Produit des commentaires biologiques, des prï¿½visions fonctionnelles et des recommandations.
 
 ### visualization.py
-Génération de graphiques interactifs avec Plotly : composition nucléotidique, GC profile, similarité, mutations.
+Gï¿½nï¿½ration de graphiques interactifs avec Plotly : composition nuclï¿½otidique, GC profile, similaritï¿½, mutations.
 
 ### config.py
-Configuration centralisée : chemins, seuils, logging, styles, paramètres d'analyse.
+Configuration centralisï¿½e : chemins, seuils, logging, styles, paramï¿½tres d'analyse.
 
 ### export_utils.py
 Utilitaires d'export multi-format : JSON, CSV, HTML.
 
 ### setup_and_run.py
-Assistant d'installation et de vérification de l'environnement.
+Assistant d'installation et de vï¿½rification de l'environnement.
 
 ---
+## ðŸ“Š Visualisations d'analyse de similaritÃ© avancÃ©e
 
+Le module `visualization.py` contient 5 nouvelles fonctions dÃ©diÃ©es Ã  l'analyse enrichie des rÃ©sultats de similaritÃ© :
+
+### 1. `build_match_context_card(match: dict) â†’ dict`
+Extrait le contexte biologique complet d'un gÃ¨ne matchÃ©.
+- **DonnÃ©es:** gene_name, trait, organism, description, accession, source
+- **UtilitÃ©:** Comprendre rapidement la biologie du gÃ¨ne matchÃ©
+- **Affichage:** Markdown formatÃ© dans l'expander de chaque match
+
+### 2. `build_similarity_metrics_table(match: dict, query_len: int) â†’ dict`
+Calcule les statistiques d'alignement dÃ©taillÃ©es.
+- **Calculs:**
+  - Coverage% = (aligned_length - gaps) / query_len * 100
+  - Gap% = gaps / aligned_length * 100
+  - Matches/Mismatches = analyse base Ã  base
+  - Identity% = similaritÃ© du score
+- **UtilitÃ©:** Valider la qualitÃ© de l'alignement (haute couverture + peu de gaps = confiance)
+- **Affichage:** Tableau de mÃ©triques dans chaque expander
+
+### 3. `plot_alignment_coverage_heatmap(match: dict, query_len: int, window: int = 50) â†’ go.Figure`
+Heatmap montrant l'identitÃ© en fenÃªtres glissantes.
+- **X-axis:** Position dans l'alignement
+- **Y-axis:** IdentitÃ©% calculÃ©e par fenÃªtre (50bp par dÃ©faut)
+- **Couleurs:** CORAL (0%) â†’ AMBER (50%) â†’ TEAL (100%)
+- **UtilitÃ©:** Identifier rÃ©gions conservÃ©es vs variables
+- **Affichage:** Graphique Plotly interactif aprÃ¨s alignment map
+
+### 4. `build_top3_comparison_table(similarity_results: list[dict], query_len: int) â†’ dict`
+Tableau comparatif des 3 meilleurs matches.
+- **Colonnes:** Rank | Gene | Similarity | Trait | Organism | Coverage% | Gaps%
+- **UtilitÃ©:** DÃ©tecter rapidement si tous les matches s'accordent (forte confiance) ou divergent (explorer)
+- **Affichage:** Table markdown avant les expanders individuels
+
+### 5. `plot_confidence_gauge(metrics: dict) â†’ go.Figure`
+Indicateur de confiance composite 0-100%.
+- **Formule:** Coverage(40%) + (100-Gaps%)(35%) + Identity(25%)
+- **Zones couleur:**
+  - TEAL 75-100% = Haute confiance
+  - AMBER 50-75% = Confiance moyenne
+  - CORAL 0-50% = Basse confiance
+- **Annotations:** DÃ©tails coverage/gaps/identity en bas du gauge
+- **Affichage:** Gauge interactif dans chaque expander
+
+---
 ## ?? Tests
 
 Le projet contient une suite de tests unitaires pour le moteur bioinformatique.
@@ -128,7 +179,7 @@ pytest test_bioinformatics.py --cov=bioinformatics
 
 ---
 
-## ?? Installation détaillée
+## ?? Installation dï¿½taillï¿½e
 
 ### 1. Ouvrir un terminal
 Windows : PowerShell ou CMD
@@ -137,7 +188,7 @@ Windows : PowerShell ou CMD
 cd c:\Downloads\IA
 ```
 
-### 2. Créer un environnement virtuel (recommandé)
+### 2. Crï¿½er un environnement virtuel (recommandï¿½)
 ```bash
 python -m venv env
 env\Scripts\activate
@@ -149,12 +200,12 @@ python3 -m venv env
 source env/bin/activate
 ```
 
-### 3. Installer les dépendances
+### 3. Installer les dï¿½pendances
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Vérifier l'installation
+### 4. Vï¿½rifier l'installation
 ```bash
 python -c "import streamlit, plotly, bioinformatics; print('? OK')"
 ```
@@ -164,7 +215,7 @@ python -c "import streamlit, plotly, bioinformatics; print('? OK')"
 streamlit run app.py
 ```
 
-Si le port 8501 est déjà utilisé, utiliser :
+Si le port 8501 est dï¿½jï¿½ utilisï¿½, utiliser :
 ```bash
 streamlit run app.py --server.port 8502
 ```
@@ -174,24 +225,52 @@ streamlit run app.py --server.port 8502
 ## ?? Utilisation
 
 ### Workflow simple
-1. Coller une séquence ADN ou charger un fichier FASTA
-2. Choisir les paramètres de l'analyse
+1. Coller une sï¿½quence ADN ou charger un fichier FASTA
+2. Choisir les paramï¿½tres de l'analyse
 3. Cliquer sur "?? Analyze Sequence"
-4. Consulter les résultats dans les onglets
+4. Consulter les rï¿½sultats dans les onglets
 5. Exporter le rapport si besoin
 
-### Données de démonstration
+### Donnï¿½es de dï¿½monstration
 Le projet inclut des fichiers de test comme :
 - Data/sample_gene.fasta
 - Data/sample_protein.fasta
 
-Vous pouvez les charger directement via l'interface pour tester les fonctionnalités.
+Vous pouvez les charger directement via l'interface pour tester les fonctionnalitï¿½s.
 
 ---
+## ðŸ—„ï¸ Base de donnÃ©es PostgreSQL
 
-## ?? Collecte de données végétales
+Le projet supporte une base de donnÃ©es PostgreSQL/Neon avec 55,979 gÃ¨nes vÃ©gÃ©taux.
 
-Le projet inclut également un pipeline de collecte de données via le dossier `collect` et le dossier `scripts`.
+### CaractÃ©ristiques
+- **Taille:** 55,979 gÃ¨nes avec mÃ©tadonnÃ©es complÃ¨tes
+- **Technologie:** pg_trgm (trigram GIN index) pour recherche rapide
+- **Connexion:** psycopg avec pool de connexions (fallback gracieux si psycopg_pool unavailable)
+- **Recherche:** SimilaritÃ© trigram sur colonne `genes.sequence`
+- **Performance:** IndexÃ©e et optimisÃ©e pour requÃªtes sub-second
+
+### Configuration
+Configuration via variables d'environnement (.env):
+```
+DATABASE_URL=postgresql://user:pass@host:port/dbname
+```
+
+### DÃ©gradation gracieuse
+Si PostgreSQL est indisponible:
+- App affiche `st.error()` explicite
+- Pas de fallback silencieux vers base locale 13-gÃ¨nes
+- Force utilisateur Ã  corriger la connexion
+
+### Scripts utilitaires
+- `scripts/postgres_utils.py` - Connection pooling, gestion requÃªtes
+- `scripts/load_to_postgres.py` - Import donnÃ©es
+- `scripts/test_postgres_connection.py` - VÃ©rification connectivitÃ©
+
+---
+## ?? Collecte de donnï¿½es vï¿½gï¿½tales
+
+Le projet inclut ï¿½galement un pipeline de collecte de donnï¿½es via le dossier `collect` et le dossier `scripts`.
 
 ### Collecte multi-sources
 Le script principal est :
@@ -204,113 +283,192 @@ python collect/collect_all_sources.py --all-plants --workers 4 --retmax 300
 python scripts/collect_multi_type.py --plant "Oryza sativa" --retmax 300
 ```
 
-### Collecte de métadonnées et pipeline complet
+### Collecte de mï¿½tadonnï¿½es et pipeline complet
 Des scripts existent pour :
 - GEO / Expression Atlas / Ensembl / NCBI
 - UniProt, KEGG, PlantTFDB, PubMed
-- Nettoyage des données
+- Nettoyage des donnï¿½es
 - Import dans PostgreSQL
-- Reconstruction de bases fusionnées
+- Reconstruction de bases fusionnï¿½es
 
-Les pipelines sont conçus pour produire des fichiers JSON par espèce et un master JSON global.
+Les pipelines sont conï¿½us pour produire des fichiers JSON par espï¿½ce et un master JSON global.
 
 ---
 
-## ?? Schéma professionnel (version avancée)
+## ?? Schï¿½ma professionnel (version avancï¿½e)
 
-Le projet inclut également un schéma de données professionnel et un chargeur compatible.
+Le projet inclut ï¿½galement un schï¿½ma de donnï¿½es professionnel et un chargeur compatible.
 
-### Fichiers associés
+### Fichiers associï¿½s
 - professional_schema.py
 - professional_loader.py
 - scripts/transform_schema.py
 - scripts/clean_data.py
 
-### Intérêt
-- Versioning du schéma
-- Métadonnées structurées (taxonomie, qualité, analytics)
-- Compatibilité avec l'ancien format JSON
-- Préparation à une utilisation plus robuste et évolutive
+### Intï¿½rï¿½t
+- Versioning du schï¿½ma
+- Mï¿½tadonnï¿½es structurï¿½es (taxonomie, qualitï¿½, analytics)
+- Compatibilitï¿½ avec l'ancien format JSON
+- Prï¿½paration ï¿½ une utilisation plus robuste et ï¿½volutive
 
 ---
 
-## ? Améliorations majeures implémentées
+## ? Amï¿½liorations majeures implï¿½mentï¿½es
 
-Le projet a été enrichi avec plusieurs améliorations professionnelles :
-- Cache de chargement de la base de données
+### Phase 1 : Correctifs critiques (Production stability)
+âœ… **similarityengine.py** - Correction bug critique
+- `find_similar_genes()` appelait des mÃ©thodes non-existantes (`pg._sequence_minimizers()`, `pg.KMER_WINDOW`)
+- Maintenant utilise `pg.find_candidate_genes_by_kmer()` avec recherche pg_trgm fonctionnelle
+- Source indiquÃ©e : "trigram_index" au lieu de "kmer_index"
+
+âœ… **config.py** - Ajout constantes manquantes
+- `CHART_TITLE_COLOR = "#00d9a3"` (causait AttributeError)
+- `CHART_LINE_COLOR = "#cccccc"` (causait AttributeError)
+
+âœ… **pipeline.py** - Correction erreurs de syntaxe
+- Indentation et f-strings malformÃ©es aux lignes 120-148
+- Validation complÃ¨te d'import
+
+âœ… **postgres_utils.py** - DÃ©gradation gracieuse
+- Gestion conditionnelle de `psycopg_pool` (try/except import)
+- Classe fallback `_DirectConnectionPool` pour connexions directes
+- Fonctionne avec ou sans pool disponible
+
+âœ… **requirements.txt** - DÃ©pendance ajoutÃ©e
+- `psycopg_pool>=1.0.0` (manquait, causait ModuleNotFoundError)
+
+âœ… **app.py** - Protection production
+- Suppression du fallback silencieux vers 13-gÃ¨nes JSON
+- Affiche `st.error()` si Postgres indisponible
+- Garantit utilisation de la vraie base de donnÃ©es (55,979 gÃ¨nes)
+
+### Phase 2 : Visualisations enrichies (Enhanced similarity analysis)
+âœ… **visualization.py** - 5 nouvelles fonctions d'analyse :
+
+1. **`build_match_context_card()`** - Contexte biologique du gÃ¨ne
+   - Affiche: description, accession, organisme, trait, source
+   - Rend claire la biologie du match
+
+2. **`build_similarity_metrics_table()`** - Statistiques d'alignement dÃ©taillÃ©es
+   - Colonnes: Aligned length, matches, mismatches, gaps%, coverage%, identity%
+   - RÃ©pond: "Est-ce que cet alignement est rÃ©el ?"
+
+3. **`plot_alignment_coverage_heatmap()`** - Heatmap de couverture
+   - Affiche identitÃ©% en fenÃªtres glissantes (50bp par dÃ©faut)
+   - Identifie rÃ©gions conservÃ©es vs variables
+   - Gradient couleur: CORAL (0%) â†’ AMBER â†’ TEAL (100%)
+
+4. **`build_top3_comparison_table()`** - Tableau comparatif top 3
+   - Colonnes: Rank, Gene, Similarity, Trait, Organism, Coverage%, Gaps%
+   - DÃ©tection rapide de la cohÃ©rence biologique entre matches
+
+5. **`plot_confidence_gauge()`** - Indicateur de confiance composite
+   - Ã‰chelle 0-100 basÃ©e sur: Coverage(40%) + Gap penalty(35%) + Identity(25%)
+   - Code couleur: TEAL(75-100), AMBER(50-75), CORAL(0-50)
+   - Gauge interactif Plotly
+
+âœ… **app.py** - IntÃ©gration UI des visualisations
+- Tab Similarity enrichi avec:
+  - Table rÃ©sumÃ© top 3 avant expanders
+  - Heatmap couverture aprÃ¨s alignement
+  - Gauge confiance + mÃ©triques dÃ©taillÃ©es
+  - Contexte biologique du gÃ¨ne
+- Chaque expander match affiche toutes les 5 visualisations
+
+### AmÃ©liorations antÃ©rieures maintenues
+- Cache de chargement de la base de donnÃ©es
 - Gestion robuste des erreurs et logs
 - Export JSON/CSV/HTML
-- Configuration centralisée
+- Configuration centralisÃ©e
 - Visualisation ASCII des alignements
-- Tests unitaires automatisés
-- Pipeline de collecte et de nettoyage de données
+- Tests unitaires automatisÃ©s
+- Pipeline de collecte et de nettoyage de donnÃ©es
+- Interface Streamlit moderne et sombre
 
 ---
 
 ## ??? Roadmap
 
-### Priorités court terme
-- Support des séquences protéiques avancé
-- Support batch / multi-FASTA
-- Base de données plus flexible
-- Exports professionnels enrichis (XLSX, rapport HTML plus riche)
+### âœ… ComplÃ©tÃ© (Phase 1-2)
+- âœ… Correction bug critique similarityengine.py (pg_trgm functional)
+- âœ… Protection production (Postgres failsafe, pas de fallback JSON)
+- âœ… Constantes config manquantes (CHART_TITLE_COLOR, CHART_LINE_COLOR)
+- âœ… Dependencies robustes (psycopg_pool graceful fallback)
+- âœ… 5 nouvelles visualisations (coverage heatmap, metrics, confidence gauge, top3 table, context card)
+- âœ… IntÃ©gration UI complÃ¨te (Similarity tab enrichi)
 
-### Améliorations avancées
-- Intégration BLAST local ou API NCBI BLAST
-- Alignements multiples et phylogénie
-- Annotation génomique (GFF/BED)
-- Analyse de variantes et d'indels
+### En cours (Phase 3 - AI INTERPRETABLE)
+- ðŸ”„ Classification intelligente des similaritÃ©s (homolog, domain match, full identity, etc.)
+- ðŸ”„ Explications NLP des rÃ©sultats
+- ðŸ”„ PrÃ©dictions de stress et recommandations agricoles
+- ðŸ”„ Warnings sur rÃ©sultats low-confidence
+
+### PrioritÃ©s court terme (Phase 4)
+- Support des sÃ©quences protÃ©iques avancÃ©
+- Support batch / multi-FASTA
+- Exports professionnels enrichis (XLSX, rapport HTML)
+- API REST pour intÃ©gration externe
+
+### AmÃ©liorations avancÃ©es (Phase 5+)
+- IntÃ©gration BLAST local ou API NCBI BLAST
+- Alignements multiples et phylogÃ©nie
+- Annotation gÃ©nomique (GFF/BED)
+- Analyse de variantes et d'indels avancÃ©e
 
 ---
 
-## ?? Structure du projet
+## ðŸ“‚ Structure du projet
 
 ```text
 IA/
-+-- app.py
-+-- bioinformatics.py
-+-- similarityengine.py
-+-- aiinterpreter.py
-+-- visualization.py
-+-- config.py
-+-- export_utils.py
-+-- setup_and_run.py
-+-- professional_schema.py
-+-- professional_loader.py
-+-- genes_database.json
-+-- requirements.txt
-+-- README.md
-+-- collect/
-+-- scripts/
-+-- tests/
-+-- logs/ / results/ (générés automatiquement)
++-- app.py                          # Interface Streamlit (UI principale)
++-- bioinformatics.py               # Moteur bioinformatique central
++-- similarityengine.py             # Moteur comparaison genes (FIXED: pg_trgm)
++-- aiinterpreter.py                # InterprÃ©tation IA (Phase 2 en cours)
++-- visualization.py                # Graphiques Plotly (+ 5 nouvelles fonctions)
++-- config.py                        # Configuration centralisÃ©e (+ CHART_* constants)
++-- export_utils.py                 # Export JSON/CSV/HTML
++-- setup_and_run.py                # Assistance installation
++-- professional_schema.py           # SchÃ©ma avancÃ© mÃ©tadonnÃ©es
++-- professional_loader.py           # Chargeur schÃ©ma avancÃ©
++-- requirements.txt                # DÃ©pendances (+ psycopg_pool)
++-- README.md                        # Documentation (MISE Ã€ JOUR)
++-- genes_database.json              # Base 13 gÃ¨nes (fallback, rarement utilisÃ©e)
++-- .env                             # Variables environnement (DATABASE_URL)
++--
++-- collect/                         # Pipeline collecte donnÃ©es
++-- scripts/                         # Utilitaires backend (postgres_utils FIXED)
++-- Tests/                           # Suite de tests
++-- Data/                            # DonnÃ©es de test/demo
++-- Documentation/                   # Documentation avancÃ©e
++-- logs/ results/                   # GÃ©nÃ©rÃ©s automatiquement
 ```
 
 ---
 
-## ?? Dépannage courant
+ ?? Dï¿½pannage courant
 
 ### Python introuvable
-Vérifier :
+Vï¿½rifier :
 ```bash
 python --version
 ```
 
 ### Module introuvable
-Réinstaller les dépendances :
+Rï¿½installer les dï¿½pendances :
 ```bash
 pip install -r requirements.txt
 ```
 
-### Port 8501 déjà utilisé
+### Port 8501 dï¿½jï¿½ utilisï¿½
 ```bash
 streamlit run app.py --server.port 8502
 ```
 
 ### Fichier genes_database.json absent
-Vérifier que le fichier est bien présent à la racine du projet.
+Vï¿½rifier que le fichier est bien prï¿½sent ï¿½ la racine du projet.
 
-### Tests qui échouent
+### Tests qui ï¿½chouent
 ```bash
 pytest test_bioinformatics.py -v -s
 ```
@@ -319,13 +477,13 @@ pytest test_bioinformatics.py -v -s
 
 ## ?? Documentation unique
 
-Ce README est désormais le document principal et unique du projet. Il regroupe les informations de démarrage, d’installation, d’utilisation, d’architecture, de collecte de données et de roadmap.
+Ce README est dï¿½sormais le document principal et unique du projet. Il regroupe les informations de dï¿½marrage, dï¿½installation, dï¿½utilisation, dï¿½architecture, de collecte de donnï¿½es et de roadmap.
 
 ---
 
-## ?? Résumé
+## ?? Rï¿½sumï¿½
 
-Ce projet combine une interface Streamlit simple, un moteur bioinformatique robuste, une base de comparaison de gènes et des outils de collecte de données végétales. Il est conçu pour être à la fois accessible pour un usage rapide et extensible pour des analyses plus avancées.
+Ce projet combine une interface Streamlit simple, un moteur bioinformatique robuste, une base de comparaison de gï¿½nes et des outils de collecte de donnï¿½es vï¿½gï¿½tales. Il est conï¿½u pour ï¿½tre ï¿½ la fois accessible pour un usage rapide et extensible pour des analyses plus avancï¿½es.
 
 ---
 
