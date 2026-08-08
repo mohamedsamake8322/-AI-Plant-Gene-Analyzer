@@ -49,8 +49,25 @@ def _base_layout(title: str = "") -> dict:
         plot_bgcolor=THEME["plot_bg"],
         font=dict(color=THEME["font_color"], family="Inter, Arial"),
         margin=dict(l=40, r=40, t=60, b=40),
-        xaxis=dict(gridcolor=THEME["grid_color"], zerolinecolor=THEME["grid_color"], linecolor=THEME["line_color"]),
-        yaxis=dict(gridcolor=THEME["grid_color"], zerolinecolor=THEME["grid_color"], linecolor=THEME["line_color"]),
+        # tickfont is set explicitly here (not left to inherit from the
+        # figure-level `font` above) because it wasn't: axis tick labels
+        # were rendering at low contrast in production (barely-visible
+        # gray gene names on the Similarity bar chart) even though
+        # THEME["font_color"] is a light color meant for a dark background.
+        # Plotly's font inheritance for tick labels can be overridden by
+        # page-level CSS targeting the SVG text elements it renders into
+        # (a likely candidate here, alongside style.css also breaking the
+        # Material Symbols icon font elsewhere in the app) — setting it
+        # explicitly per-axis is a defensive fix that doesn't depend on
+        # sorting out that CSS interaction first.
+        xaxis=dict(
+            gridcolor=THEME["grid_color"], zerolinecolor=THEME["grid_color"], linecolor=THEME["line_color"],
+            tickfont=dict(color=THEME["font_color"]),
+        ),
+        yaxis=dict(
+            gridcolor=THEME["grid_color"], zerolinecolor=THEME["grid_color"], linecolor=THEME["line_color"],
+            tickfont=dict(color=THEME["font_color"]),
+        ),
     )
 
 
@@ -651,3 +668,202 @@ def plot_dendrogram(dendro: dict, labels: list | None = None) -> go.Figure:
         height=420,
     )
     return fig
+
+
+# ─── Enhanced Similarity Analysis (Phases 1-5) ────────────────────────────────
+
+def build_match_context_card(match: dict) -> dict:
+    """
+    (1) Biological context: extract gene metadata for display.
+    
+    Returns a dict with gene name, trait, organism, description, and source
+    so the UI can show "what is this gene and why should I care?"
+    """
+    return {
+        "gene_name": match.get("gene_name", "N/A"),
+        "trait": match.get("trait", "Unknown trait"),
+        "organism": match.get("organism", "Unknown organism"),
+        "description": match.get("description", "(No description available)"),
+        "accession": match.get("accession", "N/A"),
+        "source": match.get("source", "Unknown source"),
+    }
+
+
+def build_similarity_metrics_table(match: dict, query_len: int) -> dict:
+    """
+    (2) Detailed alignment metrics: gaps%, coverage%, matches/mismatches.
+    
+    Extracts alignment statistics to answer: "Is this alignment real or noise?"
+    High coverage + low gaps = trustworthy match.
+    """
+    alignment = match.get("alignment", {})
+    if not isinstance(alignment, dict):
+        return {}
+    
+    seq1_aligned = alignment.get("seq1_aligned", "")
+    seq2_aligned = alignment.get("seq2_aligned", "")
+    
+    if not seq1_aligned or not seq2_aligned:
+        return {}
+    
+    aln_len = len(seq1_aligned)
+    matches = sum(1 for a, b in zip(seq1_aligned, seq2_aligned) if a == b and a != "-")
+    gaps = sum(1 for c in seq1_aligned if c == "-") + sum(1 for c in seq2_aligned if c == "-")
+    coverage = (aln_len - gaps) / query_len * 100 if query_len > 0 else 0
+    
+    return {
+        "alignment_length": aln_len,
+        "matches": matches,
+        "mismatches": max(0, aln_len - matches - gaps),
+        "total_gaps": gaps,
+        "gap_percent": (gaps / aln_len * 100) if aln_len > 0 else 0,
+        "coverage_percent": coverage,
+        "identity_percent": match.get("similarity_score", 0),
+    }
+
+
+def plot_alignment_coverage_heatmap(match: dict, query_len: int, window: int = 50) -> go.Figure:
+    """
+    (3) Heatmap: identity percent in sliding windows across alignment.
+    
+    Shows which regions are highly conserved vs variable.
+    Helps identify if similarity is uniform or concentrated in domains.
+    """
+    alignment = match.get("alignment", {})
+    seq1 = alignment.get("seq1_aligned", "")
+    seq2 = alignment.get("seq2_aligned", "")
+    
+    if not seq1 or not seq2 or len(seq1) < window:
+        fig = go.Figure()
+        fig.update_layout(**_base_layout("Alignment Coverage"))
+        return fig
+    
+    positions = []
+    identities = []
+    
+    for i in range(0, len(seq1) - window + 1, max(1, window // 2)):
+        chunk1 = seq1[i:i+window]
+        chunk2 = seq2[i:i+window]
+        matches = sum(1 for a, b in zip(chunk1, chunk2) if a == b and a != "-")
+        identity = matches / len(chunk1) * 100 if chunk1 else 0
+        positions.append(i + window // 2)
+        identities.append(identity)
+    
+    if not positions:
+        fig = go.Figure()
+        fig.update_layout(**_base_layout("Alignment Coverage"))
+        return fig
+    
+    fig = go.Figure(
+        go.Bar(
+            x=positions,
+            y=identities,
+            marker=dict(
+                color=identities,
+                colorscale=[[0, CORAL], [0.5, AMBER], [1, TEAL]],
+                showscale=True,
+                colorbar=dict(title="Identity %", titleside="right"),
+            ),
+            text=[f"{v:.0f}%" for v in identities],
+            textposition="outside",
+            hovertemplate="Position: %{x}<br>Identity: %{y:.1f}%<extra></extra>",
+        )
+    )
+    layout = _base_layout(f"Alignment Coverage — Identity by Window ({window}bp)")
+    layout["xaxis"]["title"] = "Position in Alignment"
+    layout["yaxis"]["title"] = "Local Identity (%)"
+    layout["yaxis"]["range"] = [0, 105]
+    fig.update_layout(**layout, height=300)
+    return fig
+
+
+def plot_confidence_gauge(metrics: dict) -> go.Figure:
+    """
+    (5) Confidence score: composite of coverage + gaps + identity.
+    
+    Helps user assess "how much should I trust this result?"
+    - High coverage (>90%) + low gaps (<5%) = high confidence
+    - Moderate coverage (>70%) + moderate gaps (<15%) = medium
+    - Low coverage (<50%) or high gaps (>25%) = low confidence
+    """
+    coverage = metrics.get("coverage_percent", 0)
+    gap_percent = metrics.get("gap_percent", 0)
+    identity = metrics.get("identity_percent", 0)
+    
+    # Weighted confidence: coverage(40%) + gaps(35%) + identity(25%)
+    coverage_score = min(100, coverage * 1.1)
+    gap_score = max(0, 100 - gap_percent * 5)
+    identity_score = identity
+    
+    confidence = (coverage_score * 0.4 + gap_score * 0.35 + identity_score * 0.25)
+    confidence = min(100, max(0, confidence))
+    
+    color = TEAL if confidence >= 75 else AMBER if confidence >= 50 else CORAL
+    
+    fig = go.Figure(
+        go.Indicator(
+            mode="gauge+number+delta",
+            value=confidence,
+            number=dict(suffix="%", font=dict(color=color, size=32)),
+            delta=dict(reference=50, increasing=dict(color=TEAL)),
+            gauge=dict(
+                axis=dict(range=[0, 100], tickcolor=THEME["font_color"]),
+                bar=dict(color=color, thickness=0.25),
+                steps=[
+                    dict(range=[0, 50], color="rgba(255,107,107,0.1)"),
+                    dict(range=[50, 75], color="rgba(255,209,102,0.1)"),
+                    dict(range=[75, 100], color="rgba(0,217,163,0.1)"),
+                ],
+                threshold=dict(line=dict(color=AMBER, width=2), thickness=0.75, value=50),
+            ),
+            title=dict(text="Match Confidence", font=dict(color=color, size=14)),
+        )
+    )
+    fig.update_layout(
+        paper_bgcolor=THEME["paper"],
+        font=dict(color=THEME["font_color"]),
+        margin=dict(l=20, r=20, t=60, b=50),
+        height=280,
+        annotations=[
+            dict(
+                text=f"Coverage: {coverage:.0f}% | Gaps: {gap_percent:.1f}% | Identity: {identity:.1f}%",
+                x=0.5, y=-0.2,
+                xref="paper", yref="paper",
+                showarrow=False,
+                font=dict(size=10, color=SLATE),
+            )
+        ],
+    )
+    return fig
+
+
+def build_top3_comparison_table(similarity_results: list[dict], query_len: int) -> dict:
+    """
+    (4) Side-by-side comparison of top 3 matches.
+    
+    Allows user to see if all matches agree on gene function (high confidence)
+    or if results are scattered (low confidence / need deep search).
+    
+    Returns a dict with 'header' and 'rows' suitable for Streamlit table display.
+    """
+    table_data = {
+        "header": ["Rank", "Gene", "Similarity", "Trait", "Organism", "Coverage", "Gaps"],
+        "rows": []
+    }
+    
+    for rank, match in enumerate(similarity_results[:3], 1):
+        metrics = build_similarity_metrics_table(match, query_len)
+        coverage = metrics.get("coverage_percent", 0)
+        gaps = metrics.get("gap_percent", 0)
+        
+        table_data["rows"].append({
+            "rank": rank,
+            "gene": match.get("gene_name", "N/A"),
+            "similarity": f"{match.get('similarity_score', 0):.1f}%",
+            "trait": match.get("trait", "Unknown")[:40],
+            "organism": match.get("organism", "Unknown")[:20],
+            "coverage": f"{coverage:.0f}%",
+            "gaps": f"{gaps:.1f}%",
+        })
+    
+    return table_data
