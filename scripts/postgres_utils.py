@@ -14,7 +14,11 @@ from urllib.parse import quote_plus
 from dotenv import load_dotenv
 import psycopg
 from psycopg import sql
-from psycopg_pool import ConnectionPool
+
+try:
+    from psycopg_pool import ConnectionPool
+except ImportError:  # pragma: no cover
+    ConnectionPool = None
 
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
@@ -114,6 +118,16 @@ def _resolve_database_url() -> str:
 _pool: ConnectionPool | None = None
 
 
+class _DirectConnectionPool:
+    """Minimal fallback pool wrapper used when psycopg_pool is unavailable."""
+
+    def __init__(self, dsn: str) -> None:
+        self._dsn = dsn
+
+    def connection(self) -> psycopg.Connection:
+        return psycopg.connect(self._dsn, autocommit=True)
+
+
 def _reset_connection(conn: psycopg.Connection) -> None:
     """Called by the pool whenever a connection is returned, so state left
     behind by one caller can't leak into the next caller that borrows this
@@ -131,22 +145,25 @@ def _reset_connection(conn: psycopg.Connection) -> None:
 def _get_pool() -> ConnectionPool:
     global _pool
     if _pool is None:
-        # min_size/max_size are deliberately modest: Neon/Supabase already
-        # pool at the proxy level (e.g. pgbouncer on port 6543), so this
-        # app-level pool only needs to be big enough to cover concurrent
-        # requests within one Streamlit process, not to be the primary
-        # pooling layer. Override via PG_POOL_MAX_SIZE if a deployment
-        # genuinely needs more (e.g. many concurrent Streamlit sessions
-        # sharing one process).
-        max_size = int(os.getenv("PG_POOL_MAX_SIZE", "5"))
-        _pool = ConnectionPool(
-            _resolve_database_url(),
-            min_size=1,
-            max_size=max_size,
-            kwargs={"autocommit": True},
-            reset=_reset_connection,
-            open=True,
-        )
+        if ConnectionPool is None:
+            _pool = _DirectConnectionPool(_resolve_database_url())
+        else:
+            # min_size/max_size are deliberately modest: Neon/Supabase already
+            # pool at the proxy level (e.g. pgbouncer on port 6543), so this
+            # app-level pool only needs to be big enough to cover concurrent
+            # requests within one Streamlit process, not to be the primary
+            # pooling layer. Override via PG_POOL_MAX_SIZE if a deployment
+            # genuinely needs more (e.g. many concurrent Streamlit sessions
+            # sharing one process).
+            max_size = int(os.getenv("PG_POOL_MAX_SIZE", "5"))
+            _pool = ConnectionPool(
+                _resolve_database_url(),
+                min_size=1,
+                max_size=max_size,
+                kwargs={"autocommit": True},
+                reset=_reset_connection,
+                open=True,
+            )
     return _pool
 
 
