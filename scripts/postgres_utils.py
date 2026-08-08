@@ -754,6 +754,52 @@ def find_candidate_genes_by_kmer(
             return [(row[0], float(row[1])) for row in cur.fetchall()]
 
 
+def find_candidate_genes_by_kmer_exhaustive(
+    query: str,
+    limit: int = 500,
+) -> list[tuple[str, float]]:
+    """
+    **Étage 1 (Deep Search):** Exhaustive trigram scan WITHOUT length prefilter.
+    
+    Returns up to `limit` candidates ranked by trigram similarity, considering
+    ALL genes in the database regardless of length. This is the intensive stage
+    that justifies the "Deep" label — it scans the full 56k gene table (but still
+    uses the fast pg_trgm GIN index, not a brute-force O(n*m) alignment).
+    
+    Used by find_similar_genes_deep() in similarityengine.py as the first stage.
+    The second stage (Needleman-Wunsch alignment) is applied only to the top
+    candidates returned here.
+    
+    Args:
+        query: DNA/RNA/protein sequence (string)
+        limit: max candidates to return (default 500)
+    
+    Returns:
+        List of (gene_key, trigram_similarity_score) sorted descending by score
+    """
+    sequence = query.upper().replace(" ", "")
+    if not sequence:
+        return []
+    
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            # No length filter — query against all 56k genes
+            cur.execute(
+                """
+                SELECT COALESCE(gene_id, symbol) AS gene_key,
+                       similarity(sequence, %(query)s) AS score
+                FROM genes
+                WHERE sequence IS NOT NULL
+                  AND sequence <> ''
+                  AND sequence %% %(query)s
+                ORDER BY score DESC
+                LIMIT %(limit)s;
+                """,
+                {"query": sequence, "limit": limit},
+            )
+            return [(row[0], float(row[1])) for row in cur.fetchall()]
+
+
 def find_gene_keys_by_length_range(
     min_length: int, max_length: int, sequence_type: str | None = None, limit: int = 500
 ) -> list[str]:

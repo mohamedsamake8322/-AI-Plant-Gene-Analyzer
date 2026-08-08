@@ -610,6 +610,79 @@ def find_similar_genes(
     return SimilarityCandidates(candidates, source="length_prefilter_sql")
 
 
+def find_similar_genes_deep(
+    query: str,
+    top_n: int = 3,
+    metadata: Optional[dict] = None,
+    alignment_limit: int = 500,
+    logger=None,
+) -> "SimilarityCandidates":
+    """
+    **Deep Search: Exhaustive 1-stage candidate screening (Phase 3 enhancement)**
+    
+    Scans ALL 56,000 genes using pg_trgm similarity WITHOUT length prefilter,
+    then returns the top candidates as a SimilarityCandidates dict ready for
+    precise Needleman-Wunsch alignment in the pipeline.
+    
+    **Flow:**
+    1. Query Postgres for trigram similarity across ALL genes (no length filter)
+    2. Return top ~500 candidates sorted by trigram score
+    3. Pipeline's compare_with_database() applies Needleman-Wunsch to these
+    4. Results ranked by alignment identity%
+    
+    This eliminates the length-ratio prefilter that can hide valid short/long
+    matches, while keeping runtime ~30-60s (trigram is fast, alignment only
+    on promising candidates).
+    
+    Contrast with find_similar_genes():
+    - find_similar_genes: length-filtered candidates (3x ratio) + alignment
+    - find_similar_genes_deep: exhaustive candidates (0 length filter) + alignment
+    
+    Returns:
+        SimilarityCandidates (dict subclass) with:
+            .source = "deep_search_exhaustive"
+            {gene_key: gene_record} items for alignment
+    """
+    try:
+        pg = _postgres_utils()
+    except Exception as e:
+        if logger:
+            logger.warning(f"find_similar_genes_deep: Postgres unavailable ({e})")
+        return SimilarityCandidates(source="unavailable")
+    
+    query_type = bio.detect_sequence_type(query)
+    
+    # **Tier 1: Exhaustive trigram scan (no length filter)**
+    try:
+        if logger:
+            logger.info("Deep Search: scanning trigram similarity across all genes (no length filter)...")
+        
+        ranked = pg.find_candidate_genes_by_kmer_exhaustive(query, limit=alignment_limit)
+        
+        if not ranked:
+            if logger:
+                logger.info("Deep Search: no trigram candidates found")
+            return SimilarityCandidates(source="deep_search_exhaustive")
+        
+        if logger:
+            logger.info(f"Deep Search: fetching sequences for {len(ranked)} candidates...")
+        
+        keys = [key for key, _score in ranked]
+        candidates = pg.load_gene_sequences_by_keys(keys)
+        
+        if logger:
+            logger.info(f"Deep Search: {len(candidates)} candidates loaded, ready for alignment")
+        
+        # Return as SimilarityCandidates (dict subclass) — pipeline will apply
+        # compare_with_database() for Needleman-Wunsch alignment on these candidates
+        return SimilarityCandidates(candidates, source="deep_search_exhaustive")
+    
+    except Exception as e:
+        if logger:
+            logger.error(f"Deep Search exhaustive candidate screening failed: {e}")
+        return SimilarityCandidates(source="deep_search_exhaustive")
+
+
 def classify_similarity(score: float) -> dict[str, str]:
     """Classify a similarity score using config.py's centralized thresholds
     (SIMILARITY_VERY_HIGH/HIGH/MODERATE/LOW), so there's a single place to
