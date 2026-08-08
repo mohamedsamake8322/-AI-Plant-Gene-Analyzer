@@ -21,19 +21,39 @@ Two kinds of query are tested:
     homolog if mutations happen to land inside every window, so this is
     what can reveal real recall gaps that the exact-copy test cannot.
 
-This is intentionally slow -- it loads the whole genes table once to do
-the brute-force comparison -- so it's meant to be run occasionally as a
-maintenance/QA check (e.g. after (re)running populate_kmer_index, or
-periodically in a scheduled job), NOT as part of the app's request path.
+This is intentionally slower than the app's normal search -- it loads a
+large reference set once to do a much more permissive comparison than the
+fast path -- so it's meant to be run occasionally as a maintenance/QA
+check (e.g. after (re)running populate_kmer_index, or periodically in a
+scheduled job), NOT as part of the app's request path.
+
+Performance notes (read this if a run feels stuck):
+  - The full-database load is cached to disk after the first run
+    (.cache/full_gene_db.pkl next to this script) — every run after the
+    first skips the ~10+ minute Postgres load entirely. Pass
+    --refresh-cache to force a re-fetch (e.g. after ingesting new genes).
+  - "Brute-force" here does NOT mean a literal, unbounded scan of every
+    row for every query — even with the disk cache, that's still one full
+    Needleman-Wunsch alignment per query per candidate, and at ~56k
+    candidates that's minutes per query. Instead it applies a *generous*
+    length-ratio filter (--brute-force-length-ratio, default 15x — five
+    times more permissive than the app's own 3x) before aligning, which
+    cuts the candidate count dramatically while still being a far more
+    thorough check than the fast path's k-mer-restricted pool. Pass
+    --brute-force-length-ratio 0 for a true unrestricted scan if you
+    specifically need that (expect it to be slow).
+  - Progress prints every 2000 alignments within each query, so a long
+    run isn't silent.
 
 Usage:
     python scripts/validate_kmer_prefilter.py
     python scripts/validate_kmer_prefilter.py --samples 30 --mutation-rate 0.15
-    python scripts/validate_kmer_prefilter.py --samples 20 --top-n 5 --seed 42
+    python scripts/validate_kmer_prefilter.py --samples 10 --refresh-cache
 """
 from __future__ import annotations
 
 import argparse
+import pickle
 import random
 import sys
 import time
@@ -41,6 +61,7 @@ from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SCRIPTS_DIR = Path(__file__).resolve().parent
+_CACHE_PATH = _SCRIPTS_DIR / ".cache" / "full_gene_db.pkl"
 for _p in (str(_REPO_ROOT), str(_SCRIPTS_DIR)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
@@ -84,16 +105,43 @@ def _mutate(sequence: str, rate: float) -> str:
     return "".join(chars)
 
 
-def _load_full_database() -> dict:
-    print("Loading the full gene database for brute-force comparison "
-          "(this is the deliberately slow, one-time part)...")
+def _load_full_database(refresh: bool = False) -> dict:
+    """Load the full genes table, cached to disk after the first call.
+
+    The Postgres load itself (streamed, batched — see
+    postgres_utils.load_gene_database_from_postgres) is the same query
+    regardless of how many times you run this script, so re-paying that
+    cost (which can run into the tens of minutes on a large table, per
+    real-world timing) on every validation run is pure waste during an
+    iterative QA session. The cache is invalidated manually via
+    --refresh-cache rather than automatically, since there's no cheap way
+    to know from here whether the table changed since the last run.
+    """
+    if not refresh and _CACHE_PATH.exists():
+        print(f"Loading full gene database from disk cache ({_CACHE_PATH})...")
+        t0 = time.time()
+        with open(_CACHE_PATH, "rb") as f:
+            db = pickle.load(f)
+        print(f"  loaded {len(db)} genes from cache in {time.time() - t0:.1f}s "
+              f"(pass --refresh-cache to re-fetch from Postgres)")
+        return db
+
+    print("Loading the full gene database from Postgres (one-time; will be cached to disk after)...")
     t0 = time.time()
     db = pg.load_gene_database_from_postgres()
     print(f"  loaded {len(db)} genes in {time.time() - t0:.1f}s")
+
+    _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(_CACHE_PATH, "wb") as f:
+        pickle.dump(db, f, protocol=pickle.HIGHEST_PROTOCOL)
+    print(f"  cached to {_CACHE_PATH} for future runs")
     return db
 
 
-def validate(n_samples: int, top_n: int, mutation_rate: float, seed: int | None) -> None:
+def validate(
+    n_samples: int, top_n: int, mutation_rate: float, seed: int | None,
+    refresh_cache: bool, brute_force_length_ratio: float,
+) -> None:
     if seed is not None:
         random.seed(seed)
 
@@ -102,7 +150,8 @@ def validate(n_samples: int, top_n: int, mutation_rate: float, seed: int | None)
         print("No sequences found in the genes table to sample queries from.")
         return
 
-    full_db = _load_full_database()
+    full_db = _load_full_database(refresh=refresh_cache)
+    brute_force_prefilter = brute_force_length_ratio > 0
 
     exact_top1_matches = 0
     recall_hits = 0          # brute-force's #1 gene appeared anywhere in the fast path's candidate pool
@@ -111,10 +160,12 @@ def validate(n_samples: int, top_n: int, mutation_rate: float, seed: int | None)
     fast_times: list[float] = []
     brute_times: list[float] = []
 
-    print(f"\nTesting {len(raw_queries)} queries (mutation_rate={mutation_rate}, top_n={top_n})...\n")
+    print(f"\nTesting {len(raw_queries)} queries (mutation_rate={mutation_rate}, top_n={top_n}, "
+          f"brute_force_length_ratio={brute_force_length_ratio or 'unbounded'})...\n")
 
     for i, (source_key, source_seq) in enumerate(raw_queries, 1):
         query_seq = _mutate(source_seq, mutation_rate)
+        print(f"[{i}/{len(raw_queries)}] source={source_key} — running fast path...")
 
         t0 = time.time()
         candidates = sim.find_similar_genes(query_seq, top_n=top_n)
@@ -124,9 +175,14 @@ def validate(n_samples: int, top_n: int, mutation_rate: float, seed: int | None)
         )
         fast_times.append(time.time() - t0)
 
+        print(f"[{i}/{len(raw_queries)}] source={source_key} — running bounded brute-force "
+              f"over {len(full_db)} reference sequences (progress every 2000)...")
         t0 = time.time()
         brute_results = sim.compare_with_database(
-            query_seq, db_source=full_db, top_n=top_n, enable_length_prefilter=False
+            query_seq, db_source=full_db, top_n=top_n,
+            enable_length_prefilter=brute_force_prefilter,
+            max_length_ratio=brute_force_length_ratio if brute_force_prefilter else sim.DEFAULT_MAX_LENGTH_RATIO,
+            progress_every=2000,
         )
         brute_times.append(time.time() - t0)
 
@@ -197,7 +253,7 @@ def validate(n_samples: int, top_n: int, mutation_rate: float, seed: int | None)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--samples", type=int, default=20, help="Number of random genes to test as queries (default 20)")
+    parser.add_argument("--samples", type=int, default=10, help="Number of random genes to test as queries (default 10 — start small, the brute-force side is still the slow part even with the cache)")
     parser.add_argument("--top-n", type=int, default=3, help="top_n to use for both searches (default 3)")
     parser.add_argument(
         "--mutation-rate", type=float, default=0.0,
@@ -205,5 +261,16 @@ if __name__ == "__main__":
              "Try 0.1-0.3 to stress-test prefilter recall on divergent sequences.",
     )
     parser.add_argument("--seed", type=int, default=None, help="Random seed for reproducible sampling/mutation")
+    parser.add_argument(
+        "--refresh-cache", action="store_true",
+        help="Re-fetch the full gene database from Postgres instead of using the disk cache "
+             "(.cache/full_gene_db.pkl) — use after ingesting new genes.",
+    )
+    parser.add_argument(
+        "--brute-force-length-ratio", type=float, default=15.0,
+        help="Length-ratio window applied to the 'brute-force' side before aligning (default 15x — "
+             "5x more permissive than the app's own 3x). Pass 0 for a true unrestricted scan of "
+             "every reference sequence, which is much slower.",
+    )
     args = parser.parse_args()
-    validate(args.samples, args.top_n, args.mutation_rate, args.seed)
+    validate(args.samples, args.top_n, args.mutation_rate, args.seed, args.refresh_cache, args.brute_force_length_ratio)
