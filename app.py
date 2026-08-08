@@ -882,6 +882,20 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                     f"{best_class['label']} — {best_class['interpretation']}"
                 )
 
+            # Enhanced similarity analysis: top 3 comparison & confidence overview
+            if len(similarity_results) >= 2:
+                st.markdown("---")
+                st.markdown("##### Top Matches Summary")
+                top3_table = viz.build_top3_comparison_table(similarity_results, len(result.get("sequence", "")))
+                if top3_table.get("rows"):
+                    st.markdown("| Rank | Gene | Similarity | Trait | Organism | Coverage | Gaps |")
+                    st.markdown("|------|------|-----------|-------|----------|----------|------|")
+                    for row in top3_table["rows"]:
+                        st.markdown(
+                            f"| {row['rank']} | {row['gene']} | {row['similarity']} | "
+                            f"{row['trait']} | {row['organism']} | {row['coverage']} | {row['gaps']} |"
+                        )
+
             for i, match in enumerate(similarity_results):
                 classification = sim.classify_similarity(match["similarity_score"])
                 # Clean up gene name display: remove leading underscore-tag tokens
@@ -914,6 +928,49 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                             viz.plot_alignment(match["alignment"]["alignment_map"]),
                             width='stretch',
                             key=f"alignment_{i}",
+                        )
+
+                        # Enhanced visualizations (1-5)
+                        query_len = len(result.get("sequence", ""))
+                        metrics = viz.build_similarity_metrics_table(match, query_len)
+
+                        # Alignment coverage heatmap (3)
+                        if match.get("alignment", {}).get("seq1_aligned"):
+                            st.plotly_chart(
+                                viz.plot_alignment_coverage_heatmap(match, query_len),
+                                width='stretch',
+                                key=f"coverage_{i}",
+                            )
+
+                        # Confidence gauge (5)
+                        if metrics:
+                            col_conf, col_metrics = st.columns([1, 2])
+                            with col_conf:
+                                st.plotly_chart(
+                                    viz.plot_confidence_gauge(metrics),
+                                    width='stretch',
+                                    key=f"confidence_{i}",
+                                    use_container_width=True,
+                                )
+                            with col_metrics:
+                                st.markdown("**Alignment Metrics (2):**")
+                                if metrics:
+                                    st.markdown(
+                                        f"- **Aligned Length:** {metrics.get('alignment_length', 'N/A')} bp\n"
+                                        f"- **Matches:** {metrics.get('matches', 'N/A')}\n"
+                                        f"- **Mismatches:** {metrics.get('mismatches', 'N/A')}\n"
+                                        f"- **Gaps:** {metrics.get('total_gaps', 'N/A')} ({metrics.get('gap_percent', 0):.1f}%)\n"
+                                        f"- **Coverage:** {metrics.get('coverage_percent', 0):.1f}%\n"
+                                        f"- **Identity:** {metrics.get('identity_percent', 0):.1f}%"
+                                    )
+
+                        # Gene context card (1)
+                        context = viz.build_match_context_card(match)
+                        st.markdown("**Gene Context (1):**")
+                        st.markdown(
+                            f"- **Description:** {context.get('description', 'No description')}\n"
+                            f"- **Accession:** {context.get('accession', 'N/A')}\n"
+                            f"- **Source:** {context.get('source', 'Unknown')}"
                         )
 
     # ── Tab 3: Mutations ───────────────────────────────────────────────────────

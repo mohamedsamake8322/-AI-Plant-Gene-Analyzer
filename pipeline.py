@@ -79,6 +79,7 @@ def analyze_sequence_record(
     similarity_results = []
     best_match = None
     mutation_report = None
+    variant_report = None
 
     header_metadata = record.get("metadata", {}) or {}
     pipeline_warnings: list[str] = []
@@ -119,12 +120,28 @@ def analyze_sequence_record(
         )
     else:
         try:
+            # If `db` already came from sim.find_similar_genes() (identifiable via
+            # its .source attribute — see similarityengine.SimilarityCandidates),
+            # its candidates were already selected by shared content (k-mer
+            # matches) or an explicit length-range lookup, not by scanning the
+            # whole database. Re-applying compare_with_database's OWN internal
+            # length-ratio prefilter on top of that is redundant at best, and at
+            # worst silently drops a legitimately k-mer-matched candidate whose
+            # length just happens to fall outside the 3x window (e.g. a short
+            # conserved domain shared between a 300bp query and a 2kb gene) --
+            # exactly the kind of match a content-based search is supposed to
+            # surface even when length alone wouldn't have suggested it. Only
+            # keep the internal length prefilter for the "no db yet"/full-scan
+            # path (source == "unavailable", or a plain dict/JSON-mode db with
+            # no .source at all), where it's the thing that keeps the scan fast.
+            db_source_label = getattr(db, "source", None)
+            apply_length_prefilter = enable_length_prefilter and db_source_label in (None, "unavailable")
             similarity_results = sim.compare_with_database(
                 sequence,
                 db,
                 top_n=top_n_matches,
                 logger=logger,
-                enable_length_prefilter=enable_length_prefilter,
+                enable_length_prefilter=apply_length_prefilter,
             )
             prefiltered_count = getattr(similarity_results, "prefiltered_count", 0)
             if hasattr(db, "source"):
@@ -147,7 +164,6 @@ def analyze_sequence_record(
             )
             similarity_results = []
 
-        variant_report = None
         if best_match and db:
             try:
                 ref_seq = db[best_match["gene_name"]]["sequence"].upper().replace(" ", "")
