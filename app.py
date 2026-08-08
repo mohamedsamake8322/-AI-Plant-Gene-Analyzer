@@ -510,22 +510,34 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                         target_db = db
                     elif metadata_available:
                         # Postgres-backed deployment: never load the full
-                        # ~56k-gene database. sim.find_similar_genes()
-                        # asks Postgres for candidate genes using the
-                        # compact pg_trgm similarity path, then fetches only
-                        # that small candidate set — typically tens to a
-                        # couple hundred genes, not tens of thousands.
-                        # The 55k+ reference database itself never leaves Neon.
-                        target_db = sim.find_similar_genes(
-                            record.get("sequence", ""),
-                            top_n=top_n_matches,
-                            logger=logger,
-                        )
+                        # ~56k-gene database. Depending on search mode:
+                        # - Balanced (default): sim.find_similar_genes() uses
+                        #   compact pg_trgm with length prefilter
+                        # - Deep search: sim.find_similar_genes_deep() scans
+                        #   ALL genes by trigram (no length filter) then aligns
+                        #   top ~500 candidates (more thorough, takes 30-60s)
+                        if similarity_deep_search:
+                            if logger:
+                                logger.info("Deep Search mode: exhaustive trigram scan + precision alignment...")
+                            with st.spinner("Deep Search in progress... (30-60s) Scanning all genes and aligning top candidates"):
+                                target_db = sim.find_similar_genes_deep(
+                                    record.get("sequence", ""),
+                                    top_n=top_n_matches,
+                                    alignment_limit=500,
+                                    logger=logger,
+                                )
+                        else:
+                            # Balanced (default) mode
+                            target_db = sim.find_similar_genes(
+                                record.get("sequence", ""),
+                                top_n=top_n_matches,
+                                logger=logger,
+                            )
+                        
                         if not target_db:
                             logger.warning(
                                 f"No candidate genes found for record {idx + 1} "
-                                "(k-mer index may not be populated yet — see "
-                                "postgres_utils.populate_kmer_index)"
+                                "(database search returned no results)"
                             )
                     else:
                         target_db = {}
