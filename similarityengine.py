@@ -535,27 +535,18 @@ def find_similar_genes(
 
     This is the main entry point for the Postgres-backed deployment: it
     never loads the full ~56k-gene database. Instead:
-      1. Hash the query into its minimizer sketch (see
-         postgres_utils._sequence_minimizers / KMER_WINDOW) and look up
-         gene_kmers for genes that share a minimizer with it
-         (postgres_utils.find_candidate_genes_by_kmer) — a single indexed
-         SQL query. Uses the SAME minimizer scheme populate_kmer_index
-         used to build the index (not the exhaustive per-position k-mer
-         set) — using the exhaustive set here would still technically
-         work (a shared k-mer's hash value matches whether or not it was
-         selected as a minimizer on the query's side), but wastes CPU
-         computing ~w times more hashes than necessary for no recall
-         benefit, since the index side only ever has the sparse minimizer
-         set to match against anyway.
+      1. Ask Postgres for candidate genes using the compact trigram-based
+         similarity search in postgres_utils.find_candidate_genes_by_kmer().
+         This is the production-ready lookup path, and it avoids the
+         storage-heavy gene_kmers table.
       2. Fetch only those candidate sequences (load_gene_sequences_by_keys).
-      3. If the k-mer index hasn't been populated yet (empty result) and
-         `metadata` was supplied, fall back to the coarser length-prefilter
-         path over metadata instead.
+      3. If no candidates are returned and `metadata` was supplied, fall
+         back to the coarser length-prefilter path over metadata instead.
 
     Returns a SimilarityCandidates (dict subclass) of {gene_key: gene_record}
     — typically tens to a couple hundred entries, not tens of thousands —
     ready to hand to compare_with_database as db_source. `.source` is one
-    of "kmer_index", "length_prefilter_metadata", "length_prefilter_sql",
+    of "trigram_index", "length_prefilter_metadata", "length_prefilter_sql",
     or "unavailable"; `.candidate_count` is len(result).
     """
     try:
@@ -566,16 +557,15 @@ def find_similar_genes(
         return SimilarityCandidates(source="unavailable")
 
     query_type = bio.detect_sequence_type(query)
-    query_kmers = pg._sequence_minimizers(query, k, pg.KMER_WINDOW, "protein" if query_type == "protein" else "dna")
     pool_size = max(1, top_n) * candidate_pool_multiplier
 
-    ranked = pg.find_candidate_genes_by_kmer(query_kmers, limit=pool_size)
+    ranked = pg.find_candidate_genes_by_kmer(query, limit=pool_size)
     if ranked:
         keys = [key for key, _shared in ranked]
         candidates = pg.load_gene_sequences_by_keys(keys)
         if logger:
-            logger.info(f"find_similar_genes: k-mer index returned {len(candidates)} candidates for top_n={top_n}")
-        return SimilarityCandidates(candidates, source="kmer_index")
+            logger.info(f"find_similar_genes: trigram index returned {len(candidates)} candidates for top_n={top_n}")
+        return SimilarityCandidates(candidates, source="trigram_index")
 
     if logger:
         logger.info(
