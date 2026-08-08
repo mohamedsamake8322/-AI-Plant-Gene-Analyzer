@@ -498,13 +498,11 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                     elif metadata_available:
                         # Postgres-backed deployment: never load the full
                         # ~56k-gene database. sim.find_similar_genes()
-                        # hashes this one sequence into k-mers, asks
-                        # Postgres which genes share k-mers with it (a
-                        # single indexed query against gene_kmers), and
-                        # fetches only that small candidate set — typically
-                        # tens to a couple hundred genes, not tens of
-                        # thousands. The 55k+ reference database itself
-                        # never leaves Neon.
+                        # asks Postgres for candidate genes using the
+                        # compact pg_trgm similarity path, then fetches only
+                        # that small candidate set — typically tens to a
+                        # couple hundred genes, not tens of thousands.
+                        # The 55k+ reference database itself never leaves Neon.
                         target_db = sim.find_similar_genes(
                             record.get("sequence", ""),
                             top_n=top_n_matches,
