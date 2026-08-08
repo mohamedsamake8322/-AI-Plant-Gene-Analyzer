@@ -5,3 +5,6 @@ Data
 Data/raw/ncbi.json
 Data/clean
 logs/
+full_gene_db.pkl
+.pkl
+scripts/.cache/
