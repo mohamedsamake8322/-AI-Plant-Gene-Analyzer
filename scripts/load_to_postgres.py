@@ -14,7 +14,14 @@ from pathlib import Path
 import psycopg
 import json
 
-from postgres_utils import create_tables, get_connection, insert_gene_record, load_json_records
+from postgres_utils import (
+    create_tables,
+    dedupe_by_sequence,
+    get_connection,
+    insert_gene_record,
+    is_valid_sequence,
+    load_json_records,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = ROOT / "genes_database.json"
@@ -100,6 +107,9 @@ def main(argv: list[str] | None = None) -> None:
 
     inserted = 0
     failed = 0
+    skipped_quality = 0
+    skipped_reasons: dict[str, int] = {}
+    merged_by_sequence = 0
     try:
         for i, record in enumerate(records, 1):
             # Compute lightweight k-mer signature for faster DB-side prefilter
@@ -123,6 +133,28 @@ def main(argv: list[str] | None = None) -> None:
                 except Exception:
                     record["kmer_signature"] = []
 
+            # Quality gate: reject before it ever reaches the table (too
+            # short, too many ambiguous bases, invalid characters for the
+            # declared type). Applied here rather than after insertion, so
+            # bad records never take up a row in the first place.
+            valid, reason = is_valid_sequence(record.get("sequence"), record.get("sequence_type"))
+            if not valid:
+                gid = record.get("gene_id") or record.get("symbol")
+                print(f"⊘ Skipped {gid} (quality: {reason})")
+                skipped_quality += 1
+                skipped_reasons[reason] = skipped_reasons.get(reason, 0) + 1
+                continue
+
+            # Sequence-hash dedup: if this exact sequence already exists in
+            # the table under a different gene_id/symbol, redirect this
+            # record to that existing key so it merges instead of creating
+            # a redundant row.
+            original_key = record.get("gene_id") or record.get("symbol")
+            record = dedupe_by_sequence(record, conn=conn)
+            if record.get("gene_id") != original_key:
+                merged_by_sequence += 1
+                print(f"⇄ {original_key} merged into existing {record.get('gene_id')} (identical sequence)")
+
             try:
                 success = insert_with_retry(record, conn=conn, max_retries=3, backoff_secs=5)
             except CONNECTION_ERRORS as e:
@@ -142,7 +174,11 @@ def main(argv: list[str] | None = None) -> None:
     finally:
         conn.close()
 
-    print(f"\n✓ Import complete: {inserted} inserted, {failed} failed out of {len(records)} total.")
+    print(f"\n✓ Import complete: {inserted} inserted, {failed} failed, "
+          f"{skipped_quality} skipped (quality), {merged_by_sequence} merged "
+          f"(identical sequence, different id) out of {len(records)} total.")
+    if skipped_reasons:
+        print("  Quality skip breakdown:", skipped_reasons)
 
 
 if __name__ == "__main__":

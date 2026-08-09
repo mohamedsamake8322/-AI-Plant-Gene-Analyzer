@@ -5,6 +5,7 @@ PostgreSQL helper utilities for the plant gene project.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -214,7 +215,8 @@ def create_tables() -> None:
                     traits JSONB,
                     length INTEGER,
                     date_added TIMESTAMPTZ,
-                    record JSONB
+                    record JSONB,
+                    sequence_hash TEXT
                 );
                 """
             )
@@ -229,6 +231,19 @@ def create_tables() -> None:
                 ON genes (COALESCE(gene_id, symbol));
                 """
             )
+            # Two different gene_id/symbol values (e.g. the same gene fetched
+            # from NCBI under an accession and from UniProt under a different
+            # one) can carry the EXACT SAME sequence. The index above cannot
+            # catch that, because it dedups on identifier, not on biological
+            # content. sequence_hash + find_gene_key_by_sequence_hash() below
+            # close that gap: before insert, callers check whether this exact
+            # sequence already exists under another key, and if so, redirect
+            # the insert to that key so it merges via the upsert above
+            # instead of creating a redundant row. Not UNIQUE on purpose —
+            # enforcement happens app-side (see dedupe_by_sequence) so a rare
+            # race between parallel --workers doesn't hard-fail an insert;
+            # a non-unique index here is just for fast lookup.
+            cur.execute("CREATE INDEX IF NOT EXISTS genes_sequence_hash_idx ON genes (sequence_hash);")
             cur.execute("CREATE INDEX IF NOT EXISTS genes_organism_idx ON genes (organism);")
             cur.execute("CREATE INDEX IF NOT EXISTS genes_sequence_type_idx ON genes (sequence_type);")
             cur.execute("CREATE INDEX IF NOT EXISTS genes_source_idx ON genes (source);")
@@ -281,12 +296,12 @@ _UPSERT_SQL = sql.SQL(
         gene_id, symbol, organism, sequence, sequence_type,
         description, source, source_url, external_links,
         expression_profiles, pathways, publications,
-        annotations, traits, length, date_added, record
+        annotations, traits, length, date_added, record, sequence_hash
     ) VALUES (
         %(gene_id)s, %(symbol)s, %(organism)s, %(sequence)s, %(sequence_type)s,
         %(description)s, %(source)s, %(source_url)s, %(external_links)s,
         %(expression_profiles)s, %(pathways)s, %(publications)s,
-        %(annotations)s, %(traits)s, %(length)s, %(date_added)s, %(record)s
+        %(annotations)s, %(traits)s, %(length)s, %(date_added)s, %(record)s, %(sequence_hash)s
     )
     ON CONFLICT (COALESCE(gene_id, symbol))
     DO UPDATE SET
@@ -319,9 +334,90 @@ _UPSERT_SQL = sql.SQL(
         -- known length from a previous insert.
         length = COALESCE(NULLIF(EXCLUDED.length, 0), genes.length),
         date_added = EXCLUDED.date_added,
-        record = EXCLUDED.record;
+        record = EXCLUDED.record,
+        sequence_hash = COALESCE(NULLIF(EXCLUDED.sequence_hash, ''), genes.sequence_hash);
     """
 )
+
+
+def sequence_hash(sequence: str | None) -> str | None:
+    """Deterministic content hash of a sequence, used to detect the same
+    biological sequence arriving under two different gene_id/symbol values
+    (e.g. the same gene from NCBI vs UniProt). Normalizes case/whitespace
+    first so trivial formatting differences don't produce different hashes.
+    Uses plain md5 (via Postgres's built-in md5(), no extension required —
+    same reasoning as the pg_trgm privilege fallback above) since this is
+    for deduplication, not security.
+    """
+    if not sequence:
+        return None
+    normalized = sequence.upper().replace(" ", "").replace("\n", "").strip()
+    if not normalized:
+        return None
+    return hashlib.md5(normalized.encode("utf-8")).hexdigest()
+
+
+def find_gene_key_by_sequence_hash(seq_hash: str, conn: psycopg.Connection | None = None) -> str | None:
+    """Return the canonical gene_key (COALESCE(gene_id, symbol)) of an
+    existing row whose sequence hashes to `seq_hash`, or None if no such
+    row exists yet. Used by dedupe_by_sequence() before insert.
+    """
+    if not seq_hash:
+        return None
+
+    def _query(c: psycopg.Connection) -> str | None:
+        with c.cursor() as cur:
+            cur.execute(
+                "SELECT COALESCE(gene_id, symbol) FROM genes WHERE sequence_hash = %s LIMIT 1;",
+                (seq_hash,),
+            )
+            row = cur.fetchone()
+            return row[0] if row else None
+
+    if conn is not None:
+        return _query(conn)
+    with get_connection() as conn:
+        return _query(conn)
+
+
+def dedupe_by_sequence(record: dict, conn: psycopg.Connection | None = None) -> dict:
+    """Prepare a record for insert, redirecting it to an existing gene's key
+    if its exact sequence is already in the database under a different
+    gene_id/symbol.
+
+    Call this BEFORE insert_gene_record(). It mutates and returns `record`:
+      - always sets record["sequence_hash"]
+      - if the sequence already exists under a different key, overwrites
+        record["gene_id"] with that existing key (so the upsert's
+        ON CONFLICT COALESCE(gene_id, symbol) target merges into the
+        existing row instead of creating a duplicate one), and preserves
+        the original incoming id as an alternate accession under
+        external_links so no traceability is lost.
+
+    This deliberately reuses the existing merge-on-conflict upsert rather
+    than adding a second, separate merge path — the sequence-hash match
+    just changes *which row* the same upsert logic targets.
+    """
+    seq = record.get("sequence")
+    seq_hash = sequence_hash(seq)
+    record["sequence_hash"] = seq_hash
+    if not seq_hash:
+        return record
+
+    incoming_key = record.get("gene_id") or record.get("symbol")
+    existing_key = find_gene_key_by_sequence_hash(seq_hash, conn=conn)
+
+    if existing_key and existing_key != incoming_key:
+        links = dict(record.get("external_links") or {})
+        if incoming_key:
+            src = record.get("source") or "unknown_source"
+            links[f"alt_id_{src}"] = incoming_key
+        record["external_links"] = links
+        record["gene_id"] = existing_key
+        # Leave symbol as-is; COALESCE(gene_id, symbol) resolves to gene_id
+        # regardless, and keeping symbol lets it still be searched on.
+
+    return record
 
 
 def _record_to_params(record: dict) -> dict:
@@ -345,7 +441,71 @@ def _record_to_params(record: dict) -> dict:
         "length": record.get("length") or (len(record.get("sequence", "")) if record.get("sequence") else None),
         "date_added": record.get("date_added"),
         "record": json.dumps(record),
+        "sequence_hash": record.get("sequence_hash") or sequence_hash(record.get("sequence")),
     }
+
+
+# --- Quality filter -------------------------------------------------------
+# Kept as plain data (not config.py) for the same standalone-module reason
+# documented on find_candidate_genes_by_kmer above.
+_VALID_CHARS = {
+    "dna": set("ACGTN"),
+    "rna": set("ACGUN"),
+    "protein": set("ACDEFGHIKLMNPQRSTVWYXBZJUO*"),
+}
+
+
+def is_valid_sequence(
+    sequence: str | None, sequence_type: str | None = "dna",
+    min_length: int = 50, max_n_ratio: float = 0.05,
+) -> tuple[bool, str]:
+    """Reject records before they ever reach the insert path: too short to
+    be useful for downstream fine-tuning, too many ambiguous bases (N), or
+    containing characters that don't belong to the declared sequence type.
+    Returns (is_valid, reason) — reason is empty when valid, so callers can
+    log/count why a record was skipped.
+    """
+    if not sequence:
+        return False, "empty"
+    seq = sequence.upper().strip()
+    if len(seq) < min_length:
+        return False, f"too_short(<{min_length})"
+
+    seq_type = (sequence_type or "dna").lower()
+    if seq_type not in _VALID_CHARS:
+        seq_type = "dna"
+
+    n_ratio = seq.count("N") / len(seq) if seq else 0
+    if n_ratio > max_n_ratio:
+        return False, f"too_many_n({n_ratio:.1%})"
+
+    invalid = set(seq) - _VALID_CHARS[seq_type]
+    if invalid:
+        return False, f"invalid_chars({''.join(sorted(invalid))})"
+
+    return True, ""
+
+
+def backfill_sequence_hashes() -> int:
+    """One-time migration for genes already in the table before this column
+    existed (your current ~56k rows). Computes the hash server-side with a
+    single UPDATE (Postgres's built-in md5(), matching sequence_hash()
+    above) instead of looping row-by-row from Python. Safe to re-run — only
+    touches rows where sequence_hash IS NULL.
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("ALTER TABLE genes ADD COLUMN IF NOT EXISTS sequence_hash TEXT;")
+            cur.execute(
+                """
+                UPDATE genes
+                SET sequence_hash = md5(UPPER(REPLACE(REPLACE(sequence, ' ', ''), E'\\n', '')))
+                WHERE sequence_hash IS NULL AND sequence IS NOT NULL AND sequence <> '';
+                """
+            )
+            n = cur.rowcount
+            cur.execute("CREATE INDEX IF NOT EXISTS genes_sequence_hash_idx ON genes (sequence_hash);")
+    return n
 
 
 def insert_gene_record(record: dict, conn: psycopg.Connection | None = None) -> None:
@@ -880,7 +1040,10 @@ if __name__ == "__main__":
         "'populate-kmer-index' once after the initial data collection (and "
         "again after ingesting new batches of genes)."
     )
-    parser.add_argument("command", choices=["create-tables", "populate-kmer-index"])
+    parser.add_argument(
+        "command",
+        choices=["create-tables", "populate-kmer-index", "backfill-sequence-hashes"],
+    )
     parser.add_argument("--k", type=int, default=KMER_K, help=f"k-mer length (default {KMER_K})")
     parser.add_argument(
         "--batch-size", type=int, default=2_000,
@@ -907,3 +1070,6 @@ if __name__ == "__main__":
             rebuild=args.rebuild,
         )
         print(f"Indexed {n} gene(s) with k={args.k}.")
+    elif args.command == "backfill-sequence-hashes":
+        n = backfill_sequence_hashes()
+        print(f"Backfilled sequence_hash for {n} existing gene(s).")
