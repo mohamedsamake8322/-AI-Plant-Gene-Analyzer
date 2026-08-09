@@ -50,7 +50,13 @@ def main(argv=None):
     if not sp_dir.exists():
         raise SystemExit(f"Species dir not found: {sp_dir}")
 
-    from postgres_utils import create_tables, get_connection, insert_gene_record
+    from postgres_utils import (
+        create_tables,
+        dedupe_by_sequence,
+        get_connection,
+        insert_gene_record,
+        is_valid_sequence,
+    )
 
     if args.create_tables:
         create_tables()
@@ -60,6 +66,8 @@ def main(argv=None):
     total = 0
     inserted = 0
     failed = 0
+    skipped_quality = 0
+    merged_by_sequence = 0
 
     try:
         conn = get_connection()
@@ -81,6 +89,18 @@ def main(argv=None):
                 print(f"Processing {p.name}: {len(genes)} genes")
                 for g in genes:
                     total += 1
+
+                    valid, reason = is_valid_sequence(g.get("sequence"), g.get("sequence_type"))
+                    if not valid:
+                        print(f"⊘ skip {g.get('gene_id') or g.get('symbol')} (quality: {reason})")
+                        skipped_quality += 1
+                        continue
+
+                    original_key = g.get("gene_id") or g.get("symbol")
+                    g = dedupe_by_sequence(g, conn=conn)
+                    if g.get("gene_id") != original_key:
+                        merged_by_sequence += 1
+
                     try:
                         ok = insert_with_retry(insert_gene_record, g, conn, max_retries=3, backoff=2)
                     except CONNECTION_ERRORS as e:
@@ -96,7 +116,8 @@ def main(argv=None):
     finally:
         conn.close()
 
-    print(f"Done. processed={total} inserted={inserted} failed={failed}")
+    print(f"Done. processed={total} inserted={inserted} failed={failed} "
+          f"skipped_quality={skipped_quality} merged_by_sequence={merged_by_sequence}")
 
 
 if __name__ == '__main__':
