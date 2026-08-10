@@ -18,6 +18,11 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = ROOT / "genes_database.json"
 PLANTS_FILTER = "plants[filter]"
 DEFAULT_MAX_LENGTH = 500_000
+# Every direct Entrez network call below passes this explicitly. Biopython's
+# Entrez functions default to NO timeout when none is given -- a stalled
+# NCBI connection can then hang the whole pipeline indefinitely instead of
+# raising an exception the retry logic can handle.
+NCBI_TIMEOUT = 30
 
 load_dotenv(ROOT / ".env")
 
@@ -25,7 +30,7 @@ def _efetch_fasta_batch(batch: list[str], db: str = "nucleotide", max_retries: i
     ids = ",".join(batch)
     for attempt in range(1, max_retries + 1):
         try:
-            with Entrez.efetch(db=db, id=ids, rettype="fasta", retmode="text") as handle:
+            with Entrez.efetch(db=db, id=ids, rettype="fasta", retmode="text", timeout=NCBI_TIMEOUT) as handle:
                 txt = handle.read()
             if isinstance(txt, bytes):
                 txt = txt.decode("utf-8", errors="replace")
@@ -91,7 +96,7 @@ def resolve_accession_id(
     for base in queries:
         term = build_search_term(base, plants_only=plants_only, organism=organism)
         try:
-            handle = Entrez.esearch(db=db, term=term, retmax=1)
+            handle = Entrez.esearch(db=db, term=term, retmax=1, timeout=NCBI_TIMEOUT)
             res = Entrez.read(handle)
             handle.close()
             ids = res.get("IdList", [])
@@ -99,6 +104,29 @@ def resolve_accession_id(
                 return ids[0]
         except Exception as e:
             print(f"Lookup failed for {acc} ({base}): {e}")
+    return None
+
+
+def _fetch_sequence_length(id_or_acc: str, db: str = "nucleotide") -> int | None:
+    """Look up a record's sequence length via esummary -- a lightweight
+    metadata call (a few hundred bytes) -- without downloading its actual
+    sequence. Used to skip oversized records (some UniProt xrefs point at
+    whole chromosomes, tens of millions of bp) BEFORE spending a full
+    efetch downloading and re-downloading (on retry) megabytes of FASTA
+    text just to discard it against max_length afterwards. Returns None on
+    any failure so the caller can fall back to the normal fetch-then-filter
+    path unchanged -- this is a speed optimization, never a hard gate.
+    """
+    try:
+        handle = Entrez.esummary(db=db, id=id_or_acc, timeout=NCBI_TIMEOUT)
+        res = Entrez.read(handle)
+        handle.close()
+        if res:
+            length = res[0].get("Length")
+            if length is not None:
+                return int(length)
+    except Exception:
+        pass
     return None
 
 
@@ -198,6 +226,25 @@ def fetch_fasta_by_accession(
     # accession is already unambiguous -- filtering by organism name on an
     # exact accession only adds a way to fail on subspecies-level naming
     # mismatches, e.g. "Oryza sativa" vs "Oryza sativa Japonica Group").
+    #
+    # Pre-check the size via esummary BEFORE downloading. Some UniProt
+    # nucleotide xrefs point at whole chromosomes/genomes (observed up to
+    # ~64,000,000 bp), and without this check they'd be fully downloaded
+    # over the network (tens of MB of FASTA text, sometimes re-downloaded
+    # on retry after a dropped connection) only to be discarded by the
+    # length filter below -- slow enough to make the pipeline look hung on
+    # a single record. If the pre-check fails for any reason (e.g. `acc` is
+    # actually a gene locus tag, not a standalone accession) just proceed
+    # to the normal fetch, unchanged.
+    if max_length is not None:
+        pre_length = _fetch_sequence_length(acc, db=db)
+        if pre_length is not None and pre_length > max_length:
+            print(
+                f"Skipped {acc}: length {pre_length:,} > max {max_length:,} "
+                "(likely chromosome/genome, not a gene) -- skipped before download."
+            )
+            return []
+
     try:
         txt = _efetch_fasta_batch([acc], db=db, max_retries=2)
         records = parse_fasta_text(txt)
@@ -212,6 +259,14 @@ def fetch_fasta_by_accession(
     if not uid:
         print(f"Skipped {acc}: not found or does not match plant/organism filters.")
         return []
+    if max_length is not None:
+        pre_length = _fetch_sequence_length(uid, db=db)
+        if pre_length is not None and pre_length > max_length:
+            print(
+                f"Skipped {acc}: length {pre_length:,} > max {max_length:,} "
+                "(likely chromosome/genome, not a gene) -- skipped before download."
+            )
+            return []
     try:
         txt = _efetch_fasta_batch([uid], db=db, max_retries=3)
         records = parse_fasta_text(txt)
@@ -236,7 +291,7 @@ def fetch_by_term(
     query = build_search_term(scoped_term, plants_only=plants_only, organism=organism)
     ids = []
     try:
-        handle = Entrez.esearch(db=db, term=query, retmax=retmax)
+        handle = Entrez.esearch(db=db, term=query, retmax=retmax, timeout=NCBI_TIMEOUT)
         res = Entrez.read(handle)
         handle.close()
         ids = res.get("IdList", [])
