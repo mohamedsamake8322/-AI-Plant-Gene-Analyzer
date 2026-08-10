@@ -175,6 +175,32 @@ def _parse_entry(entry: dict, species: str) -> dict | None:
         if ref.get("database") == "Ensembl"
     ]
 
+    # RefSeq cross-refs -- THE join key back to NCBI nucleotide records.
+    # UniProt's RefSeq cross-reference "id" is the PROTEIN accession
+    # (NP_/XP_...), but it carries a "NucleotideSequenceId" property that
+    # is the corresponding mRNA/nucleotide accession (NM_/XM_...) -- this
+    # is what a downstream NCBI fetch-by-accession step needs to retrieve
+    # the actual DNA/RNA sequence for THIS SAME gene, instead of collecting
+    # nucleotide and protein sequences from two unrelated, non-overlapping
+    # searches (see the whole point of this rework).
+    refseq_protein_ids = []
+    refseq_nucleotide_ids = []
+    for ref in uniProtKB_cross_refs:
+        if ref.get("database") == "RefSeq":
+            if ref.get("id"):
+                refseq_protein_ids.append(ref["id"])
+            props = {p["key"]: p["value"] for p in ref.get("properties", [])}
+            nuc_id = props.get("NucleotideSequenceId")
+            if nuc_id:
+                refseq_nucleotide_ids.append(nuc_id)
+
+    # EMBL/GenBank cross-refs -- secondary fallback join key when a gene
+    # has no RefSeq entry (common for less-curated/non-model species).
+    embl_nucleotide_ids = []
+    for ref in uniProtKB_cross_refs:
+        if ref.get("database") == "EMBL" and ref.get("id"):
+            embl_nucleotide_ids.append(ref["id"])
+
     # Keywords
     keywords = [kw.get("name", "") for kw in entry.get("keywords", [])]
 
@@ -218,6 +244,12 @@ def _parse_entry(entry: dict, species: str) -> dict | None:
             "accession": accession,
             "kegg": kegg_ids[0] if kegg_ids else None,
             "ensembl": ensembl_ids[0] if ensembl_ids else None,
+            # Clé de jointure vers NCBI -- consommée par le futur collecteur
+            # NCBI "fetch-by-accession" pour récupérer la séquence ADN/ARN
+            # DU MÊME GÈNE que cette entrée protéine annotée.
+            "refseq_nucleotide": refseq_nucleotide_ids[0] if refseq_nucleotide_ids else None,
+            "refseq_protein": refseq_protein_ids[0] if refseq_protein_ids else None,
+            "embl_nucleotide": embl_nucleotide_ids[0] if embl_nucleotide_ids else None,
         },
         "traits": keywords[:10],  # top keywords as traits
         "expression_profiles": [],
