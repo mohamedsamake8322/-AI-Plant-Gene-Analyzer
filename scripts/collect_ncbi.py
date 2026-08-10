@@ -170,6 +170,30 @@ def fetch_fasta_by_accession(
     organism: str | None = None,
     max_length: int | None = DEFAULT_MAX_LENGTH,
 ) -> list:
+    # Try a direct efetch by accession FIRST -- Biopython/Entrez efetch
+    # accepts an accession.version string directly as `id`, no esearch
+    # round-trip needed. This is both faster (1 request instead of 2) and
+    # sidesteps a real quirk observed on some RefSeq "predicted" (XM_/XR_)
+    # transcript accessions: esearch with the [Accession] field tag can
+    # fail to find a record that a plain unqualified term search (or a
+    # direct efetch) finds without any problem. Confirmed empirically:
+    # esearch '(XM_015783694.1[Accession])' -> [], efetch(id="XM_015783694.1")
+    # -> succeeds immediately.
+    #
+    # This path does NOT apply the plants_only/organism filters (a specific
+    # accession is already unambiguous -- filtering by organism name on an
+    # exact accession only adds a way to fail on subspecies-level naming
+    # mismatches, e.g. "Oryza sativa" vs "Oryza sativa Japonica Group").
+    try:
+        txt = _efetch_fasta_batch([acc], db=db, max_retries=2)
+        records = parse_fasta_text(txt)
+        if records:
+            return filter_records(records, plants_only=False, max_length=max_length, acc=acc)
+    except Exception:
+        pass  # not a valid standalone accession (e.g. a gene locus like AT1G01010) -- fall through
+
+    # Fallback: resolve via esearch (handles gene locus tags, and anything
+    # the direct efetch above didn't recognize as a standalone accession).
     uid = resolve_accession_id(acc, db=db, plants_only=plants_only, organism=organism)
     if not uid:
         print(f"Skipped {acc}: not found or does not match plant/organism filters.")
