@@ -84,6 +84,10 @@ def build_linked_gene(uniprot_rec: dict, organism: str, api_delay: float, max_ge
         nuc_accession, db="nucleotide", plants_only=True, organism=organism, max_length=max_gene_length,
     )
     if not ncbi_records:
+        print(
+            f"    [DEBUG] NCBI fetch failed for UniProt {uniprot_rec.get('gene_id')} -> "
+            f"nucleotide accession {nuc_accession} (organism={organism})"
+        )
         return None, "ncbi_fetch_failed"
 
     header, seq = ncbi_records[0]
@@ -133,6 +137,10 @@ def build_linked_gene_from_tf(tf_rec: dict, organism: str, api_delay: float, max
         gene_locus, db="nucleotide", plants_only=True, organism=organism, max_length=max_gene_length,
     )
     if not ncbi_records:
+        print(
+            f"    [DEBUG] NCBI fetch failed for PlantTFDB {gene_locus} -> "
+            f"could not resolve nucleotide sequence for {organism}"
+        )
         return None, "ncbi_fetch_failed"
 
     header, seq = ncbi_records[0]
