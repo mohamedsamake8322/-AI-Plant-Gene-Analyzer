@@ -73,7 +73,7 @@ def fetch_uniprot(
         "fields": (
             "accession,gene_names,organism_name,protein_name,"
             "sequence,go_id,go,ft_domain,cc_function,"
-            "xref_kegg,xref_ensembl,xref_refseq,reviewed,"
+            "xref_kegg,xref_ensembl,xref_refseq,xref_embl,reviewed,"
             "protein_existence,annotation_score,length,"
             "cc_subcellular_location,keyword,feature_count"
         ),
@@ -196,10 +196,22 @@ def _parse_entry(entry: dict, species: str) -> dict | None:
 
     # EMBL/GenBank cross-refs -- secondary fallback join key when a gene
     # has no RefSeq entry (common for less-curated/non-model species).
-    embl_nucleotide_ids = []
+    # A single UniProt entry can carry several EMBL xrefs of different
+    # MoleculeType: mRNA/RNA transcripts (what we want -- a single-gene
+    # sequence), but also Genomic_DNA, which is very often a whole BAC/PAC
+    # clone or contig covering many genes at once (tens to hundreds of kb),
+    # not "the gene" itself. Sort mRNA/RNA entries first so _parse_entry's
+    # embl_nucleotide_ids[0] picks a real transcript whenever one is
+    # available, only falling back to a genomic accession when no
+    # transcript xref exists at all.
+    embl_candidates = []
     for ref in uniProtKB_cross_refs:
         if ref.get("database") == "EMBL" and ref.get("id"):
-            embl_nucleotide_ids.append(ref["id"])
+            props = {p["key"]: p["value"] for p in ref.get("properties", [])}
+            embl_candidates.append((ref["id"], props.get("MoleculeType", "")))
+    embl_candidates.sort(key=lambda c: 0 if "rna" in c[1].lower() else 1)
+    embl_nucleotide_ids = [c[0] for c in embl_candidates]
+    embl_molecule_types = [c[1] for c in embl_candidates]
 
     # Keywords
     keywords = [kw.get("name", "") for kw in entry.get("keywords", [])]
@@ -250,6 +262,7 @@ def _parse_entry(entry: dict, species: str) -> dict | None:
             "refseq_nucleotide": refseq_nucleotide_ids[0] if refseq_nucleotide_ids else None,
             "refseq_protein": refseq_protein_ids[0] if refseq_protein_ids else None,
             "embl_nucleotide": embl_nucleotide_ids[0] if embl_nucleotide_ids else None,
+            "embl_molecule_type": embl_molecule_types[0] if embl_molecule_types else None,
         },
         "traits": keywords[:10],  # top keywords as traits
         "expression_profiles": [],
