@@ -77,23 +77,33 @@ def resolve_accession_id(
 ) -> str | None:
     """Resolve an accession or plant gene locus (e.g. AT1G01010, Solyc04g007000.1)
     to a nucleotide UID."""
-    queries = [f"{acc}[Accession]"]
+    versionless = acc.split(".", 1)[0] if "." in acc else acc
+
+    candidates = [
+        f"{acc}[Accession]",
+        f"{versionless}[Accession]" if versionless != acc else None,
+    ]
+
     # Gene-locus tags across plant DBs share a common shape -- alphabetic
     # prefix, digits (chromosome/group), a single letter separator, more
-    # digits, optional ".N" version -- even though the prefix length and
-    # separator letter differ by species/database:
-    #   AT1G01010          (Arabidopsis/TAIR)
-    #   Solyc04g007000.1   (tomato/Sol Genomics -- note lowercase "g", longer
-    #                       prefix, and a version suffix the old pattern
-    #                       didn't allow at all)
-    #   Os01g0100100       (rice/RAP-DB)
-    #   GRMZM2G700000      (maize/MaizeGDB)
-    # The original pattern only matched the Arabidopsis shape (1-2 letter
-    # prefix, no version suffix), so every non-Arabidopsis locus silently
-    # skipped the [Gene] search entirely and fell straight to failure.
-    if re.match(r"^[A-Za-z]{2,}\d+[A-Za-z]\d+(\.\d+)?$", acc):
-        queries.append(f"{acc}[Gene]")
-    for base in queries:
+    # digits, optional ".N" version. Many Solanum and other plant locus tags
+    # are indexed by NCBI under the Gene Name field rather than the older
+    # generic [Gene] field.
+    gene_tag_pattern = re.compile(r"^[A-Za-z]{2,}\d+[A-Za-z]\d+(\.\d+)?$")
+    if gene_tag_pattern.match(acc):
+        candidates.extend([
+            f"{acc}[Gene Name]",
+            f"{versionless}[Gene Name]" if versionless != acc else None,
+        ])
+
+    # Fallback to raw identifier search when the field-specific forms fail.
+    candidates.extend([
+        acc,
+        versionless if versionless != acc else None,
+    ])
+    candidates = [q for q in candidates if q]
+
+    for base in candidates:
         term = build_search_term(base, plants_only=plants_only, organism=organism)
         try:
             handle = Entrez.esearch(db=db, term=term, retmax=1, timeout=NCBI_TIMEOUT)
@@ -104,6 +114,21 @@ def resolve_accession_id(
                 return ids[0]
         except Exception as e:
             print(f"Lookup failed for {acc} ({base}): {e}")
+
+    # Last chance: try the raw identifier without organism/plant filters,
+    # because some Solanum locus tags are only exposed by a loose text search.
+    if plants_only and organism:
+        for base in [acc, versionless] if versionless != acc else [acc]:
+            try:
+                handle = Entrez.esearch(db=db, term=base, retmax=1, timeout=NCBI_TIMEOUT)
+                res = Entrez.read(handle)
+                handle.close()
+                ids = res.get("IdList", [])
+                if ids:
+                    return ids[0]
+            except Exception as e:
+                print(f"Lookup failed for {acc} (raw fallback {base}): {e}")
+
     return None
 
 

@@ -195,21 +195,23 @@ def _parse_entry(entry: dict, species: str) -> dict | None:
                 refseq_nucleotide_ids.append(nuc_id)
 
     # EMBL/GenBank cross-refs -- secondary fallback join key when a gene
-    # has no RefSeq entry (common for less-curated/non-model species).
-    # A single UniProt entry can carry several EMBL xrefs of different
-    # MoleculeType: mRNA/RNA transcripts (what we want -- a single-gene
-    # sequence), but also Genomic_DNA, which is very often a whole BAC/PAC
-    # clone or contig covering many genes at once (tens to hundreds of kb),
-    # not "the gene" itself. Sort mRNA/RNA entries first so _parse_entry's
-    # embl_nucleotide_ids[0] picks a real transcript whenever one is
-    # available, only falling back to a genomic accession when no
-    # transcript xref exists at all.
+    # has no RefSeq entry. Prefer transcript/RNA accessions and ignore
+    # genomic mappings like Genomic_DNA, which often point to whole
+    # chromosomes/contigs rather than a single-gene transcript.
     embl_candidates = []
     for ref in uniProtKB_cross_refs:
         if ref.get("database") == "EMBL" and ref.get("id"):
             props = {p["key"]: p["value"] for p in ref.get("properties", [])}
-            embl_candidates.append((ref["id"], props.get("MoleculeType", "")))
-    embl_candidates.sort(key=lambda c: 0 if "rna" in c[1].lower() else 1)
+            molecule_type = props.get("MoleculeType", "")
+            normalized = molecule_type.lower()
+            if "genomic" in normalized and "rna" not in normalized:
+                continue
+            if "rna" in normalized or "transcript" in normalized:
+                priority = 0
+            else:
+                priority = 1
+            embl_candidates.append((ref["id"], molecule_type, priority))
+    embl_candidates.sort(key=lambda c: c[2])
     embl_nucleotide_ids = [c[0] for c in embl_candidates]
     embl_molecule_types = [c[1] for c in embl_candidates]
 
