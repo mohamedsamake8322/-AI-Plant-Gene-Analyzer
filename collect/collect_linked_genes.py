@@ -50,13 +50,18 @@ import collect_ncbi  # noqa: E402
 import collect_planttfdb  # noqa: E402
 
 
-def _sequence_type_from_accession(accession: str) -> str:
+def _sequence_type_from_accession(accession: str, embl_molecule_type: str | None = None) -> str:
     """RefSeq mRNA accessions start with NM_/XM_ ; genomic/other nucleotide
-    accessions default to dna. Good enough heuristic for this pipeline,
-    consistent with how sequence_type is inferred elsewhere in the project.
+    accessions default to dna. EMBL/GenBank/DDBJ accessions (e.g. from the
+    embl_nucleotide fallback) don't follow that NCBI prefix convention at
+    all, so without embl_molecule_type they'd silently default to "dna"
+    even when UniProt already told us it's an mRNA -- use that hint when
+    the accession-prefix heuristic doesn't apply.
     """
     prefix = accession.split("_")[0].upper() if "_" in accession else ""
     if prefix in ("NM", "XM"):
+        return "rna"
+    if embl_molecule_type and "rna" in embl_molecule_type.lower():
         return "rna"
     return "dna"
 
@@ -66,9 +71,13 @@ def build_linked_gene(uniprot_rec: dict, organism: str, api_delay: float, max_ge
     UniProt record. Returns (merged_record_or_None, reason).
     """
     links = uniprot_rec.get("external_links") or {}
-    nuc_accession = links.get("refseq_nucleotide") or links.get("embl_nucleotide")
+    refseq_accession = links.get("refseq_nucleotide")
+    nuc_accession = refseq_accession or links.get("embl_nucleotide")
     if not nuc_accession:
         return None, "no_nucleotide_xref"
+    # Only meaningful when we actually fell back to the EMBL xref -- RefSeq
+    # accessions are already classified correctly by their NM_/XM_ prefix.
+    embl_molecule_type = None if refseq_accession else links.get("embl_molecule_type")
 
     time.sleep(api_delay)
     ncbi_records = collect_ncbi.fetch_fasta_by_accession(
@@ -86,7 +95,7 @@ def build_linked_gene(uniprot_rec: dict, organism: str, api_delay: float, max_ge
         "symbol": uniprot_rec.get("symbol"),
         "organism": organism,
         "sequence": seq.upper().replace(" ", ""),
-        "sequence_type": _sequence_type_from_accession(nuc_accession),
+        "sequence_type": _sequence_type_from_accession(nuc_accession, embl_molecule_type),
         "description": uniprot_rec.get("description"),
         "traits": uniprot_rec.get("traits") or [],
         "pathways": uniprot_rec.get("pathways") or [],
@@ -110,9 +119,10 @@ def build_linked_gene_from_tf(tf_rec: dict, organism: str, api_delay: float, max
     """Meme logique que build_linked_gene, mais pour un enregistrement
     PlantTFDB. Pas de refseq_nucleotide ici (PlantTFDB n'a pas cette
     reference croisee) -- on tente de resoudre gene_id directement, car
-    c'est souvent deja un identifiant de locus (ex: AT1G01010) que
-    resolve_accession_id() sait deja traiter comme tel (voir le pattern
-    [A-Z]{1,2}\\d+[A-Z]\\d+ dans collect_ncbi.py).
+    c'est souvent deja un identifiant de locus (ex: AT1G01010, ou
+    Solyc04g007000.1 pour la tomate) que resolve_accession_id() sait
+    deja traiter comme tel (voir le pattern generalise
+    [A-Za-z]{2,}\\d+[A-Za-z]\\d+(\\.\\d+)? dans collect_ncbi.py).
     """
     gene_locus = tf_rec.get("gene_id")
     if not gene_locus:

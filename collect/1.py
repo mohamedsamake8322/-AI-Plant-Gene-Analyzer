@@ -1,7 +1,3 @@
-import sys
-sys.path.insert(0, "collect")
-sys.path.insert(0, "scripts")
-
 from collect_uniprot import fetch_uniprot
 recs = fetch_uniprot("Oryza sativa", retmax=10)
 for r in recs:
