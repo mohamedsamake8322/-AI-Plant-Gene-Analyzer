@@ -449,8 +449,13 @@ def _record_to_params(record: dict) -> dict:
 # Kept as plain data (not config.py) for the same standalone-module reason
 # documented on find_candidate_genes_by_kmer above.
 _VALID_CHARS = {
-    "dna": set("ACGTN"),
-    "rna": set("ACGUN"),
+    # T et U sont tous deux acceptes quel que soit le type declare : en
+    # pratique, les sequences "rna" de NCBI (RefSeq NM_*) sont quasi
+    # toujours stockees avec T (convention ADN/cDNA), pas U -- meme
+    # correction que celle appliquee dans build_core_dataset.py. Inclut
+    # aussi les codes IUPAC d'ambiguite standards.
+    "dna": set("ACGTURYSWKMBDHVN"),
+    "rna": set("ACGTURYSWKMBDHVN"),
     "protein": set("ACDEFGHIKLMNPQRSTVWYXBZJUO*"),
 }
 

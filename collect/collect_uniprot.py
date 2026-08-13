@@ -175,14 +175,15 @@ def _parse_entry(entry: dict, species: str) -> dict | None:
         if ref.get("database") == "Ensembl"
     ]
 
+    def _valid_refseq_nucleotide_id(nuc_id: str) -> bool:
+        return nuc_id.startswith(("NM_", "XM_", "NR_", "XR_"))
+
     # RefSeq cross-refs -- THE join key back to NCBI nucleotide records.
     # UniProt's RefSeq cross-reference "id" is the PROTEIN accession
     # (NP_/XP_...), but it carries a "NucleotideSequenceId" property that
-    # is the corresponding mRNA/nucleotide accession (NM_/XM_...) -- this
-    # is what a downstream NCBI fetch-by-accession step needs to retrieve
-    # the actual DNA/RNA sequence for THIS SAME gene, instead of collecting
-    # nucleotide and protein sequences from two unrelated, non-overlapping
-    # searches (see the whole point of this rework).
+    # is usually the corresponding transcript accession (NM_/XM_/NR_/XR_).
+    # Some plant entries still expose genomic genome references (NC_/CM_),
+    # which are too large for our per-gene pipeline and must be ignored.
     refseq_protein_ids = []
     refseq_nucleotide_ids = []
     for ref in uniProtKB_cross_refs:
@@ -191,7 +192,7 @@ def _parse_entry(entry: dict, species: str) -> dict | None:
                 refseq_protein_ids.append(ref["id"])
             props = {p["key"]: p["value"] for p in ref.get("properties", [])}
             nuc_id = props.get("NucleotideSequenceId")
-            if nuc_id:
+            if nuc_id and _valid_refseq_nucleotide_id(nuc_id):
                 refseq_nucleotide_ids.append(nuc_id)
 
     # EMBL/GenBank cross-refs -- secondary fallback join key when a gene
