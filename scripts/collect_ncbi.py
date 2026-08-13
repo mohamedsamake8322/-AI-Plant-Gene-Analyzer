@@ -26,6 +26,9 @@ NCBI_TIMEOUT = 30
 
 load_dotenv(ROOT / ".env")
 
+# Pause between NCBI requests: ~0.11s with API key (≈10 req/s), ~0.34s without (≈3 req/s)
+NCBI_SLEEP = 0.11 if os.getenv("NCBI_API_KEY") else 0.34
+
 def _efetch_fasta_batch(batch: list[str], db: str = "nucleotide", max_retries: int = 3) -> str:
     ids = ",".join(batch)
     for attempt in range(1, max_retries + 1):
@@ -332,7 +335,7 @@ def fetch_by_term(
         try:
             txt = _efetch_fasta_batch(batch, db=db, max_retries=3)
             records.extend(parse_fasta_text(txt))
-            time.sleep(0.34)
+            time.sleep(NCBI_SLEEP)
         except Exception as e:
             print(f"Batch fetch failed for {batch[:5]}: {e}. Retrying in smaller chunks.")
             for j in range(0, len(batch), 10):
@@ -340,7 +343,7 @@ def fetch_by_term(
                 try:
                     txt = _efetch_fasta_batch(small_batch, db=db, max_retries=3)
                     records.extend(parse_fasta_text(txt))
-                    time.sleep(0.34)
+                    time.sleep(NCBI_SLEEP)
                 except Exception as inner_exc:
                     print(f"  Small batch fetch failed for {small_batch[:3]}: {inner_exc}")
     return filter_records(records, plants_only=False, max_length=max_length)
