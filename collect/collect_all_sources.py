@@ -138,6 +138,7 @@ AVAILABLE_SOURCES = [
     "ensembl",
     "atlas",
     "geon",
+    "plaza",
 ]
 
 # Sources with a real, working bulk-per-species implementation as of writing.
@@ -149,7 +150,115 @@ AVAILABLE_SOURCES = [
 #   symbol, feature_id, seq_type) — a single-gene lookup, not the bulk
 #   fetch_ensembl(name, retmax) interface this pipeline expects. Would need
 #   Ensembl Plants BioMart for a real bulk implementation.
-DEFAULT_SOURCES = [s for s in AVAILABLE_SOURCES if s not in ("ensembl",)]
+# - "plaza" is excluded too, on purpose: it depends on bulk TSV files you
+#   download by hand (see collect_plaza.py docstring), and its gene IDs
+#   need to be matched against NCBI IDs by symbol, which is not guaranteed
+#   to work well for every species. Run it explicitly with --sources once
+#   the files are in place and you've spot-checked the match rate for a
+#   given crop, rather than letting it run silently in every full pipeline.
+DEFAULT_SOURCES = [s for s in AVAILABLE_SOURCES if s not in ("ensembl", "plaza")]
+
+
+def restructure_to_schema(gid: str, flat: dict) -> dict:
+    """
+    Turn one flat, source-merged gene record into the nested schema:
+    sequence / annotation / traits / relations / literature — each fact
+    carrying its OWN "source" and "retrieved_at", instead of one generic
+    top-level "source" field for the whole gene record.
+
+    Called once per gene, right before writing output in collect_species().
+    It does not change how NCBI/UniProt/KEGG/PlantTFDB/PLAZA/PubMed collect
+    data above — it only reshapes the already-merged flat dict.
+    """
+    now = datetime.utcnow().isoformat() + "Z"
+    raw_seq = flat.pop("_raw_sequences", {})
+    annotations = flat.get("annotations", {}) or {}
+    sources_seen: set[str] = set()
+
+    go_terms = []
+    for go in annotations.get("go_terms", []) or []:
+        if isinstance(go, str):
+            go_terms.append({"id": go, "term": None, "source": "uniprot", "retrieved_at": now})
+        else:
+            go_terms.append({**go, "source": go.get("source", "uniprot"), "retrieved_at": now})
+        sources_seen.add("uniprot")
+
+    kegg_pathways = []
+    for pw in flat.get("pathways", []) or []:
+        if isinstance(pw, str):
+            kegg_pathways.append({"id": pw, "name": None, "source": "kegg", "retrieved_at": now})
+        else:
+            kegg_pathways.append({**pw, "source": pw.get("source", "kegg"), "retrieved_at": now})
+        sources_seen.add("kegg")
+
+    ko_ids = annotations.get("ko_ids") or []
+    if ko_ids:
+        sources_seen.add("kegg")
+
+    tf_family = None
+    tf_value = annotations.get("tf_family") or annotations.get("family")
+    if tf_value:
+        tf_family = {"family": tf_value, "source": "planttfdb", "retrieved_at": now}
+        sources_seen.add("planttfdb")
+
+    orthologs = []
+    for o in flat.get("orthologs", []) or []:
+        o = dict(o)
+        o.setdefault("source", "plaza")
+        o.setdefault("retrieved_at", now)
+        orthologs.append(o)
+        sources_seen.add("plaza")
+
+    gene_family = flat.get("gene_family")
+    if gene_family:
+        sources_seen.add("plaza")
+
+    traits = []
+    for t in flat.get("traits", []) or []:
+        if isinstance(t, str):
+            traits.append({"trait": t, "evidence": "tf annotation", "source": "planttfdb", "retrieved_at": now})
+            sources_seen.add("planttfdb")
+        else:
+            t = dict(t)
+            t.setdefault("source", "manual")
+            t.setdefault("retrieved_at", now)
+            traits.append(t)
+            sources_seen.add(t.get("source", "manual"))
+
+    if raw_seq or flat.get("source") == "ncbi":
+        sources_seen.add("ncbi")
+
+    return {
+        "gene_id": gid,
+        "organism": flat.get("organism"),
+        "common_name": flat.get("common_name", ""),
+        "sequence": {
+            "dna": raw_seq.get("dna"),
+            "rna": raw_seq.get("rna"),
+            "protein": raw_seq.get("protein"),
+        },
+        "annotation": {
+            "go_terms": go_terms,
+            "kegg_pathways": kegg_pathways,
+            "ko_ids": ko_ids,
+            "tf_family": tf_family,
+        },
+        "traits": traits,
+        "relations": {
+            "orthologs": orthologs,
+            "gene_family": gene_family,
+        },
+        "literature": {
+            # NOTE: PubMed currently collects species-wide publications (see
+            # the PubMed block below — one pseudo-record per species, not
+            # per gene). So this stays empty per-gene unless/until a
+            # gene<->publication link is curated by hand — exactly the kind
+            # of manual, sourced entry planned for the verse/lodging trait
+            # table next.
+            "publications": flat.get("publications", []),
+        },
+        "sources_summary": sorted(sources_seen),
+    }
 
 
 def collect_species(
@@ -186,18 +295,33 @@ def collect_species(
             temp_dir = out_dir / ".tmp" / safe_name
             temp_dir.mkdir(parents=True, exist_ok=True)
 
+            ncbi_seen = 0
             for seq_type in ("dna", "rna", "protein"):
                 temp_raw   = temp_dir / f"ncbi_raw_{seq_type}.json"
                 temp_clean = temp_dir / f"ncbi_clean_{seq_type}.json"
                 recs = cmt.collect_and_clean_type(name, seq_type, retmax, temp_raw, temp_clean)
                 for r in recs:
                     gid = r.get("gene_id") or r.get("symbol")
-                    if gid and gid not in all_records:
-                        all_records[gid] = r
+                    if not gid:
+                        continue
+                    # BUGFIX: this used to be `if gid not in all_records:
+                    # all_records[gid] = r`, which only kept the FIRST
+                    # sequence_type seen for a given gene_id — since the loop
+                    # runs dna -> rna -> protein in that order, a gene's rna
+                    # and protein sequences were silently dropped whenever its
+                    # dna record had already claimed that gene_id. We now
+                    # accumulate all three under one entry per gene, stashed
+                    # in _raw_sequences (consumed by restructure_to_schema()
+                    # below, which turns it into sequence.dna/rna/protein).
+                    entry = all_records.setdefault(gid, {
+                        "gene_id": gid,
+                        "organism": r.get("organism", name),
+                        "source": r.get("source", "ncbi"),
+                    })
+                    entry.setdefault("_raw_sequences", {})[seq_type] = r.get("sequence")
+                    ncbi_seen += 1
 
-            source_counts["ncbi"] = sum(
-                1 for r in all_records.values() if r.get("source") in (None, "collected", "ncbi")
-            )
+            source_counts["ncbi"] = ncbi_seen
         except Exception as e:
             errors.append(f"ncbi: {e}")
 
@@ -259,6 +383,38 @@ def collect_species(
         except Exception as e:
             errors.append(f"planttfdb: {e}")
 
+    # ── PLAZA (orthologs / gene families — enrichment only, no new genes) ─────
+    if "plaza" in sources:
+        try:
+            cp = import_local_collect_module("collect_plaza")
+            recs = cp.fetch_plaza(name, retmax=retmax)
+
+            def _norm(s: str) -> str:
+                return "".join(ch for ch in (s or "").lower() if ch.isalnum())
+
+            norm_index = {_norm(gid): gid for gid in all_records}
+            matched = 0
+            for r in recs:
+                target = norm_index.get(_norm(r.get("gene_id", "")))
+                if target:
+                    existing = all_records[target]
+                    existing.setdefault("orthologs", []).extend(r.get("orthologs", []))
+                    if r.get("gene_family"):
+                        existing["gene_family"] = r["gene_family"]
+                    matched += 1
+            source_counts["plaza"] = matched
+            if recs and matched == 0:
+                # Loud failure on purpose: 0 matches almost always means an
+                # ID-namespace mismatch for this species, not "no orthologs
+                # exist". Silently reporting 0 would hide that.
+                errors.append(
+                    f"plaza: 0/{len(recs)} PLAZA records matched an existing "
+                    f"gene_id for {name} — check symbol/locus matching "
+                    f"before trusting this source for this species"
+                )
+        except Exception as e:
+            errors.append(f"plaza: {e}")
+
     # ── ENSEMBL ──────────────────────────────────────────────────────────────
     if "ensembl" in sources:
         try:
@@ -316,7 +472,9 @@ def collect_species(
         except Exception as e:
             errors.append(f"pubmed: {e}")
 
-    # ── Write output ──────────────────────────────────────────────────────────
+    # ── Restructure + write output ──────────────────────────────────────────
+    nested_genes = [restructure_to_schema(gid, rec) for gid, rec in all_records.items()]
+
     out_data = {
         "metadata": {
             "generated_at": datetime.utcnow().isoformat() + "Z",
@@ -325,10 +483,10 @@ def collect_species(
             "category": plant.get("category", ""),
             "sources": sources,
             "source_counts": source_counts,
-            "count": len(all_records),
+            "count": len(nested_genes),
             "errors": errors,
         },
-        "genes": list(all_records.values()),
+        "genes": nested_genes,
     }
     out_file.write_text(json.dumps(out_data, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -380,10 +538,18 @@ def merge_all_species(species_files: list[Path], out_file: Path) -> int:
                     tmpf.write("\n")
                     total += 1
                     organisms.add(org)
-                    st = gene.get("sequence_type", "unknown")
-                    seq_type_counts[st] = seq_type_counts.get(st, 0) + 1
-                    src = gene.get("source", "unknown")
-                    source_counts[src] = source_counts.get(src, 0) + 1
+                    # Schema changed from flat "sequence_type"/"source" fields
+                    # to a nested sequence{} dict and a sources_summary[] list
+                    # (see restructure_to_schema in collect_all_sources.py).
+                    # A gene can count toward more than one sequence type and
+                    # more than one source now, which is intentional — these
+                    # stats describe coverage, not a strict partition.
+                    seq = gene.get("sequence", {}) or {}
+                    for st in ("dna", "rna", "protein"):
+                        if seq.get(st):
+                            seq_type_counts[st] = seq_type_counts.get(st, 0) + 1
+                    for src in (gene.get("sources_summary") or ["unknown"]):
+                        source_counts[src] = source_counts.get(src, 0) + 1
             except Exception as e:
                 print(f"  [merge] Error reading {sp_file}: {e}")
 
