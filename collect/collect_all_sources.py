@@ -462,18 +462,19 @@ def collect_species(
                 return "".join(ch for ch in (s or "").lower() if ch.isalnum())
 
             # Strategy 1 (preferred): match via UniProt accession, using
-            # PLAZA's id_conversion crosswalk. This assumes UniProt-sourced
-            # records in all_records expose their accession under one of
-            # these field names — VERIFY against your actual
-            # collect_uniprot.py output and adjust this list if needed.
-            UNIPROT_FIELD_CANDIDATES = ("uniprot_id", "uniprot_accession", "accession")
+            # PLAZA's id_conversion crosswalk. VERIFIED against real
+            # collect_uniprot.py output: UniProt-sourced records don't have
+            # a top-level "uniprot_id"/"accession" field -- their accession
+            # IS their gene_id (all_records key) directly, and is also
+            # duplicated (nested) under external_links.accession. Both are
+            # indexed here; a record's own key is the reliable one.
             uniprot_index: dict[str, str] = {}
             for gid, rec in all_records.items():
-                for field in UNIPROT_FIELD_CANDIDATES:
-                    val = rec.get(field)
-                    if val:
-                        uniprot_index[val] = gid
-                        break
+                # A UniProt-sourced record is keyed by its own accession.
+                uniprot_index[gid] = gid
+                nested = (rec.get("external_links") or {}).get("accession")
+                if nested:
+                    uniprot_index[nested] = gid
 
             # Strategy 2 (fallback): normalized gene symbol match.
             norm_index = {_norm(gid): gid for gid in all_records}
