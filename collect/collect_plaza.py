@@ -217,15 +217,21 @@ def _load_mapman(path: Path) -> dict[str, list[dict]]:
     return table
 
 
-def fetch_plaza(species_name: str, retmax: int = 300) -> list[dict]:
+def fetch_plaza(species_name: str, retmax: int | None = 300) -> list[dict]:
     """
     Same calling convention as fetch_uniprot / fetch_kegg / fetch_planttfdb:
     called as cp.fetch_plaza(name, retmax=retmax) from collect_species().
 
+    retmax=None or 0 means NO CAP -- return every gene PLAZA has for this
+    species (tens of thousands for a well-covered species). Safe to do
+    because, unlike NCBI/UniProt/KEGG, PLAZA data comes from local files
+    already on disk -- no rate limit or per-request network cost, just
+    parse time. Pass a real number to cap it for a quick test run.
+
     Returns a list of:
         {"gene_id", "organism", "homologous_family_id",
          "orthologous_family_id", "orthologs": [...],
-         "uniprot_id": <for matching>, "mapman": [...],
+         "uniprot_id": <for matching>, "mapman": [...], "description",
          "source": "plaza"}
 
     Orthologs are derived from ORTHOFAM co-membership (other genes sharing
@@ -261,8 +267,10 @@ def fetch_plaza(species_name: str, retmax: int = 300) -> list[dict]:
             if sp.strip().lower() == key or key in sp.strip().lower():
                 species_genes.add(gid)
 
+    gene_id_list = list(species_genes) if not retmax else list(species_genes)[:retmax]
+
     records: list[dict] = []
-    for gid in list(species_genes)[:retmax]:
+    for gid in gene_id_list:
         ortho_fam = ortho_gene_to_fam.get(gid, "")
         orthologs = []
         if ortho_fam:
