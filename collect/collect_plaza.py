@@ -88,9 +88,25 @@ SPECIES_CODES = {
 }
 
 FAMILY_FILES = {
-    "hom": PLAZA_DIR / "dicots_HOMFAM.csv",
-    "ortho": PLAZA_DIR / "dicots_ORTHOFAM.csv",
+    # Each entry lists candidate filenames, checked in order -- covers both
+    # the renamed convention (dicots_HOMFAM.csv) and PLAZA's raw download
+    # name (genefamily_data.HOMFAM.csv), since it's easy to leave files
+    # exactly as downloaded and this shouldn't require a manual rename step.
+    "hom": ["dicots_HOMFAM.csv", "genefamily_data.HOMFAM.csv"],
+    "ortho": ["dicots_ORTHOFAM.csv", "genefamily_data.ORTHOFAM.csv"],
 }
+
+
+def _resolve_existing(candidates: list[str]) -> Path:
+    """Returns the first candidate filename (under PLAZA_DIR) that actually
+    exists on disk, or the first candidate (even if missing) as a fallback
+    -- callers already handle a missing file gracefully (empty dict), so
+    this never raises."""
+    for name in candidates:
+        p = PLAZA_DIR / name
+        if p.exists():
+            return p
+    return PLAZA_DIR / candidates[0]
 
 
 def _iter_plaza_rows(path: Path):
@@ -226,11 +242,11 @@ def fetch_plaza(species_name: str, retmax: int = 300) -> list[dict]:
     if code is None:
         return []
 
-    hom_gene_to_fam, _ = _load_family_file(FAMILY_FILES["hom"])
-    ortho_gene_to_fam, ortho_fam_to_members = _load_family_file(FAMILY_FILES["ortho"])
-    uniprot_map = _load_id_conversion(PLAZA_DIR / f"id_conversion_{code}.csv")
-    mapman_map = _load_mapman(PLAZA_DIR / f"mapman_{code}.csv")
-    description_map = _load_gene_description(PLAZA_DIR / f"gene_description_{code}.csv")
+    hom_gene_to_fam, _ = _load_family_file(_resolve_existing(FAMILY_FILES["hom"]))
+    ortho_gene_to_fam, ortho_fam_to_members = _load_family_file(_resolve_existing(FAMILY_FILES["ortho"]))
+    uniprot_map = _load_id_conversion(_resolve_existing([f"id_conversion_{code}.csv", f"id_conversion.{code}.csv"]))
+    mapman_map = _load_mapman(_resolve_existing([f"mapman_{code}.csv", f"mapman.{code}.csv"]))
+    description_map = _load_gene_description(_resolve_existing([f"gene_description_{code}.csv", f"gene_description.{code}.csv"]))
 
     if not hom_gene_to_fam and not ortho_gene_to_fam and not uniprot_map and not description_map:
         return []
