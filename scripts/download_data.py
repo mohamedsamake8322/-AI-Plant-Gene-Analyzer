@@ -67,19 +67,24 @@ def collect_atlas(term: str | None, gene: str | None, species: str, size: int) -
     return records
 
 
-def collect_ncbi(accessions: list[str] | None, term: str | None, db: str, retmax: int, organism: str | None, plants_only: bool, max_length: int | None, mrna_only: bool) -> list[dict]:
-    fasta_records: list[tuple[str, str]] = []
+def collect_ncbi_records(accessions: list[str] | None, term: str | None, db: str, retmax: int, organism: str | None, plants_only: bool, max_length: int | None, mrna_only: bool) -> list[dict]:
+    # Same fix as scripts/collect_plant_data.py's collect_ncbi_data(): 
+    # fetch_by_term() now returns (header, seq, resolved_gene_id) triples
+    # instead of (header, seq) pairs -- resolved_gene_id is the shared
+    # Entrez GeneID across a gene's DNA/mRNA/protein records (see
+    # collect_ncbi.py). Normalize fetch_fasta_by_accession()'s pairs to the
+    # same triple shape so the list comp below doesn't break on the mix.
+    fasta_records: list[tuple[str, str, str | None]] = []
     if accessions:
         for accession in accessions:
-            fasta_records.extend(
-                collect_ncbi.fetch_fasta_by_accession(
-                    accession,
-                    db=db,
-                    plants_only=plants_only,
-                    organism=organism,
-                    max_length=max_length,
-                )
+            pairs = collect_ncbi.fetch_fasta_by_accession(
+                accession,
+                db=db,
+                plants_only=plants_only,
+                organism=organism,
+                max_length=max_length,
             )
+            fasta_records.extend((h, s, None) for h, s in pairs)
             time.sleep(0.34)
     if term:
         fasta_records.extend(
@@ -93,7 +98,10 @@ def collect_ncbi(accessions: list[str] | None, term: str | None, db: str, retmax
                 mrna_only=mrna_only,
             )
         )
-    return [collect_ncbi.make_record_from_fasta(header, seq, db=db) for header, seq in fasta_records]
+    return [
+        collect_ncbi.make_record_from_fasta(header, seq, db=db, resolved_gene_id=resolved_gene_id)
+        for header, seq, resolved_gene_id in fasta_records
+    ]
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -159,7 +167,7 @@ def main(argv: list[str] | None = None) -> None:
         print(f"Expression Atlas: {len(atlas_records)} records")
 
     if "ncbi" in sources:
-        ncbi_records = collect_ncbi(args.ncbi_accession, args.ncbi_term, args.ncbi_db, retmax, args.organism, args.plants_only, max_length, args.mrna_only)
+        ncbi_records = collect_ncbi_records(args.ncbi_accession, args.ncbi_term, args.ncbi_db, retmax, args.organism, args.plants_only, max_length, args.mrna_only)
         collected["ncbi"] = ncbi_records
         print(f"NCBI: {len(ncbi_records)} records")
 

@@ -144,26 +144,36 @@ def _load_family_file(path: Path) -> tuple[dict[str, str], dict[str, list[tuple[
     return gene_to_family, family_to_members
 
 
-def _load_id_conversion(path: Path) -> dict[str, str]:
+def _load_id_type_map(path: Path, id_type: str) -> dict[str, str]:
     """
-    Reads a PLAZA id_conversion file. Format confirmed from a real
-    download:
-        #gene_id    id_type    id
-        AUR62000001    id    AUR62000001.v1.0
-        AUR62000001    pacid    36298417
-        AUR62000001    uniprot    A0A803KLU5
+    Reads a PLAZA per-species "#gene_id / id_type / id" file. This format
+    is shared by id_conversion.<code>.csv (id_type in {id, pacid,
+    uniprot, ...}) and gene_description.<code>.csv (id_type ==
+    "description") -- same structure, different content, so one loader
+    covers both.
 
-    Returns {gene_id: uniprot_accession} — only rows where id_type ==
-    "uniprot", since that's the crosswalk we need for reliable matching.
+    Returns {gene_id: value} for rows matching the requested id_type.
     """
     table: dict[str, str] = {}
     for row in _iter_plaza_rows(path):
-        if row.get("id_type") == "uniprot":
+        if row.get("id_type") == id_type:
             gid = row.get("gene_id") or ""
-            uid = row.get("id") or ""
-            if gid and uid:
-                table[gid] = uid
+            val = row.get("id") or ""
+            if gid and val:
+                table[gid] = val
     return table
+
+
+def _load_id_conversion(path: Path) -> dict[str, str]:
+    """{gene_id: uniprot_accession} -- see _load_id_type_map."""
+    return _load_id_type_map(path, "uniprot")
+
+
+def _load_gene_description(path: Path) -> dict[str, str]:
+    """{gene_id: human-readable description}, e.g. "CALS9: Callose
+    synthase 9" -- a useful signal (alongside MapMan) for shortlisting
+    trait candidates by eye, same caveat as MapMan: signal, not evidence."""
+    return _load_id_type_map(path, "description")
 
 
 def _load_mapman(path: Path) -> dict[str, list[dict]]:
@@ -220,15 +230,16 @@ def fetch_plaza(species_name: str, retmax: int = 300) -> list[dict]:
     ortho_gene_to_fam, ortho_fam_to_members = _load_family_file(FAMILY_FILES["ortho"])
     uniprot_map = _load_id_conversion(PLAZA_DIR / f"id_conversion_{code}.csv")
     mapman_map = _load_mapman(PLAZA_DIR / f"mapman_{code}.csv")
+    description_map = _load_gene_description(PLAZA_DIR / f"gene_description_{code}.csv")
 
-    if not hom_gene_to_fam and not ortho_gene_to_fam and not uniprot_map:
+    if not hom_gene_to_fam and not ortho_gene_to_fam and not uniprot_map and not description_map:
         return []
 
     # Genes belonging to this species = those tagged with it in the
     # ORTHOFAM membership list, PLUS any gene only known through
     # id_conversion/mapman (covers the case where family files aren't
     # downloaded yet but the per-species files are).
-    species_genes: set[str] = set(uniprot_map) | set(mapman_map)
+    species_genes: set[str] = set(uniprot_map) | set(mapman_map) | set(description_map)
     for members in ortho_fam_to_members.values():
         for gid, sp in members:
             if sp.strip().lower() == key or key in sp.strip().lower():
@@ -258,6 +269,7 @@ def fetch_plaza(species_name: str, retmax: int = 300) -> list[dict]:
             "orthologs": orthologs,
             "uniprot_id": uniprot_map.get(gid, ""),
             "mapman": mapman_map.get(gid, []),
+            "description": description_map.get(gid, ""),
             "source": "plaza",
         })
 
