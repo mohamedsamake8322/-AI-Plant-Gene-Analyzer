@@ -498,6 +498,8 @@ def collect_species(
                         existing["homologous_family_id"] = r["homologous_family_id"]
                     if r.get("mapman"):
                         existing.setdefault("mapman", []).extend(r["mapman"])
+                    if r.get("description") and not existing.get("common_name"):
+                        existing["common_name"] = r["description"]
                     matched += 1
             source_counts["plaza"] = matched
             source_counts["plaza_via_uniprot"] = matched_via_uniprot
