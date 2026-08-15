@@ -336,6 +336,7 @@ def collect_species(
     retmax: int,
     out_dir: Path,
     skip_existing: bool = True,
+    reviewed_only: bool = False,
 ) -> dict:
     """
     Collect all data for one species from all requested sources.
@@ -398,7 +399,7 @@ def collect_species(
     if "uniprot" in sources:
         try:
             cu = import_local_collect_module("collect_uniprot")
-            recs = cu.fetch_uniprot(name, retmax=retmax)
+            recs = cu.fetch_uniprot(name, retmax=retmax, reviewed_only=reviewed_only)
             before = len(all_records)
             for r in recs:
                 gid = r.get("gene_id")
@@ -724,6 +725,14 @@ def main(argv: list[str] | None = None) -> None:
 
     # Collection parameters
     parser.add_argument("--retmax", type=int, default=300, help="Max records per source per species")
+    parser.add_argument(
+        "--reviewed-only", action="store_true",
+        help="UniProt: only fetch reviewed (Swiss-Prot) entries. Fewer "
+             "records, but much better curated -- more likely to have "
+             "cross-references (PLAZA, GO, KEGG) that actually match, "
+             "since curation tends to cluster on the same well-studied "
+             "genes across databases."
+    )
     parser.add_argument("--workers", type=int, default=4, help="Number of parallel processes (default: 4)")
     parser.add_argument("--skip-existing", action="store_true", default=True,
                         help="Skip species already collected (default: True)")
@@ -819,7 +828,7 @@ def main(argv: list[str] | None = None) -> None:
         # Sequential (safer for debugging)
         for plant in plants:
             print(f"\n🌱 [{plant['name']}] Starting collection...")
-            result = collect_species(plant, sources, args.retmax, out_dir, skip_existing)
+            result = collect_species(plant, sources, args.retmax, out_dir, skip_existing, args.reviewed_only)
             results.append(result)
             _print_result(result)
     else:
@@ -829,7 +838,7 @@ def main(argv: list[str] | None = None) -> None:
 
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures = {
-                executor.submit(collect_species, plant, sources, args.retmax, out_dir, skip_existing): plant
+                executor.submit(collect_species, plant, sources, args.retmax, out_dir, skip_existing, args.reviewed_only): plant
                 for plant in plants
             }
             for future in as_completed(futures):
