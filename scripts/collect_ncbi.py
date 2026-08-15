@@ -13,6 +13,7 @@ import re
 import urllib.error
 from dotenv import load_dotenv
 from Bio import Entrez
+import logging
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = ROOT / "genes_database.json"
@@ -58,6 +59,14 @@ def _efetch_fasta_batch(batch: list[str], db: str = "nucleotide", max_retries: i
             raise
 Entrez.email = os.getenv("NCBI_EMAIL")
 Entrez.api_key = os.getenv("NCBI_API_KEY")
+
+# Log presence of API key (helps confirm worker processes see the key)
+logger = logging.getLogger("collect_ncbi")
+try:
+    logger.info("NCBI API key %s", "present" if Entrez.api_key else "missing")
+except Exception:
+    # Logging may not be configured yet in some import contexts; ignore
+    pass
 
 if not Entrez.email:
     print("Warning: NCBI_EMAIL not set in .env, please set it to a contact email.")
@@ -158,6 +167,55 @@ def _fetch_sequence_length(id_or_acc: str, db: str = "nucleotide") -> int | None
     return None
 
 
+def _prefilter_batch_by_length(batch: list[str], db: str, max_length: int | None) -> list[str]:
+    """
+    Same idea as _fetch_sequence_length, but for a whole batch of UIDs at
+    once via a single esummary call (esummary accepts comma-separated ids
+    just like efetch) -- so pre-checking a batch of 50 costs 1 lightweight
+    request, not 50.
+
+    This is the fix for the SLOW PATH: fetch_by_term() used to efetch full
+    FASTA for every id in a batch, THEN discard oversized records via
+    filter_records() -- meaning whole chromosomes (tens of millions of bp,
+    observed up to ~19.7M bp in practice) were fully downloaded over the
+    network just to be thrown away, which is what caused the
+    "incomplete read... retrying" warnings and multi-minute batches.
+    fetch_fasta_by_accession() already had this pre-check for the
+    single-accession path; this ports the same optimization to the
+    search-term path, which is what the automated pipeline actually uses.
+
+    Returns the subset of `batch` that's safe to efetch. On any failure
+    (esummary itself errors), returns `batch` unchanged so the pipeline
+    falls back to its previous (slower but working) behavior instead of
+    silently dropping records.
+    """
+    if max_length is None or not batch:
+        return batch
+    try:
+        handle = Entrez.esummary(db=db, id=",".join(batch), timeout=NCBI_TIMEOUT)
+        res = Entrez.read(handle)
+        handle.close()
+    except Exception:
+        return batch  # fail open: let the normal fetch+filter path handle it
+
+    # esummary returns results in the same order as the requested ids for
+    # nucleotide/protein (documented NCBI behavior for this endpoint).
+    if len(res) != len(batch):
+        return batch  # order/count mismatch -- don't risk misattributing sizes
+
+    kept = []
+    for uid, summary in zip(batch, res):
+        length = summary.get("Length")
+        if length is not None and int(length) > max_length:
+            print(
+                f"Skipped {uid}: length {int(length):,} > max {max_length:,} "
+                "(likely chromosome/genome, not a gene) -- skipped before download."
+            )
+            continue
+        kept.append(uid)
+    return kept
+
+
 def parse_organism_from_header(header: str) -> str | None:
     # Typical NCBI FASTA: "<acc> <Organism name> ..."
     tokens = header.split(maxsplit=1)
@@ -191,11 +249,69 @@ def parse_fasta_text(txt: str):
     return records
 
 
-def make_record_from_fasta(header: str, seq: str, db: str = "nucleotide") -> dict:
-    gene_id = header.split()[0]
-    symbol = gene_id
+def _resolve_gene_ids_batch(batch: list[str], db: str) -> dict[str, str]:
+    """
+    Resolves a batch of nucleotide/protein UIDs to their shared Entrez
+    GeneID via elink, in one request.
+
+    WHY THIS EXISTS: make_record_from_fasta() used to set gene_id from the
+    FASTA header's first token, which is the record's own accession (e.g.
+    "PX508357.1"). NCBI gives DNA, mRNA, and protein records of the SAME
+    biological gene each their OWN, DIFFERENT accession -- so that gene_id
+    could never match across sequence types, and DNA/RNA/protein for one
+    gene ended up as 3 separate, un-mergeable records (confirmed on a real
+    Zea mays run: 49 fetched, only 48 unique gene_ids -- essentially no
+    merging happened). The Entrez GeneID, by contrast, IS shared across a
+    gene's DNA/mRNA/protein records, which is exactly what's needed.
+
+    Returns {uid: entrez_gene_id}. UIDs with no resolvable gene link are
+    simply absent from the dict (not an error) -- the caller falls back to
+    the accession for those, same graceful-degradation pattern used
+    elsewhere in this pipeline (e.g. PLAZA's 0-match warning).
+    """
+    if not batch:
+        return {}
+    try:
+        handle = Entrez.elink(dbfrom=db, db="gene", id=batch, timeout=NCBI_TIMEOUT)
+        linksets = Entrez.read(handle)
+        handle.close()
+    except Exception as e:
+        print(f"Warning: gene ID resolution (elink) failed for batch, "
+              f"falling back to accessions: {e}")
+        return {}
+
+    resolved: dict[str, str] = {}
+    # elink's response has one LinkSet per input UID when ids are passed as
+    # a list (not a comma-joined string) -- each LinkSet carries its
+    # source UID back in IdList, so we can correlate without relying on
+    # response order matching input order.
+    for linkset in linksets:
+        source_uids = linkset.get("IdList", [])
+        gene_ids = []
+        for linksetdb in linkset.get("LinkSetDb", []):
+            gene_ids.extend(link["Id"] for link in linksetdb.get("Link", []))
+        if source_uids and gene_ids:
+            resolved[source_uids[0]] = gene_ids[0]
+    return resolved
+
+
+def make_record_from_fasta(
+    header: str,
+    seq: str,
+    db: str = "nucleotide",
+    resolved_gene_id: str | None = None,
+) -> dict:
+    accession = header.split()[0]
+    # Use the shared Entrez GeneID when we have one (see
+    # _resolve_gene_ids_batch), so DNA/mRNA/protein of the same gene end up
+    # under the same gene_id and can actually merge downstream. Falls back
+    # to the accession -- old behavior -- when resolution wasn't available,
+    # so nothing breaks for callers that don't pass resolved_gene_id.
+    gene_id = f"GeneID:{resolved_gene_id}" if resolved_gene_id else accession
+    symbol = accession
     rec = {
         "gene_id": gene_id,
+        "accession": accession,
         "symbol": symbol,
         "organism": parse_organism_from_header(header),
         "traits": [],
@@ -207,7 +323,7 @@ def make_record_from_fasta(header: str, seq: str, db: str = "nucleotide") -> dic
         "pathways": [],
         "publications": [],
         "source": "NCBI",
-        "source_url": f"https://www.ncbi.nlm.nih.gov/nuccore/{gene_id.split('.')[0]}",
+        "source_url": f"https://www.ncbi.nlm.nih.gov/nuccore/{accession.split('.')[0]}",
     }
     return rec
 
@@ -313,6 +429,21 @@ def fetch_by_term(
     max_length: int | None = DEFAULT_MAX_LENGTH,
     mrna_only: bool = False,
 ) -> list:
+    """
+    Returns a list of (header, seq, resolved_gene_id) triples -- NOTE the
+    3rd element is new (previously this returned (header, seq) pairs).
+    resolved_gene_id is the shared Entrez GeneID for that record (see
+    _resolve_gene_ids_batch), or None if it couldn't be resolved -- callers
+    should pass it to make_record_from_fasta(..., resolved_gene_id=...) so
+    DNA/mRNA/protein of the same gene end up under the same gene_id.
+
+    ⚠ BREAKING CHANGE for any OTHER script that calls fetch_by_term()
+    directly and unpacks 2-tuples (e.g. `for h, s in fetch_by_term(...)`) --
+    grep your codebase for `fetch_by_term` outside this file (in particular
+    collect_plant_data.py / run_pipeline.py) and update those call sites to
+    unpack 3 values. main() and add_records_to_db() in this file are
+    already updated below.
+    """
     scoped_term = term
     if mrna_only:
         scoped_term = f"({term}) AND biomol_mrna[prop]"
@@ -326,18 +457,32 @@ def fetch_by_term(
     except Exception as e:
         print(f"Search failed: {e}")
         return []
-    records = []
     if not ids:
         print(f"No results for: {query}")
         return []
+
+    triples: list[tuple[str, str, str | None]] = []
     for i in range(0, len(ids), 50):
         batch = ids[i : i + 50]
+
+        # SPEED FIX: pre-check sizes for the whole batch in 1 esummary call
+        # and drop oversized UIDs (whole chromosomes, etc.) BEFORE efetch,
+        # instead of downloading full FASTA and discarding it afterward.
+        batch = _prefilter_batch_by_length(batch, db=db, max_length=max_length)
+        if not batch:
+            continue
+
+        # GENE_ID FIX: resolve this batch's shared Entrez GeneIDs up front,
+        # correlated by source UID (not by list position/order).
+        gene_id_map = _resolve_gene_ids_batch(batch, db=db)
+
         try:
             txt = _efetch_fasta_batch(batch, db=db, max_retries=3)
-            records.extend(parse_fasta_text(txt))
+            records = parse_fasta_text(txt)
             time.sleep(NCBI_SLEEP)
         except Exception as e:
             print(f"Batch fetch failed for {batch[:5]}: {e}. Retrying in smaller chunks.")
+            records = []
             for j in range(0, len(batch), 10):
                 small_batch = batch[j : j + 10]
                 try:
@@ -346,7 +491,31 @@ def fetch_by_term(
                     time.sleep(NCBI_SLEEP)
                 except Exception as inner_exc:
                     print(f"  Small batch fetch failed for {small_batch[:3]}: {inner_exc}")
-    return filter_records(records, plants_only=False, max_length=max_length)
+
+        # Correlate each parsed FASTA record back to its resolved GeneID via
+        # accession (records are returned by efetch in request order for
+        # this endpoint, and the accession is each record's own header
+        # token -- matching on that, rather than raw list position, avoids
+        # silently mis-attributing a GeneID if a UID yielded 0 or >1
+        # FASTA records).
+        uid_by_accession: dict[str, str] = {}
+        for header, _ in records:
+            acc = header.split()[0]
+            versionless = acc.split(".", 1)[0]
+            for uid in batch:
+                if uid == acc or uid == versionless:
+                    uid_by_accession[acc] = uid
+        for header, seq in records:
+            acc = header.split()[0]
+            uid = uid_by_accession.get(acc)
+            resolved = gene_id_map.get(uid) if uid else None
+            triples.append((header, seq, resolved))
+
+    kept_pairs = filter_records(
+        [(h, s) for h, s, _ in triples], plants_only=False, max_length=max_length
+    )
+    kept_headers = {h for h, _ in kept_pairs}
+    return [(h, s, g) for h, s, g in triples if h in kept_headers]
 
 
 def add_records_to_db(records: list, db_path: Path = DEFAULT_DB, db: str = "nucleotide") -> None:
@@ -356,8 +525,16 @@ def add_records_to_db(records: list, db_path: Path = DEFAULT_DB, db: str = "nucl
     except Exception as e:
         print("Could not import validator script: ", e)
         return
-    for header, seq in records:
-        rec = make_record_from_fasta(header, seq, db=db)
+    for item in records:
+        # Accept both the new (header, seq, resolved_gene_id) triples from
+        # fetch_by_term() and plain (header, seq) pairs (e.g. from
+        # fetch_fasta_by_accession(), which doesn't do gene ID resolution).
+        if len(item) == 3:
+            header, seq, resolved_gene_id = item
+        else:
+            header, seq = item
+            resolved_gene_id = None
+        rec = make_record_from_fasta(header, seq, db=db, resolved_gene_id=resolved_gene_id)
         ok, msg = validator.add_record_to_db(rec, db_path)
         print(f"{rec.get('gene_id')}: {msg}")
         time.sleep(0.2)
@@ -419,7 +596,11 @@ def main(argv):
             )
             if not recs:
                 print(f"No records for accession {acc}")
-            all_records.extend(recs)
+            # fetch_fasta_by_accession() still returns (header, seq) pairs
+            # (no gene ID resolution there) -- normalize to the same
+            # (header, seq, resolved_gene_id) triple shape fetch_by_term()
+            # now returns, so all_records is uniform below.
+            all_records.extend((h, s, None) for h, s in recs)
             time.sleep(0.2)
 
     if args.term:
@@ -439,7 +620,9 @@ def main(argv):
         return
 
     if args.out:
-        Path(args.out).write_text("\n\n".join(">" + h + "\n" + s for h, s in all_records), encoding="utf-8")
+        Path(args.out).write_text(
+            "\n\n".join(">" + h + "\n" + s for h, s, _ in all_records), encoding="utf-8"
+        )
         print(f"Wrote {len(all_records)} records to {args.out}")
 
     if args.add:

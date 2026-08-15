@@ -93,19 +93,25 @@ def collect_atlas_data(term: str | None, gene: str | None, species: str, size: i
 
 
 def collect_ncbi_data(accessions: list[str] | None, term: str | None, db: str, retmax: int, organism: str | None, plants_only: bool, max_length: int | None, mrna_only: bool) -> list[dict]:
-    fasta_records: list[tuple[str, str]] = []
+    # fetch_fasta_by_accession() returns (header, seq) pairs.
+    # fetch_by_term() now returns (header, seq, resolved_gene_id) triples
+    # (see collect_ncbi.py -- resolved_gene_id is the shared Entrez GeneID
+    # across a gene's DNA/mRNA/protein records, used so those can actually
+    # merge downstream instead of each getting a different accession as
+    # gene_id). Normalize everything to triples here so the list comp below
+    # doesn't break on the mix.
+    fasta_records: list[tuple[str, str, str | None]] = []
     if accessions:
         for accession in accessions:
             try:
-                fasta_records.extend(
-                    collect_ncbi.fetch_fasta_by_accession(
-                        accession,
-                        db=db,
-                        plants_only=plants_only,
-                        organism=organism,
-                        max_length=max_length,
-                    )
+                pairs = collect_ncbi.fetch_fasta_by_accession(
+                    accession,
+                    db=db,
+                    plants_only=plants_only,
+                    organism=organism,
+                    max_length=max_length,
                 )
+                fasta_records.extend((h, s, None) for h, s in pairs)
             except Exception as exc:
                 logger.warning("NCBI fetch failed for accession %s: %s", accession, exc)
             time.sleep(NCBI_SLEEP)
@@ -124,7 +130,10 @@ def collect_ncbi_data(accessions: list[str] | None, term: str | None, db: str, r
             )
         except Exception as exc:
             logger.warning("NCBI search failed for term %r: %s", term, exc)
-    return [collect_ncbi.make_record_from_fasta(header, seq, db=db) for header, seq in fasta_records]
+    return [
+        collect_ncbi.make_record_from_fasta(header, seq, db=db, resolved_gene_id=resolved_gene_id)
+        for header, seq, resolved_gene_id in fasta_records
+    ]
 
 
 def merge_metadata(dbpath: Path, gene_key: str, geo_records: list[dict], atlas_records: list[dict]) -> None:
