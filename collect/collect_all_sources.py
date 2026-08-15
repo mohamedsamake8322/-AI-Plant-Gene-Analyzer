@@ -16,6 +16,7 @@ Usage (custom list):
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import sys
@@ -159,6 +160,44 @@ AVAILABLE_SOURCES = [
 DEFAULT_SOURCES = [s for s in AVAILABLE_SOURCES if s not in ("ensembl", "plaza")]
 
 
+def _sequence_hash(seq: str | None) -> str | None:
+    """SHA256 (truncated) of a sequence, for cross-source dedup — same idea
+    as professional_schema.py's _compute_sequence_hash, kept here so we
+    don't run two competing schemas in parallel."""
+    if not seq:
+        return None
+    return "sha256:" + hashlib.sha256(seq.upper().encode()).hexdigest()[:16]
+
+
+def _gc_content(dna_seq: str | None) -> float | None:
+    """GC% of a DNA sequence. None if no DNA sequence is available."""
+    if not dna_seq:
+        return None
+    seq = dna_seq.upper()
+    if not seq:
+        return None
+    gc = seq.count("G") + seq.count("C")
+    return round(gc / len(seq), 4)
+
+
+def _completeness_score(nested: dict) -> float:
+    """
+    0-1 score of how filled-in a gene record is, used to prioritize which
+    candidates are worth curating by hand first (e.g. for the verse/quinoa
+    trait table) — same intent as professional_schema.py's
+    _calculate_completeness, adapted to the nested schema's actual field
+    names instead of the old flat ones (gene["sequence"], gene["organism"]).
+    """
+    checks = [
+        bool(nested["sequence"].get("dna") or nested["sequence"].get("protein")),
+        bool(nested["organism"]),
+        bool(nested["annotation"].get("go_terms")),
+        bool(nested["relations"].get("orthologs")),
+        bool(nested["traits"]),
+    ]
+    return round(sum(checks) / len(checks), 2)
+
+
 def restructure_to_schema(gid: str, flat: dict) -> dict:
     """
     Turn one flat, source-merged gene record into the nested schema:
@@ -209,8 +248,18 @@ def restructure_to_schema(gid: str, flat: dict) -> dict:
         orthologs.append(o)
         sources_seen.add("plaza")
 
-    gene_family = flat.get("gene_family")
-    if gene_family:
+    orthologous_family_id = flat.get("orthologous_family_id")
+    homologous_family_id = flat.get("homologous_family_id")
+    if orthologous_family_id or homologous_family_id:
+        sources_seen.add("plaza")
+
+    mapman_bins = []
+    for m in flat.get("mapman", []) or []:
+        m = dict(m)
+        m.setdefault("source", "plaza")
+        m.setdefault("retrieved_at", now)
+        mapman_bins.append(m)
+    if mapman_bins:
         sources_seen.add("plaza")
 
     traits = []
@@ -228,7 +277,7 @@ def restructure_to_schema(gid: str, flat: dict) -> dict:
     if raw_seq or flat.get("source") == "ncbi":
         sources_seen.add("ncbi")
 
-    return {
+    nested = {
         "gene_id": gid,
         "organism": flat.get("organism"),
         "common_name": flat.get("common_name", ""),
@@ -236,17 +285,32 @@ def restructure_to_schema(gid: str, flat: dict) -> dict:
             "dna": raw_seq.get("dna"),
             "rna": raw_seq.get("rna"),
             "protein": raw_seq.get("protein"),
+            # From professional_schema.py: hash for cross-source dedup,
+            # gc_content computed once here instead of at every Streamlit
+            # render.
+            "dna_hash": _sequence_hash(raw_seq.get("dna")),
+            "gc_content": _gc_content(raw_seq.get("dna")),
         },
         "annotation": {
             "go_terms": go_terms,
             "kegg_pathways": kegg_pathways,
             "ko_ids": ko_ids,
             "tf_family": tf_family,
+            # MapMan bins from PLAZA: a functional-category signal (e.g.
+            # "cell wall.lignin") useful to shortlist trait candidates —
+            # NOT a substitute for the manually curated, PubMed-sourced
+            # trait table. See collect_plaza.py docstring.
+            "mapman": mapman_bins,
         },
         "traits": traits,
         "relations": {
             "orthologs": orthologs,
-            "gene_family": gene_family,
+            # ORTHO family = fine-grained, "this gene = that gene in another
+            # species" (what matters for verse/lodging candidate matching).
+            # HOM family = broader sequence-similarity grouping. See PLAZA's
+            # own gene table, which lists both separately.
+            "orthologous_family_id": orthologous_family_id,
+            "homologous_family_id": homologous_family_id,
         },
         "literature": {
             # NOTE: PubMed currently collects species-wide publications (see
@@ -259,6 +323,11 @@ def restructure_to_schema(gid: str, flat: dict) -> dict:
         },
         "sources_summary": sorted(sources_seen),
     }
+    # Completeness needs the nested dict already built (it inspects
+    # nested["sequence"], nested["annotation"], etc.), so it's computed
+    # last and appended rather than folded into the dict literal above.
+    nested["quality"] = {"data_completeness": _completeness_score(nested)}
+    return nested
 
 
 def collect_species(
@@ -392,17 +461,46 @@ def collect_species(
             def _norm(s: str) -> str:
                 return "".join(ch for ch in (s or "").lower() if ch.isalnum())
 
+            # Strategy 1 (preferred): match via UniProt accession, using
+            # PLAZA's id_conversion crosswalk. This assumes UniProt-sourced
+            # records in all_records expose their accession under one of
+            # these field names — VERIFY against your actual
+            # collect_uniprot.py output and adjust this list if needed.
+            UNIPROT_FIELD_CANDIDATES = ("uniprot_id", "uniprot_accession", "accession")
+            uniprot_index: dict[str, str] = {}
+            for gid, rec in all_records.items():
+                for field in UNIPROT_FIELD_CANDIDATES:
+                    val = rec.get(field)
+                    if val:
+                        uniprot_index[val] = gid
+                        break
+
+            # Strategy 2 (fallback): normalized gene symbol match.
             norm_index = {_norm(gid): gid for gid in all_records}
+
             matched = 0
+            matched_via_uniprot = 0
             for r in recs:
-                target = norm_index.get(_norm(r.get("gene_id", "")))
+                target = None
+                if r.get("uniprot_id"):
+                    target = uniprot_index.get(r["uniprot_id"])
+                    if target:
+                        matched_via_uniprot += 1
+                if target is None:
+                    target = norm_index.get(_norm(r.get("gene_id", "")))
+
                 if target:
                     existing = all_records[target]
                     existing.setdefault("orthologs", []).extend(r.get("orthologs", []))
-                    if r.get("gene_family"):
-                        existing["gene_family"] = r["gene_family"]
+                    if r.get("orthologous_family_id"):
+                        existing["orthologous_family_id"] = r["orthologous_family_id"]
+                    if r.get("homologous_family_id"):
+                        existing["homologous_family_id"] = r["homologous_family_id"]
+                    if r.get("mapman"):
+                        existing.setdefault("mapman", []).extend(r["mapman"])
                     matched += 1
             source_counts["plaza"] = matched
+            source_counts["plaza_via_uniprot"] = matched_via_uniprot
             if recs and matched == 0:
                 # Loud failure on purpose: 0 matches almost always means an
                 # ID-namespace mismatch for this species, not "no orthologs

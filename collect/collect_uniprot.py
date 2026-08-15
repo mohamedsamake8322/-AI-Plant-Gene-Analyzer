@@ -6,12 +6,23 @@ Returns a list of gene records compatible with the pipeline's canonical schema.
 
 from __future__ import annotations
 
+import json
+import os
 import time
 import requests
 import request_utils as rq
 from typing import Optional
 
 UNIPROT_API = "https://rest.uniprot.org/uniprotkb/search"
+KEGG_LINK_API = "https://rest.kegg.jp/link/pathway"
+
+# GO aspect codes as embedded in UniProt's "GoTerm" property prefix
+# (e.g. "C:chloroplast envelope" -> aspect "C"). Kept human-readable.
+GO_ASPECT_LABELS = {
+    "C": "cellular_component",
+    "F": "molecular_function",
+    "P": "biological_process",
+}
 
 # Map common plant names to UniProt taxonomy IDs
 TAXON_MAP: dict[str, str] = {
@@ -41,10 +52,91 @@ TAXON_MAP: dict[str, str] = {
 }
 
 
+def resolve_kegg_pathways(
+    kegg_gene_refs: list[str],
+    delay: float = 0.4,
+    cache_path: Optional[str] = None,
+) -> dict[str, list[str]]:
+    """
+    Résout une liste de références de gène KEGG (ex: 'ath:AT1G67120')
+    vers leurs vraies voies métaboliques (ex: 'path:ath04075').
+
+    IMPORTANT: une référence croisée KEGG côté UniProt (xref_kegg) est un
+    identifiant de GÈNE, pas un identifiant de voie métabolique -- il faut
+    un second appel à l'API KEGG (endpoint link/pathway) pour obtenir les
+    voies réelles associées à ce gène.
+
+    Respecte la limite KEGG de 3 requêtes/seconde (usage académique).
+    Batch de 10 identifiants par requête (max autorisé par l'API).
+    Tolérant aux erreurs : un batch en échec est marqué comme résolu-vide
+    plutôt que de faire planter toute la collecte.
+
+    Si cache_path est fourni, les résolutions sont chargées/sauvegardées
+    sur disque -- évite de re-interroger KEGG pour des références déjà
+    résolues lors d'un run précédent (collecte interrompue, debug, ajout
+    d'espèces supplémentaires).
+    """
+    resolved: dict[str, list[str]] = {}
+    if cache_path and os.path.exists(cache_path):
+        with open(cache_path, encoding="utf-8") as f:
+            resolved = json.load(f)
+
+    # NOTE: "resolved" ne contient QUE des résultats confirmés par KEGG
+    # (y compris une vraie liste vide = confirmé sans voie associée).
+    # Un échec réseau va dans "failed_refs" et n'est jamais persisté dans
+    # le cache -- sans cette distinction, une erreur transitoire lors d'un
+    # run serait mémorisée comme "aucune voie" pour toujours, et ne serait
+    # plus jamais réessayée lors des runs suivants. Critique à l'échelle
+    # d'une collecte massive, où des erreurs réseau ponctuelles sont
+    # statistiquement inévitables.
+    unique_refs = sorted(set(kegg_gene_refs) - set(resolved.keys()))
+    failed_refs: set[str] = set()
+
+    for i in range(0, len(unique_refs), 10):
+        chunk = unique_refs[i:i + 10]
+        query = "+".join(chunk)
+        url = f"{KEGG_LINK_API}/{query}"
+        try:
+            resp = requests.get(url, timeout=15)
+            resp.raise_for_status()
+            for ref in chunk:
+                resolved.setdefault(ref, [])
+            if resp.text.strip():
+                for line in resp.text.strip().split("\n"):
+                    gene_id, pathway_id = line.split("\t")
+                    resolved.setdefault(gene_id, []).append(pathway_id)
+        except (requests.RequestException, ValueError) as e:
+            print(f"  [KEGG] Erreur résolution pathway pour {chunk}: {e} -- sera réessayé au prochain run")
+            failed_refs.update(chunk)
+        time.sleep(delay)
+
+        if cache_path and (i // 10) % 20 == 0:
+            with open(cache_path, "w", encoding="utf-8") as f:
+                json.dump(resolved, f)
+
+    if cache_path:
+        with open(cache_path, "w", encoding="utf-8") as f:
+            json.dump(resolved, f)
+
+    if failed_refs:
+        print(f"  [KEGG] {len(failed_refs)} référence(s) en échec réseau -- "
+              f"non mises en cache, seront retentées au prochain run")
+
+    # Pour l'usage immédiat (le run en cours), on retourne quand même une
+    # entrée (vide) pour les refs en échec -- mais uniquement en mémoire,
+    # jamais persistée sur disque.
+    result = dict(resolved)
+    for ref in failed_refs:
+        result.setdefault(ref, [])
+
+    return result
+
+
 def fetch_uniprot(
     species: str,
     retmax: int = 300,
     reviewed_only: bool = False,
+    kegg_cache_path: Optional[str] = None,
 ) -> list[dict]:
     """
     Fetch protein records from UniProt for a given plant species.
@@ -53,6 +145,9 @@ def fetch_uniprot(
         species: Scientific name (e.g. "Arabidopsis thaliana")
         retmax: Maximum number of records to retrieve
         reviewed_only: If True, only fetch Swiss-Prot (reviewed) entries
+        kegg_cache_path: Optional path to a JSON cache for KEGG pathway
+            resolution, reused across species/runs to avoid redundant
+            API calls.
 
     Returns:
         List of normalized gene records
@@ -112,6 +207,25 @@ def fetch_uniprot(
             print(f"  [UniProt] Request error for {species}: {e}")
             break
 
+    # Résolution des vraies voies métaboliques KEGG -- post-traitement
+    # batché sur l'ensemble des enregistrements collectés, plus efficace
+    # qu'un appel API par gène pendant la boucle de collecte ci-dessus.
+    all_kegg_refs = [
+        ref for rec in records
+        for ref in rec["external_links"].get("kegg_gene_refs", [])
+    ]
+    if all_kegg_refs:
+        pathway_map = resolve_kegg_pathways(all_kegg_refs, cache_path=kegg_cache_path)
+        n_resolved = sum(1 for v in pathway_map.values() if v)
+        print(f"  [KEGG] {n_resolved} / {len(pathway_map)} références de gène "
+              f"résolues vers au moins une vraie voie métabolique")
+        for rec in records:
+            refs = rec["external_links"].get("kegg_gene_refs", [])
+            resolved_pathways = sorted(set(
+                pid for ref in refs for pid in pathway_map.get(ref, [])
+            ))
+            rec["pathways"] = [{"id": pid, "source": "kegg"} for pid in resolved_pathways]
+
     return records
 
 
@@ -132,14 +246,21 @@ def _parse_entry(entry: dict, species: str) -> dict | None:
             or accession
         )
 
-    # Protein name
+    # Protein name.
+    # NOTE: la version précédente utilisait un ternaire dont la précédence
+    # d'opérateur ("A or B if C else D" == "(A or B) if C else D" en
+    # Python) effaçait silencieusement recommendedName.fullName dès que
+    # submittedName était absent -- le cas le plus courant pour une entrée
+    # Swiss-Prot bien annotée. Réécrit explicitement pour éviter ce piège.
     pn = entry.get("proteinDescription", {})
     rec_name = pn.get("recommendedName", {})
-    description = (
-        rec_name.get("fullName", {}).get("value", "")
-        or pn.get("submittedName", [{}])[0].get("fullName", {}).get("value", "")
-        if pn.get("submittedName") else ""
-    )
+    recommended_full_name = rec_name.get("fullName", {}).get("value", "")
+    if recommended_full_name:
+        description = recommended_full_name
+    elif pn.get("submittedName"):
+        description = pn["submittedName"][0].get("fullName", {}).get("value", "")
+    else:
+        description = ""
 
     # Sequence
     seq_obj = entry.get("sequence", {})
@@ -150,20 +271,39 @@ def _parse_entry(entry: dict, species: str) -> dict | None:
     # Organism
     organism = entry.get("organism", {}).get("scientificName", species)
 
-    # GO terms
+    # GO terms.
+    # NOTE: la version précédente stockait "aspect": props["GoEvidenceType"]
+    # (ex: "IDA:TAIR") sous une clé nommée "aspect", alors que le VRAI
+    # aspect GO (Cellular Component / Molecular Function / Biological
+    # Process) est en fait le préfixe caché dans "GoTerm" (ex: "C:nucleus").
+    # Corrigé ici : term est nettoyé du préfixe, aspect contient le vrai
+    # C/F/P (libellé lisible), et le code d'évidence + sa source sont
+    # exposés séparément plutôt que conflatés dans "aspect".
     go_terms = []
     uniProtKB_cross_refs = entry.get("uniProtKBCrossReferences", [])
     for ref in uniProtKB_cross_refs:
         if ref.get("database") == "GO":
             go_id = ref.get("id", "")
             props = {p["key"]: p["value"] for p in ref.get("properties", [])}
+            raw_term = props.get("GoTerm", "")  # e.g. "C:chloroplast envelope"
+            aspect_code, sep, clean_term = raw_term.partition(":")
+            if not sep:
+                # Pas de préfixe reconnu -- garde la chaîne brute telle quelle
+                aspect_code, clean_term = "", raw_term
+            evidence_raw = props.get("GoEvidenceType", "")  # e.g. "IDA:TAIR"
+            evidence_code, _, evidence_source = evidence_raw.partition(":")
             go_terms.append({
                 "id": go_id,
-                "term": props.get("GoTerm", ""),
-                "aspect": props.get("GoEvidenceType", ""),
+                "term": clean_term.strip() or raw_term,
+                "aspect": GO_ASPECT_LABELS.get(aspect_code, aspect_code),
+                "evidence_code": evidence_code,
+                "evidence_source": evidence_source,
             })
 
-    # KEGG cross-refs
+    # KEGG cross-refs -- ce sont des identifiants de GÈNE (ex: "ath:AT1G67120"),
+    # PAS des identifiants de voie métabolique. Résolus vers les vraies
+    # voies après coup par resolve_kegg_pathways(), appelée depuis
+    # fetch_uniprot() une fois toute la collecte terminée.
     kegg_ids = [
         ref.get("id") for ref in uniProtKB_cross_refs
         if ref.get("database") == "KEGG"
@@ -216,8 +356,16 @@ def _parse_entry(entry: dict, species: str) -> dict | None:
     embl_nucleotide_ids = [c[0] for c in embl_candidates]
     embl_molecule_types = [c[1] for c in embl_candidates]
 
-    # Keywords
-    keywords = [kw.get("name", "") for kw in entry.get("keywords", [])]
+    # Keywords -- garde maintenant la catégorie UniProt (ex: "Biological
+    # process", "Domain", "PTM", "Molecular function") en plus du nom.
+    # Utile pour un futur nettoyage de "traits", qui mélange actuellement
+    # des voies de signalisation, propriétés structurelles et fonctions
+    # dans la même liste plate (limite documentée séparément).
+    keywords_detailed = [
+        {"name": kw.get("name", ""), "category": kw.get("category", "")}
+        for kw in entry.get("keywords", [])
+    ]
+    keywords = [kw["name"] for kw in keywords_detailed]
 
     # Subcellular location
     comments = entry.get("comments", [])
@@ -248,6 +396,7 @@ def _parse_entry(entry: dict, species: str) -> dict | None:
         "annotations": {
             "go_terms": go_terms,
             "keywords": keywords,
+            "keywords_detailed": keywords_detailed,
             "subcellular_location": subcell,
             "function": func_desc,
             "annotation_score": entry.get("annotationScore", 0),
@@ -258,6 +407,10 @@ def _parse_entry(entry: dict, species: str) -> dict | None:
             "uniprot": f"https://www.uniprot.org/uniprotkb/{accession}",
             "accession": accession,
             "kegg": kegg_ids[0] if kegg_ids else None,
+            # Toutes les références de gène KEGG (pas juste la première),
+            # utilisées par resolve_kegg_pathways() dans fetch_uniprot()
+            # pour retrouver les vraies voies métaboliques après coup.
+            "kegg_gene_refs": kegg_ids,
             "ensembl": ensembl_ids[0] if ensembl_ids else None,
             # Clé de jointure vers NCBI -- consommée par le futur collecteur
             # NCBI "fetch-by-accession" pour récupérer la séquence ADN/ARN
@@ -269,7 +422,9 @@ def _parse_entry(entry: dict, species: str) -> dict | None:
         },
         "traits": keywords[:10],  # top keywords as traits
         "expression_profiles": [],
-        "pathways": [{"id": k, "source": "kegg"} for k in kegg_ids],
+        # Rempli après coup par resolve_kegg_pathways(), appelée depuis
+        # fetch_uniprot() une fois toute la collecte de l'espèce terminée.
+        "pathways": [],
         "publications": [],
     }
 
@@ -287,7 +442,10 @@ def _parse_next_link(link_header: str) -> str | None:
 
 
 if __name__ == "__main__":
-    import json
-    results = fetch_uniprot("Arabidopsis thaliana", retmax=5)
+    results = fetch_uniprot(
+        "Arabidopsis thaliana",
+        retmax=5,
+        kegg_cache_path="kegg_pathway_cache.json",
+    )
     print(json.dumps(results[:2], indent=2))
     print(f"Total fetched: {len(results)}")
