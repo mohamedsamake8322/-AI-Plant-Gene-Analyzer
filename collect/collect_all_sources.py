@@ -281,6 +281,14 @@ def restructure_to_schema(gid: str, flat: dict) -> dict:
         "gene_id": gid,
         "organism": flat.get("organism"),
         "common_name": flat.get("common_name", ""),
+        # "sequence_backed" (default) = has (or was intended to have) a
+        # real DNA/RNA/protein sequence from NCBI/UniProt/etc. "plaza_only"
+        # = created purely from PLAZA family/ortholog data because no
+        # matching NCBI/UniProt record was found -- no sequence attached,
+        # and it MAY duplicate an already-collected gene under a different
+        # ID (PLAZA vs NCBI accession mismatch). See collect_all_sources.py
+        # PLAZA block for why this trade-off was made.
+        "origin": flat.get("origin", "sequence_backed"),
         "sequence": {
             "dna": raw_seq.get("dna"),
             "rna": raw_seq.get("rna"),
@@ -337,6 +345,7 @@ def collect_species(
     out_dir: Path,
     skip_existing: bool = True,
     reviewed_only: bool = False,
+    plaza_retmax: int | None = 300,
 ) -> dict:
     """
     Collect all data for one species from all requested sources.
@@ -453,11 +462,14 @@ def collect_species(
         except Exception as e:
             errors.append(f"planttfdb: {e}")
 
-    # ── PLAZA (orthologs / gene families — enrichment only, no new genes) ─────
+    # ── PLAZA (enriches matches; also creates clearly-tagged PLAZA-only ───────
+    #    records for the rest, so PLAZA coverage isn't capped by whatever
+    #    NCBI/UniProt happened to already collect — see chat history for
+    #    why this changed from "enrichment only".)
     if "plaza" in sources:
         try:
             cp = import_local_collect_module("collect_plaza")
-            recs = cp.fetch_plaza(name, retmax=retmax)
+            recs = cp.fetch_plaza(name, retmax=plaza_retmax)
 
             def _norm(s: str) -> str:
                 return "".join(ch for ch in (s or "").lower() if ch.isalnum())
@@ -471,7 +483,6 @@ def collect_species(
             # indexed here; a record's own key is the reliable one.
             uniprot_index: dict[str, str] = {}
             for gid, rec in all_records.items():
-                # A UniProt-sourced record is keyed by its own accession.
                 uniprot_index[gid] = gid
                 nested = (rec.get("external_links") or {}).get("accession")
                 if nested:
@@ -482,6 +493,7 @@ def collect_species(
 
             matched = 0
             matched_via_uniprot = 0
+            created_plaza_only = 0
             for r in recs:
                 target = None
                 if r.get("uniprot_id"):
@@ -503,16 +515,41 @@ def collect_species(
                     if r.get("description") and not existing.get("common_name"):
                         existing["common_name"] = r["description"]
                     matched += 1
+                else:
+                    # No NCBI/UniProt counterpart found for this PLAZA gene.
+                    # Create a PLAZA-only record rather than dropping the
+                    # data -- but keyed and tagged distinctly (prefixed
+                    # gene_id, "origin": "plaza_only") so it's never
+                    # confused with a verified, sequence-backed record.
+                    # CAVEAT, worth remembering when using this data: since
+                    # this gene had no ID we could cross-check, it MAY
+                    # actually be the same biological gene as one already
+                    # sitting in all_records under its NCBI accession --
+                    # this is the duplication risk we're knowingly accepting
+                    # in exchange for full PLAZA coverage. No sequence is
+                    # attached (PLAZA's family files don't carry one).
+                    plaza_key = f"PLAZA:{r['gene_id']}"
+                    if plaza_key not in all_records:
+                        all_records[plaza_key] = {
+                            "gene_id": plaza_key,
+                            "organism": name,
+                            "common_name": r.get("description", ""),
+                            "source": "plaza_only",
+                            "origin": "plaza_only",
+                            "orthologs": list(r.get("orthologs", [])),
+                            "orthologous_family_id": r.get("orthologous_family_id", ""),
+                            "homologous_family_id": r.get("homologous_family_id", ""),
+                            "mapman": list(r.get("mapman", [])),
+                        }
+                        created_plaza_only += 1
             source_counts["plaza"] = matched
             source_counts["plaza_via_uniprot"] = matched_via_uniprot
-            if recs and matched == 0:
-                # Loud failure on purpose: 0 matches almost always means an
-                # ID-namespace mismatch for this species, not "no orthologs
-                # exist". Silently reporting 0 would hide that.
+            source_counts["plaza_only_records_created"] = created_plaza_only
+            if recs and matched == 0 and created_plaza_only == 0:
                 errors.append(
-                    f"plaza: 0/{len(recs)} PLAZA records matched an existing "
-                    f"gene_id for {name} — check symbol/locus matching "
-                    f"before trusting this source for this species"
+                    f"plaza: 0/{len(recs)} PLAZA records processed for "
+                    f"{name} — check that the PLAZA files are actually "
+                    f"present under data/plaza/"
                 )
         except Exception as e:
             errors.append(f"plaza: {e}")
@@ -733,6 +770,14 @@ def main(argv: list[str] | None = None) -> None:
              "since curation tends to cluster on the same well-studied "
              "genes across databases."
     )
+    parser.add_argument(
+        "--plaza-retmax", type=int, default=300,
+        help="Max PLAZA genes per species, INDEPENDENT from --retmax. "
+             "PLAZA reads local files (no rate limit), so this can safely "
+             "be set much higher than --retmax to get full PLAZA coverage "
+             "(pass 0 for no cap -- every gene PLAZA has for that species, "
+             "tens of thousands for a well-covered species)."
+    )
     parser.add_argument("--workers", type=int, default=4, help="Number of parallel processes (default: 4)")
     parser.add_argument("--skip-existing", action="store_true", default=True,
                         help="Skip species already collected (default: True)")
@@ -828,7 +873,7 @@ def main(argv: list[str] | None = None) -> None:
         # Sequential (safer for debugging)
         for plant in plants:
             print(f"\n🌱 [{plant['name']}] Starting collection...")
-            result = collect_species(plant, sources, args.retmax, out_dir, skip_existing, args.reviewed_only)
+            result = collect_species(plant, sources, args.retmax, out_dir, skip_existing, args.reviewed_only, args.plaza_retmax)
             results.append(result)
             _print_result(result)
     else:
@@ -838,7 +883,7 @@ def main(argv: list[str] | None = None) -> None:
 
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures = {
-                executor.submit(collect_species, plant, sources, args.retmax, out_dir, skip_existing, args.reviewed_only): plant
+                executor.submit(collect_species, plant, sources, args.retmax, out_dir, skip_existing, args.reviewed_only, args.plaza_retmax): plant
                 for plant in plants
             }
             for future in as_completed(futures):
