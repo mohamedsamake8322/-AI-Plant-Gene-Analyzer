@@ -35,6 +35,18 @@ PLAZA does not expose a simple per-species REST API (its API sits behind
 the login-gated Workbench). This bridge reads local bulk files you
 download by hand once, not the network.
 
+MEMORY NOTE -- two-pass streaming, not whole-file loading
+---------------------------------------------------------------------------
+HOMFAM/ORTHOFAM cover ~100 dicot species in one file each. An earlier
+version of this module loaded both files whole (into gene_to_family /
+family_to_members dicts) on every fetch_plaza() call, regardless of which
+single species was requested -- that's what was crashing local machines
+on large runs. _load_species_family_map() / _load_family_members_for()
+fix this with two filtered streaming passes: pass 1 keeps only this
+species' own rows; pass 2 (ORTHOFAM only) keeps only OTHER species' rows
+that belong to the families found in pass 1. Memory now scales with this
+species' gene/family count, never with the full multi-species file.
+
 DOWNLOAD INSTRUCTIONS
 ------------------------------------------------------------
 From https://www.vandepoelelab.be/plaza/versions/plaza_v5_dicots/download/download :
@@ -134,30 +146,56 @@ def _iter_plaza_rows(path: Path):
             yield dict(zip(header, values))
 
 
-def _load_family_file(path: Path) -> tuple[dict[str, str], dict[str, list[tuple[str, str]]]]:
+def _load_species_family_map(path: Path, code: str) -> dict[str, str]:
     """
-    Reads one PLAZA gene-family file (HOMFAM or ORTHOFAM format).
+    STREAMING, SPECIES-FILTERED pass 1 over a HOMFAM/ORTHOFAM file.
 
-    Returns:
-      gene_to_family: {gene_id: family_id}
-      family_to_members: {family_id: [(gene_id, species), ...]}
+    HOMFAM/ORTHOFAM (confirmed real header: '#gf_id  species  gene_id')
+    cover ~100 dicot species in one file -- loading it whole (as the old
+    _load_family_file did, for BOTH files, on every fetch_plaza() call)
+    is what was blowing up memory on species with a single target crop.
+    This keeps only rows for `code` (e.g. "cqu"), so memory scales with
+    this species' gene count, never with the full multi-species file.
 
-    Column names below are still GUESSED (gene_id/family_id/species) —
-    the actual HOMFAM/ORTHOFAM files haven't been inspected yet, unlike
-    id_conversion and mapman below, which were checked against real
-    downloads. Confirm the real header once you have those 2 files.
+    Returns {gene_id: family_id} for genes belonging to this species only.
     """
     gene_to_family: dict[str, str] = {}
-    family_to_members: dict[str, list[tuple[str, str]]] = {}
     for row in _iter_plaza_rows(path):
+        species = (row.get("species") or row.get("species_id") or "").strip().lower()
+        if species != code:
+            continue
         gid = row.get("gene_id") or ""
         fam = row.get("family_id") or row.get("gf_id") or ""
-        species = row.get("species") or row.get("species_id") or ""
-        if not gid or not fam:
+        if gid and fam:
+            gene_to_family[gid] = fam
+    return gene_to_family
+
+
+def _load_family_members_for(path: Path, target_families: set[str]) -> dict[str, list[tuple[str, str]]]:
+    """
+    STREAMING, FAMILY-FILTERED pass 2 over ORTHOFAM (called only with the
+    family ids this species' own genes belong to, from pass 1). This is
+    what needs OTHER species' rows too (that's how orthologs are found),
+    but only for the handful of families that actually matter here --
+    never the full ~100-species file. Skips the read entirely (returns
+    {}) if there are no target families, e.g. species not found in
+    pass 1.
+
+    Returns {family_id: [(gene_id, species), ...]} restricted to
+    target_families.
+    """
+    family_to_members: dict[str, list[tuple[str, str]]] = {}
+    if not target_families:
+        return family_to_members
+    for row in _iter_plaza_rows(path):
+        fam = row.get("family_id") or row.get("gf_id") or ""
+        if fam not in target_families:
             continue
-        gene_to_family[gid] = fam
-        family_to_members.setdefault(fam, []).append((gid, species))
-    return gene_to_family, family_to_members
+        gid = row.get("gene_id") or ""
+        species = row.get("species") or row.get("species_id") or ""
+        if gid:
+            family_to_members.setdefault(fam, []).append((gid, species))
+    return family_to_members
 
 
 def _load_id_type_map(path: Path, id_type: str) -> dict[str, str]:
@@ -248,8 +286,21 @@ def fetch_plaza(species_name: str, retmax: int | None = 300) -> list[dict]:
     if code is None:
         return []
 
-    hom_gene_to_fam, _ = _load_family_file(_resolve_existing(FAMILY_FILES["hom"]))
-    ortho_gene_to_fam, ortho_fam_to_members = _load_family_file(_resolve_existing(FAMILY_FILES["ortho"]))
+    # Two-pass, species-filtered streaming (see _load_species_family_map /
+    # _load_family_members_for docstrings) -- replaces the old
+    # _load_family_file(), which loaded HOMFAM/ORTHOFAM whole (all ~100
+    # dicot species) on every call regardless of target species. That was
+    # the actual cause of the pipeline eating all available RAM and
+    # crashing on a single machine; this keeps memory proportional to
+    # this species' own gene/family count.
+    hom_gene_to_fam = _load_species_family_map(_resolve_existing(FAMILY_FILES["hom"]), code)
+    ortho_gene_to_fam = _load_species_family_map(_resolve_existing(FAMILY_FILES["ortho"]), code)
+    # Pass 2: only pull in OTHER species' rows for the families this
+    # species actually belongs to (needed to find orthologs at all) --
+    # never the full multi-species file.
+    ortho_fam_to_members = _load_family_members_for(
+        _resolve_existing(FAMILY_FILES["ortho"]), set(ortho_gene_to_fam.values())
+    )
     uniprot_map = _load_id_conversion(_resolve_existing([f"id_conversion_{code}.csv", f"id_conversion.{code}.csv"]))
     mapman_map = _load_mapman(_resolve_existing([f"mapman_{code}.csv", f"mapman.{code}.csv"]))
     description_map = _load_gene_description(_resolve_existing([f"gene_description_{code}.csv", f"gene_description.{code}.csv"]))
@@ -257,15 +308,14 @@ def fetch_plaza(species_name: str, retmax: int | None = 300) -> list[dict]:
     if not hom_gene_to_fam and not ortho_gene_to_fam and not uniprot_map and not description_map:
         return []
 
-    # Genes belonging to this species = those tagged with it in the
-    # ORTHOFAM membership list, PLUS any gene only known through
-    # id_conversion/mapman (covers the case where family files aren't
-    # downloaded yet but the per-species files are).
-    species_genes: set[str] = set(uniprot_map) | set(mapman_map) | set(description_map)
-    for members in ortho_fam_to_members.values():
-        for gid, sp in members:
-            if sp.strip().lower() == key or key in sp.strip().lower():
-                species_genes.add(gid)
+    # Genes belonging to this species = the union of every source that's
+    # already scoped to `code` -- the two family maps (now pre-filtered by
+    # pass 1, so no species comparison needed here anymore) plus
+    # id_conversion/mapman/description (already per-species files).
+    species_genes: set[str] = (
+        set(hom_gene_to_fam) | set(ortho_gene_to_fam)
+        | set(uniprot_map) | set(mapman_map) | set(description_map)
+    )
 
     gene_id_list = list(species_genes) if not retmax else list(species_genes)[:retmax]
 
