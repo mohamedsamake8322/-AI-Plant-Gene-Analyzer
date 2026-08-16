@@ -106,6 +106,7 @@ SPECIES_CODES = {
                                      # PLAZA cross-reference species -- see
                                      # module docstring)
     "nicotiana tabacum": "nta",     # tobacco, candidate crop of interest
+    "solanum tuberosum": "stu",     # potato, 6th crop (vegetable/maraîchère)
     # add your final 6th crop here once chosen if different from the above
 }
 
