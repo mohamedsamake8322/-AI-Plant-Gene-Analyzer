@@ -17,6 +17,7 @@ import json
 from postgres_utils import (
     create_tables,
     dedupe_by_sequence,
+    extract_primary_sequence,
     get_connection,
     insert_gene_record,
     is_valid_sequence,
@@ -112,12 +113,13 @@ def main(argv: list[str] | None = None) -> None:
     merged_by_sequence = 0
     try:
         for i, record in enumerate(records, 1):
-            # Compute lightweight k-mer signature for faster DB-side prefilter
-            # and to allow candidate selection without fetching full sequences.
-            try:
-                seq = record.get("sequence") or (record.get("record") or {}).get("sequence")
-            except Exception:
-                seq = None
+            # Extract the one sequence this row will carry (see
+            # extract_primary_sequence's docstring for the dna > protein >
+            # rna priority and why) -- handles both the new nested schema
+            # ({"dna":..., "rna":..., "protein":...}) and the old flat
+            # string format transparently.
+            seq, seq_type = extract_primary_sequence(record)
+
             def _compute_kmer_set(sequence: str, k: int = 5) -> list:
                 if not sequence:
                     return []
@@ -137,13 +139,26 @@ def main(argv: list[str] | None = None) -> None:
             # short, too many ambiguous bases, invalid characters for the
             # declared type). Applied here rather than after insertion, so
             # bad records never take up a row in the first place.
-            valid, reason = is_valid_sequence(record.get("sequence"), record.get("sequence_type"))
-            if not valid:
-                gid = record.get("gene_id") or record.get("symbol")
-                print(f"⊘ Skipped {gid} (quality: {reason})")
-                skipped_quality += 1
-                skipped_reasons[reason] = skipped_reasons.get(reason, 0) + 1
-                continue
+            #
+            # EXCEPTION: "plaza_only" records (see collect_all_sources.py
+            # PLAZA block) are created specifically because they have NO
+            # sequence -- they only carry orthologs/family/mapman
+            # enrichment data. Rejecting them here as "empty" would drop
+            # the ~90% of the collected database that IS plaza_only,
+            # discarding all that PLAZA work. They're inserted with
+            # sequence = NULL instead; existing similarity/BLAST-type
+            # queries already filter WHERE sequence IS NOT NULL, so they
+            # won't show up there, but they stay queryable for
+            # orthologs/relations lookups.
+            origin = record.get("origin", "sequence_backed")
+            if origin == "sequence_backed":
+                valid, reason = is_valid_sequence(seq, seq_type)
+                if not valid:
+                    gid = record.get("gene_id") or record.get("symbol")
+                    print(f"⊘ Skipped {gid} (quality: {reason})")
+                    skipped_quality += 1
+                    skipped_reasons[reason] = skipped_reasons.get(reason, 0) + 1
+                    continue
 
             # Sequence-hash dedup: if this exact sequence already exists in
             # the table under a different gene_id/symbol, redirect this

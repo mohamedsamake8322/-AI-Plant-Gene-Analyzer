@@ -216,10 +216,27 @@ def create_tables() -> None:
                     length INTEGER,
                     date_added TIMESTAMPTZ,
                     record JSONB,
-                    sequence_hash TEXT
+                    sequence_hash TEXT,
+                    -- "sequence_backed" (has/had a real NCBI/UniProt/etc.
+                    -- sequence) vs "plaza_only" (PLAZA enrichment data with
+                    -- no sequence attached -- see collect_all_sources.py
+                    -- PLAZA block). Similarity/BLAST-type queries should
+                    -- filter WHERE origin = 'sequence_backed'; relations/
+                    -- orthologs queries can use either.
+                    origin TEXT DEFAULT 'sequence_backed',
+                    -- Orthologs and PLAZA family IDs -- without this
+                    -- column, that data would only live inside the
+                    -- `record` JSONB blob and not be easily queryable.
+                    relations JSONB DEFAULT '{}'::jsonb
                 );
                 """
             )
+            # Both ADD COLUMN IF NOT EXISTS, so re-running create_tables()
+            # against an existing (pre-refactor) table backfills these new
+            # columns instead of requiring a fresh table.
+            cur.execute("ALTER TABLE genes ADD COLUMN IF NOT EXISTS origin TEXT DEFAULT 'sequence_backed';")
+            cur.execute("ALTER TABLE genes ADD COLUMN IF NOT EXISTS relations JSONB DEFAULT '{}'::jsonb;")
+            cur.execute("CREATE INDEX IF NOT EXISTS genes_origin_idx ON genes (origin);")
             # NULL != NULL in Postgres, so a plain UNIQUE(gene_id) does not
             # prevent duplicates for records identified only by `symbol`
             # (common for GEO/Expression Atlas entries). A unique index on
@@ -296,12 +313,14 @@ _UPSERT_SQL = sql.SQL(
         gene_id, symbol, organism, sequence, sequence_type,
         description, source, source_url, external_links,
         expression_profiles, pathways, publications,
-        annotations, traits, length, date_added, record, sequence_hash
+        annotations, traits, length, date_added, record, sequence_hash,
+        origin, relations
     ) VALUES (
         %(gene_id)s, %(symbol)s, %(organism)s, %(sequence)s, %(sequence_type)s,
         %(description)s, %(source)s, %(source_url)s, %(external_links)s,
         %(expression_profiles)s, %(pathways)s, %(publications)s,
-        %(annotations)s, %(traits)s, %(length)s, %(date_added)s, %(record)s, %(sequence_hash)s
+        %(annotations)s, %(traits)s, %(length)s, %(date_added)s, %(record)s, %(sequence_hash)s,
+        %(origin)s, %(relations)s
     )
     ON CONFLICT (COALESCE(gene_id, symbol))
     DO UPDATE SET
@@ -321,6 +340,7 @@ _UPSERT_SQL = sql.SQL(
         -- a later source add to what's already known rather than erasing it.
         external_links = genes.external_links || EXCLUDED.external_links,
         annotations = genes.annotations || EXCLUDED.annotations,
+        relations = genes.relations || EXCLUDED.relations,
         -- JSONB arrays: keep the existing array if the incoming one is empty.
         expression_profiles = CASE WHEN EXCLUDED.expression_profiles = '[]'::jsonb
             THEN genes.expression_profiles ELSE EXCLUDED.expression_profiles END,
@@ -335,7 +355,13 @@ _UPSERT_SQL = sql.SQL(
         length = COALESCE(NULLIF(EXCLUDED.length, 0), genes.length),
         date_added = EXCLUDED.date_added,
         record = EXCLUDED.record,
-        sequence_hash = COALESCE(NULLIF(EXCLUDED.sequence_hash, ''), genes.sequence_hash);
+        sequence_hash = COALESCE(NULLIF(EXCLUDED.sequence_hash, ''), genes.sequence_hash),
+        -- Never downgrade a gene that's already known to be sequence-backed
+        -- just because a later PLAZA-only enrichment pass touches the same
+        -- key (shouldn't normally happen given how plaza_only keys are
+        -- prefixed, but defensive).
+        origin = CASE WHEN genes.origin = 'sequence_backed' OR EXCLUDED.origin = 'sequence_backed'
+            THEN 'sequence_backed' ELSE EXCLUDED.origin END;
     """
 )
 
@@ -398,7 +424,7 @@ def dedupe_by_sequence(record: dict, conn: psycopg.Connection | None = None) -> 
     than adding a second, separate merge path — the sequence-hash match
     just changes *which row* the same upsert logic targets.
     """
-    seq = record.get("sequence")
+    seq, _seq_type = extract_primary_sequence(record)
     seq_hash = sequence_hash(seq)
     record["sequence_hash"] = seq_hash
     if not seq_hash:
@@ -420,28 +446,104 @@ def dedupe_by_sequence(record: dict, conn: psycopg.Connection | None = None) -> 
     return record
 
 
+def extract_primary_sequence(record: dict) -> tuple[str | None, str | None]:
+    """
+    Returns (sequence_string, sequence_type) for whichever ONE sequence
+    this gene's row should carry for search/similarity purposes.
+
+    WHY THIS EXISTS: the pipeline's schema changed (see collect_all_sources.py
+    restructure_to_schema()) from one flat sequence string + sequence_type
+    per record to a nested {"dna": ..., "rna": ..., "protein": ...} dict,
+    since one gene can now legitimately have all three at once. But this
+    Postgres table still stores ONE sequence per row (same reasoning as
+    before: pg_trgm/kmer similarity search operates on a single sequence
+    column) -- so a priority order is needed to pick which one. DNA is
+    preferred first since that's what the app's primary search/analysis
+    flow (Statistics, Similarity, BLAST) is built around; protein next
+    (still useful for similarity search); RNA last since NCBI mRNA/cDNA
+    entries in this pipeline are stored with T not U anyway (see
+    _VALID_CHARS above) and mostly overlap with DNA content.
+
+    Nothing is lost by only keeping one here: the full nested dict is
+    still stored as-is inside the `record` JSONB column (see
+    _record_to_params), so any caller that needs all three can still get
+    them from there.
+
+    Backward compatible: if `record["sequence"]` is already a plain string
+    (old flat format, in case an older JSON file is loaded), it's used
+    directly instead of assuming the new dict shape.
+    """
+    seq_field = record.get("sequence")
+
+    if isinstance(seq_field, str):
+        # Old flat format.
+        return (seq_field or None), record.get("sequence_type")
+
+    if isinstance(seq_field, dict):
+        for seq_type in ("dna", "protein", "rna"):
+            value = seq_field.get(seq_type)
+            if value:
+                return value, seq_type
+
+    return None, None
+
+
 def _record_to_params(record: dict) -> dict:
     if not record.get("gene_id") and not record.get("symbol"):
         raise ValueError("Record must contain gene_id or symbol")
+
+    sequence, sequence_type = extract_primary_sequence(record)
+
+    # annotation (singular) is the new nested schema's key; annotations
+    # (plural) was the old flat one. Support both so an older JSON file
+    # doesn't silently lose its GO terms / KEGG data.
+    annotation = record.get("annotation") or record.get("annotations") or {}
+    kegg_pathways = annotation.get("kegg_pathways") or record.get("pathways") or []
+    literature = record.get("literature") or {}
+    publications = literature.get("publications") or record.get("publications") or []
+    relations = record.get("relations") or {}
+
+    # sources_summary (new, a list) replaces the old single "source" string
+    # column's meaning -- join it so the existing TEXT column still gets a
+    # readable value ("ncbi,uniprot,plaza") instead of needing a schema
+    # change just for this. Falls back to the old flat "source" field.
+    sources_summary = record.get("sources_summary")
+    if sources_summary:
+        source = ",".join(sources_summary)
+    else:
+        source = record.get("source")
+
     return {
         "gene_id": record.get("gene_id"),
         "symbol": record.get("symbol"),
         "organism": record.get("organism"),
-        "sequence": record.get("sequence"),
-        "sequence_type": record.get("sequence_type"),
-        "description": record.get("description"),
-        "source": record.get("source"),
+        "sequence": sequence,
+        "sequence_type": sequence_type,
+        # New schema has no top-level "description" -- common_name is the
+        # closest equivalent (populated from PLAZA's gene_description.csv,
+        # see collect_all_sources.py PLAZA block).
+        "description": record.get("description") or record.get("common_name"),
+        "source": source,
         "source_url": record.get("source_url"),
         "external_links": json.dumps(record.get("external_links", {})),
+        # NOTE: the new nested schema (restructure_to_schema) does not
+        # currently emit an "expression" field at all -- GEO/Expression
+        # Atlas data collected upstream is silently dropped during
+        # restructuring. Not fixed here; flagged as a separate follow-up.
         "expression_profiles": json.dumps(record.get("expression_profiles", [])),
-        "pathways": json.dumps(record.get("pathways", [])),
-        "publications": json.dumps(record.get("publications", [])),
-        "annotations": json.dumps(record.get("annotations", {})),
+        "pathways": json.dumps(kegg_pathways),
+        "publications": json.dumps(publications),
+        "annotations": json.dumps(annotation),
         "traits": json.dumps(record.get("traits", [])),
-        "length": record.get("length") or (len(record.get("sequence", "")) if record.get("sequence") else None),
+        # Orthologs / gene-family IDs from PLAZA -- new column, see
+        # create_tables(). Without this, all the PLAZA orthology work
+        # would be stored in `record` JSONB only and not easily queryable.
+        "relations": json.dumps(relations),
+        "origin": record.get("origin", "sequence_backed"),
+        "length": record.get("length") or (len(sequence) if sequence else None),
         "date_added": record.get("date_added"),
         "record": json.dumps(record),
-        "sequence_hash": record.get("sequence_hash") or sequence_hash(record.get("sequence")),
+        "sequence_hash": record.get("sequence_hash") or sequence_hash(sequence),
     }
 
 
