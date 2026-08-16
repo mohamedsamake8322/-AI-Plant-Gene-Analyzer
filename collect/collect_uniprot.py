@@ -429,14 +429,36 @@ def _parse_entry(entry: dict, species: str) -> dict | None:
     }
 
 
+import re
+
+_LINK_ENTRY_RE = re.compile(r'<([^>]+)>\s*;\s*rel="([^"]+)"')
+
+
 def _parse_next_link(link_header: str) -> str | None:
-    """Extract 'next' URL from Link header."""
+    """
+    Extract the 'next' URL from a Link header (RFC 8288).
+
+    BUG FIX: the previous version did `link_header.split(",")`, splitting
+    on every comma in the header. That works for headers with multiple
+    link-values (which ARE comma-separated per the RFC) but breaks the
+    moment a single URI *inside* the angle brackets contains its own
+    literal, unescaped comma -- which UniProt's REST API does for the
+    `fields` query parameter (e.g. "...,keyword,feature_count..."). The
+    naive split then chopped the URL apart at that internal comma,
+    silently handing back a URL fragment starting mid-query-string (e.g.
+    "feature_count&query=...") instead of the real
+    "https://rest.uniprot.org/...&fields=...,feature_count&query=..." --
+    which is exactly the "Invalid URL 'feature_count&query=...'" error
+    seen in a real run. Matching on the `<...>; rel="..."` structure
+    directly (each URI is unambiguously delimited by its own angle
+    brackets, regardless of what's inside them) sidesteps the problem
+    entirely instead of trying to special-case which commas are "real"
+    delimiters.
+    """
     if not link_header:
         return None
-    for part in link_header.split(","):
-        part = part.strip()
-        if 'rel="next"' in part:
-            url = part.split(";")[0].strip().strip("<>")
+    for url, rel in _LINK_ENTRY_RE.findall(link_header):
+        if rel == "next":
             return url
     return None
 
