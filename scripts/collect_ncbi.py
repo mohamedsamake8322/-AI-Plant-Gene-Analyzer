@@ -218,13 +218,29 @@ def _prefilter_batch_by_length(batch: list[str], db: str, max_length: int | None
 
 def parse_organism_from_header(header: str) -> str | None:
     # Typical NCBI FASTA: "<acc> <Organism name> ..."
+    #
+    # FIX: the old regex used `(?: [a-z]+)+` -- "one OR MORE additional
+    # lowercase words", unbounded. Real NCBI headers often look like
+    # "Solanum lycopersicum serine protease XYZ mRNA, complete cds" --
+    # the greedy regex happily kept matching past the actual species
+    # epithet into the gene product description ("serine protease"),
+    # producing a garbage "organism" like "Solanum lycopersicum serine
+    # protease" that then polluted organism_counts in the merged database
+    # (1394 distinct "species" instead of the real handful). A binomial
+    # species name is genus + exactly ONE epithet -- capped here to `(?:
+    # [a-z]+)?` (zero or one extra word) so it can't run on into
+    # unrelated following text. This is now only a FALLBACK anyway (see
+    # make_record_from_fasta): when the caller already knows which
+    # organism it queried for (the normal case -- every collection run is
+    # scoped to one species via --plant), that known value is used
+    # directly and this parser is never even consulted.
     tokens = header.split(maxsplit=1)
     if len(tokens) < 2:
         return None
     rest = tokens[1]
     if rest.lower().startswith("p1 "):
         return None
-    match = re.match(r"^([A-Z][a-z]+(?: [a-z]+)+)", rest)
+    match = re.match(r"^([A-Z][a-z]+(?: [a-z]+)?)", rest)
     if match:
         return match.group(1)
     return None
@@ -300,6 +316,7 @@ def make_record_from_fasta(
     seq: str,
     db: str = "nucleotide",
     resolved_gene_id: str | None = None,
+    organism: str | None = None,
 ) -> dict:
     accession = header.split()[0]
     # Use the shared Entrez GeneID when we have one (see
@@ -309,11 +326,19 @@ def make_record_from_fasta(
     # so nothing breaks for callers that don't pass resolved_gene_id.
     gene_id = f"GeneID:{resolved_gene_id}" if resolved_gene_id else accession
     symbol = accession
+    # BUG FIX: `organism` used to always come from parse_organism_from_header(),
+    # which guesses from free-text FASTA header content and could (and did)
+    # grab a gene product description instead of the species name (see that
+    # function's docstring). Every collection run is scoped to one known
+    # species via fetch_by_term(..., organism=...) / --plant -- so when the
+    # caller already knows the organism, trust it directly instead of
+    # re-deriving it from text. Only fall back to the heuristic parser when
+    # no organism was supplied (broader, unscoped searches).
     rec = {
         "gene_id": gene_id,
         "accession": accession,
         "symbol": symbol,
-        "organism": parse_organism_from_header(header),
+        "organism": organism or parse_organism_from_header(header),
         "traits": [],
         "sequence": seq.upper().replace(" ", ""),
         "sequence_type": "dna" if db in ("nucleotide", "nuccore") else "protein",
@@ -518,7 +543,9 @@ def fetch_by_term(
     return [(h, s, g) for h, s, g in triples if h in kept_headers]
 
 
-def add_records_to_db(records: list, db_path: Path = DEFAULT_DB, db: str = "nucleotide") -> None:
+def add_records_to_db(
+    records: list, db_path: Path = DEFAULT_DB, db: str = "nucleotide", organism: str | None = None
+) -> None:
     sys.path.insert(0, str(ROOT))
     try:
         import scripts.validate_and_add_gene as validator
@@ -534,7 +561,7 @@ def add_records_to_db(records: list, db_path: Path = DEFAULT_DB, db: str = "nucl
         else:
             header, seq = item
             resolved_gene_id = None
-        rec = make_record_from_fasta(header, seq, db=db, resolved_gene_id=resolved_gene_id)
+        rec = make_record_from_fasta(header, seq, db=db, resolved_gene_id=resolved_gene_id, organism=organism)
         ok, msg = validator.add_record_to_db(rec, db_path)
         print(f"{rec.get('gene_id')}: {msg}")
         time.sleep(0.2)
@@ -626,7 +653,7 @@ def main(argv):
         print(f"Wrote {len(all_records)} records to {args.out}")
 
     if args.add:
-        add_records_to_db(all_records, Path(args.dbpath), db=args.db)
+        add_records_to_db(all_records, Path(args.dbpath), db=args.db, organism=args.organism)
     else:
         print(f"Fetched {len(all_records)} plant sequence(s). Use --add to insert into DB.")
 

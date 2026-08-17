@@ -130,8 +130,19 @@ def collect_ncbi_data(accessions: list[str] | None, term: str | None, db: str, r
             )
         except Exception as exc:
             logger.warning("NCBI search failed for term %r: %s", term, exc)
+    # BUG FIX: `organism` was available right here (it's this function's
+    # own parameter, threaded through from --plant via run_pipeline.py)
+    # but was never passed down to make_record_from_fasta() -- which then
+    # had to guess the organism from free-text FASTA header content, and
+    # could (and did) grab a gene product description instead of the
+    # actual species name (e.g. "Solanum lycopersicum serine protease"
+    # ending up as the "organism" for a serine protease gene). Every
+    # production run is scoped to exactly one known species via --plant,
+    # so there's no reason to guess here -- pass it through directly.
     return [
-        collect_ncbi.make_record_from_fasta(header, seq, db=db, resolved_gene_id=resolved_gene_id)
+        collect_ncbi.make_record_from_fasta(
+            header, seq, db=db, resolved_gene_id=resolved_gene_id, organism=organism
+        )
         for header, seq, resolved_gene_id in fasta_records
     ]
 
