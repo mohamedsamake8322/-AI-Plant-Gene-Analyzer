@@ -277,6 +277,9 @@ def restructure_to_schema(gid: str, flat: dict) -> dict:
     if raw_seq or flat.get("source") == "ncbi":
         sources_seen.add("ncbi")
 
+    has_seq = bool(raw_seq.get("dna") or raw_seq.get("rna") or raw_seq.get("protein"))
+    default_origin = "sequence_backed" if has_seq else "annotation_only"
+
     nested = {
         "gene_id": gid,
         "organism": flat.get("organism"),
@@ -288,7 +291,7 @@ def restructure_to_schema(gid: str, flat: dict) -> dict:
         # and it MAY duplicate an already-collected gene under a different
         # ID (PLAZA vs NCBI accession mismatch). See collect_all_sources.py
         # PLAZA block for why this trade-off was made.
-        "origin": flat.get("origin", "sequence_backed"),
+        "origin": flat.get("origin", default_origin),
         "sequence": {
             "dna": raw_seq.get("dna"),
             "rna": raw_seq.get("rna"),
@@ -445,6 +448,11 @@ def collect_species(
                     if r.get("annotations", {}).get("ko_ids"):
                         existing.setdefault("annotations", {})["ko_ids"] = \
                             r["annotations"]["ko_ids"]
+                if gid and r.get("sequence"):
+                    seq_type = r.get("sequence_type") or "dna"
+                    all_records[gid].setdefault("_raw_sequences", {}).setdefault(
+                        seq_type, r["sequence"]
+                    )
             source_counts["kegg"] = len(all_records) - before
         except Exception as e:
             errors.append(f"kegg: {e}")
@@ -467,6 +475,10 @@ def collect_species(
                     )
                     if "TF:" not in " ".join(existing.get("traits", [])):
                         existing.setdefault("traits", []).extend(r.get("traits", []))
+                if gid and r.get("sequence"):
+                    all_records[gid].setdefault("_raw_sequences", {}).setdefault(
+                        "protein", r["sequence"]
+                    )
             source_counts["planttfdb"] = len(all_records) - before
         except Exception as e:
             errors.append(f"planttfdb: {e}")
