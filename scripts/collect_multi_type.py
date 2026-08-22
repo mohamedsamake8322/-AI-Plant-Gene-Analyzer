@@ -72,6 +72,7 @@ def collect_and_clean_type(
     pipeline_argv = [
         "--ncbi-term", plant_term,
         "--ncbi-db", ncbi_db,
+        "--organism", plant_term,
         "--retmax", str(retmax),
         "--out-raw", str(temp_raw),
         "--out-clean", str(temp_clean),

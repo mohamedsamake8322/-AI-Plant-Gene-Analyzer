@@ -412,8 +412,17 @@ def collect_species(
             before = len(all_records)
             for r in recs:
                 gid = r.get("gene_id")
-                if gid and gid not in all_records:
+                if not gid:
+                    continue
+                if gid not in all_records:
                     all_records[gid] = r
+                entry = all_records[gid]
+                # Keep protein sequences in the structure consumed by
+                # restructure_to_schema().
+                if r.get("sequence"):
+                    entry.setdefault("_raw_sequences", {}).setdefault(
+                        "protein", r["sequence"]
+                    )
             source_counts["uniprot"] = len(all_records) - before
         except Exception as e:
             errors.append(f"uniprot: {e}")
