@@ -126,7 +126,7 @@ def _normalize_database(raw: object) -> dict:
         if "genes" in raw and isinstance(raw["genes"], list):
             entries = raw["genes"]
         elif all(isinstance(v, dict) for v in raw.values()):
-            return raw
+            return {k: _flatten_sequence(v) for k, v in raw.items()}
         else:
             entries = [raw] if raw.get("gene_id") or raw.get("symbol") else []
     elif isinstance(raw, list):
@@ -141,8 +141,22 @@ def _normalize_database(raw: object) -> dict:
         key = item.get("gene_id") or item.get("symbol") or item.get("accession")
         if not key:
             continue
-        records[key] = item
+        records[key] = _flatten_sequence(item)
     return records
+
+
+def _flatten_sequence(item: dict) -> dict:
+    """Extract the primary sequence string from the nested star-schema
+    `sequence` object (`{"value": ..., "type": ...}`) so the rest of
+    similarityengine.py — which expects `sequence` as a plain string —
+    keeps working unchanged on the new master_plant_db.json schema."""
+    seq_field = item.get("sequence")
+    if isinstance(seq_field, dict):
+        item = dict(item)  # avoid mutating shared refs
+        item["sequence"] = seq_field.get("value") or ""
+        if not item.get("sequence_type"):
+            item["sequence_type"] = seq_field.get("type")
+    return item
 
 
 def load_gene_database(db_path: str = "genes_database.json") -> dict:

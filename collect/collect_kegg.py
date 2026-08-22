@@ -36,6 +36,8 @@ KEGG_ORG_MAP: dict[str, str] = {
     "citrus sinensis": "csi",
     "fragaria ananassa": "fan",
     "olea europaea": "oeu",
+    "nicotiana tabacum": "nta",
+    "chenopodium quinoa": "cqi",
 }
 
 
