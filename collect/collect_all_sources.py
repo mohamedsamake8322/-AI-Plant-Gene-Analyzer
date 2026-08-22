@@ -636,7 +636,8 @@ def collect_species(
         },
         "genes": nested_genes,
     }
-    out_file.write_text(json.dumps(out_data, ensure_ascii=False, indent=2), encoding="utf-8")
+    with out_file.open("w", encoding="utf-8") as f:
+         json.dump(out_data, f, ensure_ascii=False, indent=2)
 
     status = "ok" if not errors else "partial"
     return {
