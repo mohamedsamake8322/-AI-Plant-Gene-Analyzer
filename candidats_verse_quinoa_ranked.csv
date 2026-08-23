@@ -1,0 +1,214 @@
+gene_id,common_name,score,n_categories,n_tier_a_keywords,n_pmids,categories,mots_cles
+A0A803LX92,IRX12: Laccase-4,6,1,2,0,lignification,lignification:laccase;lignification:lignin
+A0A803N545,LAC17: Laccase-17,6,1,2,0,lignification,lignification:laccase;lignification:lignin
+A0A803N546,LAC4: Laccase-4,6,1,2,0,lignification,lignification:laccase;lignification:lignin
+A0A803KYF8,LAC11: Laccase-11,6,1,2,0,lignification,lignification:laccase;lignification:lignin
+A0A803L6Y8,LAC11: Laccase-11,6,1,2,0,lignification,lignification:laccase;lignification:lignin
+A0A803LX17,LAC17: Laccase-17,6,1,2,0,lignification,lignification:laccase;lignification:lignin
+A0A803MZU0,KAO1: Ent-kaurenoic acid oxidase 1,6,1,2,0,hormonal,hormonal:brassinosteroid;hormonal:gibberellin
+A0A803NBE9,KAO1: Ent-kaurenoic acid oxidase 1,6,1,2,0,hormonal,hormonal:brassinosteroid;hormonal:gibberellin
+A0A803KYK3,LAC11: Laccase-11,6,1,2,0,lignification,lignification:laccase;lignification:lignin
+A0A803KZQ5,LAC6: Laccase-6,6,1,2,0,lignification,lignification:laccase;lignification:lignin
+A0A803M3E1,LAC6: Laccase-6,6,1,2,0,lignification,lignification:laccase;lignification:lignin
+A0A803M3N7,LAC22: Laccase-22,6,1,2,0,lignification,lignification:laccase;lignification:lignin
+A0A803M405,LAC12: Laccase-12,6,1,2,0,lignification,lignification:laccase;lignification:lignin
+A0A803M4G5,KAO1: Ent-kaurenoic acid oxidase 1,6,1,2,0,hormonal,hormonal:brassinosteroid;hormonal:gibberellin
+A0A803L6U1,LAC11: Laccase-11,6,1,2,0,lignification,lignification:laccase;lignification:lignin
+A0A803MQL5,LAC17: Laccase-17,6,1,2,0,lignification,lignification:laccase;lignification:lignin
+A0A803N6S0,LAC17: Laccase-17,6,1,2,0,lignification,lignification:laccase;lignification:lignin
+A0A803N6S3,LAC4: Laccase-4,6,1,2,0,lignification,lignification:laccase;lignification:lignin
+A0A803KS64,LAC3: Laccase-3,6,1,2,0,lignification,lignification:laccase;lignification:lignin
+A0A803KYJ6,PER20: Peroxidase 20,4,1,1,0,lignification,lignification:lignin;lignification:peroxidase
+A0A803L6Y1,GSVIVT00023967001: Peroxidase 4,4,1,1,0,lignification,lignification:lignin;lignification:peroxidase
+A0A803MSH4,PER9: Peroxidase 9,4,1,1,0,lignification,lignification:lignin;lignification:peroxidase
+A0A803L6Y0,PER20: Peroxidase 20,4,1,1,0,lignification,lignification:lignin;lignification:peroxidase
+A0A803M6H8,Lignin-forming anionic peroxidase,4,1,1,0,lignification,lignification:lignin;lignification:peroxidase
+A0A803KYJ7,GSVIVT00023967001: Peroxidase 4,4,1,1,0,lignification,lignification:lignin;lignification:peroxidase
+A0A803L6Y2,PER72: Peroxidase 72,4,1,1,0,lignification,lignification:lignin;lignification:peroxidase
+A0A803LKH7,PER9: Peroxidase 9,4,1,1,0,lignification,lignification:lignin;lignification:peroxidase
+A0A803KYJ8,PER72: Peroxidase 72,4,1,1,0,lignification,lignification:lignin;lignification:peroxidase
+A0A803L6Z1,ROT3: 3-epi-6-deoxocathasterone 23-monooxygenase,3,1,1,0,hormonal,hormonal:brassinosteroid
+A0A803MC37,TOR: Serine/threonine-protein kinase TOR,3,1,1,0,hormonal,hormonal:brassinosteroid
+A0A803N4M2,ABCB1: ABC transporter B family member 1,3,1,1,0,hormonal,hormonal:brassinosteroid
+A0A803MA19,REF6: Lysine-specific demethylase REF6,3,1,1,0,hormonal,hormonal:brassinosteroid
+A0A803ME15,CESA8: Cellulose synthase A catalytic subunit 8 [UDP-forming],3,1,1,0,lignification,lignification:cellulose synthase
+A0A803MJQ5,CESA1: Cellulose synthase A catalytic subunit 1 [UDP-forming],3,1,1,0,lignification,lignification:cellulose synthase
+A0A803N0J9,ELF6: Probable lysine-specific demethylase ELF6,3,1,1,0,hormonal,hormonal:brassinosteroid
+A0A803N3I3,ABCB19: ABC transporter B family member 19,3,1,1,0,hormonal,hormonal:brassinosteroid
+A0A803N3W7,"IRX9: Probable beta-1,4-xylosyltransferase IRX9",3,1,1,0,lignification,lignification:secondary cell wall
+A0A803KX89,Systemin receptor SR160,3,1,1,0,hormonal,hormonal:brassinosteroid
+A0A803LBZ7,CESA3: Cellulose synthase A catalytic subunit 3 [UDP-forming],3,1,1,0,lignification,lignification:cellulose synthase
+A0A803LJW6,ELF6: Probable lysine-specific demethylase ELF6,3,1,1,0,hormonal,hormonal:brassinosteroid
+A0A803LK53,NADPH--cytochrome P450 reductase,3,1,1,0,lignification,lignification:lignin
+A0A803LW66,ALA8: Probable phospholipid-transporting ATPase 8,3,1,1,0,rigidite_tige,rigidite_tige:verse
+A0A803MUA3,"KO: Ent-kaurene oxidase, chloroplastic",3,1,1,0,hormonal,hormonal:gibberellin
+A0A803KQF9,REF6: Lysine-specific demethylase REF6,3,1,1,0,hormonal,hormonal:brassinosteroid
+A0A803KVA1,ALA9: Putative phospholipid-transporting ATPase 9,3,1,1,0,rigidite_tige,rigidite_tige:verse
+A0A803LDB5,ALA4: Probable phospholipid-transporting ATPase 4,3,1,1,0,rigidite_tige,rigidite_tige:verse
+A0A803MB35,ALA3: Phospholipid-transporting ATPase 3,3,1,1,0,rigidite_tige,rigidite_tige:verse
+A0A803MFD4,CESA7: Cellulose synthase A catalytic subunit 7 [UDP-forming],3,1,1,0,lignification,lignification:cellulose synthase
+A0A803MV26,"IRX9H: Probable beta-1,4-xylosyltransferase IRX9H",3,1,1,0,lignification,lignification:secondary cell wall
+A0A803LK05,ALA1: Phospholipid-transporting ATPase 1,3,1,1,0,rigidite_tige,rigidite_tige:verse
+A0A803LV49,NADPH--cytochrome P450 reductase,3,1,1,0,lignification,lignification:lignin
+A0A803M972,CESA4: Cellulose synthase A catalytic subunit 4 [UDP-forming],3,1,1,0,lignification,lignification:cellulose synthase
+A0A803MMN1,Snd1: Staphylococcal nuclease domain-containing protein 1,3,1,1,0,hormonal,hormonal:gibberellin
+A0A803MXJ7,ALA3: Phospholipid-transporting ATPase 3,3,1,1,0,rigidite_tige,rigidite_tige:verse
+A0A803N1H4,FRA1: Kinesin-like protein FRA1,3,1,1,0,lignification,lignification:cellulose synthase
+A0A803N2Q6,CESA8: Cellulose synthase A catalytic subunit 8 [UDP-forming],3,1,1,0,lignification,lignification:cellulose synthase
+A0A803N7M5,"IRX9: Probable beta-1,4-xylosyltransferase IRX9",3,1,1,0,lignification,lignification:secondary cell wall
+A0A803L3I9,ALA1: Phospholipid-transporting ATPase 1,3,1,1,0,rigidite_tige,rigidite_tige:verse
+A0A803L7C5,ALA9: Putative phospholipid-transporting ATPase 9,3,1,1,0,rigidite_tige,rigidite_tige:verse
+A0A803LJI9,TERT: Telomerase reverse transcriptase,3,1,1,0,rigidite_tige,rigidite_tige:verse
+A0A803LX06,PAT24: Protein S-acyltransferase 24,3,1,1,0,lignification,lignification:secondary cell wall
+A0A803M8X3,CESA7: Cellulose synthase A catalytic subunit 7 [UDP-forming],3,1,1,0,lignification,lignification:cellulose synthase
+A0A803MAA7,CESA3: Cellulose synthase A catalytic subunit 3 [UDP-forming],3,1,1,0,lignification,lignification:cellulose synthase
+A0A803MBN0,ALA3: Phospholipid-transporting ATPase 3,3,1,1,0,rigidite_tige,rigidite_tige:verse
+A0A803MRC8,"IRX9H: Probable beta-1,4-xylosyltransferase IRX9H",3,1,1,0,lignification,lignification:secondary cell wall
+A0A803MUH5,ALA8: Probable phospholipid-transporting ATPase 8,3,1,1,0,rigidite_tige,rigidite_tige:verse
+A0A803MVJ6,"KO: Ent-kaurene oxidase, chloroplastic",3,1,1,0,hormonal,hormonal:gibberellin
+A0A803KMJ8,GLU3: Endoglucanase 12,3,1,1,0,lignification,lignification:cellulose synthase
+cqi:110681681,,3,1,1,0,lignification,lignification:phenylpropanoid
+cqi:110681844,,3,1,1,0,lignification,lignification:phenylpropanoid
+cqi:110682049,,3,1,1,0,lignification,lignification:phenylpropanoid
+cqi:110682117,,3,1,1,0,lignification,lignification:phenylpropanoid
+cqi:110682118,,3,1,1,0,lignification,lignification:phenylpropanoid
+cqi:110682322,,3,1,1,0,lignification,lignification:phenylpropanoid
+cqi:110682328,,3,1,1,0,lignification,lignification:phenylpropanoid
+cqi:110682410,,3,1,1,0,lignification,lignification:phenylpropanoid
+cqi:110682507,,3,1,1,0,lignification,lignification:phenylpropanoid
+cqi:110682543,,3,1,1,0,lignification,lignification:phenylpropanoid
+cqi:110682544,,3,1,1,0,lignification,lignification:phenylpropanoid
+cqi:110682545,,3,1,1,0,lignification,lignification:phenylpropanoid
+cqi:110682546,,3,1,1,0,lignification,lignification:phenylpropanoid
+cqi:110682556,,3,1,1,0,hormonal,hormonal:brassinosteroid
+A0A803KNK2,PER47: Peroxidase 47,1,1,0,0,lignification,lignification:peroxidase
+A0A803KQP2,PER60: Peroxidase 60,1,1,0,0,lignification,lignification:peroxidase
+A0A803KTK2,PER61: Probable peroxidase 61,1,1,0,0,lignification,lignification:peroxidase
+A0A803KVE5,PER57: Peroxidase 57,1,1,0,0,lignification,lignification:peroxidase
+A0A803KW45,PER17: Peroxidase 17,1,1,0,0,lignification,lignification:peroxidase
+A0A803L399,PNC1: Cationic peroxidase 1,1,1,0,0,lignification,lignification:peroxidase
+A0A803L3A3,PER41: Peroxidase 41,1,1,0,0,lignification,lignification:peroxidase
+A0A803L3A4,PER42: Peroxidase 42,1,1,0,0,lignification,lignification:peroxidase
+A0A803L7H1,PER44: Peroxidase 44,1,1,0,0,lignification,lignification:peroxidase
+A0A803LJE5,GSVIVT00037159001: Peroxidase 5,1,1,0,0,lignification,lignification:peroxidase
+A0A803M236,PER27: Peroxidase 27,1,1,0,0,lignification,lignification:peroxidase
+A0A803M438,Protein of unknown function,1,1,0,0,lignification,lignification:peroxidase
+A0A803M6H9,Peroxidase,1,1,0,0,lignification,lignification:peroxidase
+A0A803MBU9,PER41: Peroxidase 41,1,1,0,0,lignification,lignification:peroxidase
+A0A803MHS8,PER42: Peroxidase 42,1,1,0,0,lignification,lignification:peroxidase
+A0A803MHS9,PER7: Peroxidase 7,1,1,0,0,lignification,lignification:peroxidase
+A0A803MSQ3,PER24: Peroxidase 24,1,1,0,0,lignification,lignification:peroxidase
+A0A803MWT7,PER24: Peroxidase 24,1,1,0,0,lignification,lignification:peroxidase
+A0A803N255,PNC2: Cationic peroxidase 2,1,1,0,0,lignification,lignification:peroxidase
+A0A803N2C1,PER29: Peroxidase 29,1,1,0,0,lignification,lignification:peroxidase
+A0A803N309,PER27: Peroxidase 27,1,1,0,0,lignification,lignification:peroxidase
+A0A803N4T1,PER48: Putative Peroxidase 48,1,1,0,0,lignification,lignification:peroxidase
+A0A803NDL0,PER44: Peroxidase 44,1,1,0,0,lignification,lignification:peroxidase
+A0A803NE62,Protein of unknown function,1,1,0,0,lignification,lignification:peroxidase
+A0A803NF05,GSVIVT00023967001: Peroxidase 4,1,1,0,0,lignification,lignification:peroxidase
+A0A803L285,PER64: Peroxidase 64,1,1,0,0,lignification,lignification:peroxidase
+A0A803L2W9,PER60: Peroxidase 60,1,1,0,0,lignification,lignification:peroxidase
+A0A803L3A1,pod: Peroxidase 15,1,1,0,0,lignification,lignification:peroxidase
+A0A803L3A5,"APX3: L-ascorbate peroxidase 3, peroxisomal",1,1,0,0,lignification,lignification:peroxidase
+A0A803L3D5,PER53: Peroxidase 53,1,1,0,0,lignification,lignification:peroxidase
+A0A803L4F1,GSVIVT00037159001: Peroxidase 5,1,1,0,0,lignification,lignification:peroxidase
+A0A803L4L2,GSVIVT00037159001: Peroxidase 5,1,1,0,0,lignification,lignification:peroxidase
+A0A803L5V0,PER20: Peroxidase 20,1,1,0,0,lignification,lignification:peroxidase
+A0A803LCY4,GSVIVT00023967001: Peroxidase 4,1,1,0,0,lignification,lignification:peroxidase
+A0A803LD01,PER60: Peroxidase 60,1,1,0,0,lignification,lignification:peroxidase
+A0A803LD44,GSVIVT00023967001: Peroxidase 4,1,1,0,0,lignification,lignification:peroxidase
+A0A803LVC4,PER71: Peroxidase 71,1,1,0,0,lignification,lignification:peroxidase
+A0A803LVC5,PER57: Peroxidase 57,1,1,0,0,lignification,lignification:peroxidase
+A0A803M0L3,APX6: Putative L-ascorbate peroxidase 6,1,1,0,0,lignification,lignification:peroxidase
+A0A803M439,GSVIVT00023967001: Peroxidase 4,1,1,0,0,lignification,lignification:peroxidase
+A0A803M440,PER15: Peroxidase 15,1,1,0,0,lignification,lignification:peroxidase
+A0A803M5V2,PER61: Probable peroxidase 61,1,1,0,0,lignification,lignification:peroxidase
+A0A803M6I0,Peroxidase P7,1,1,0,0,lignification,lignification:peroxidase
+A0A803M9R8,GSVIVT00037159001: Peroxidase 5,1,1,0,0,lignification,lignification:peroxidase
+A0A803M9T0,PER60: Peroxidase 60,1,1,0,0,lignification,lignification:peroxidase
+A0A803MBT0,PER61: Probable peroxidase 61,1,1,0,0,lignification,lignification:peroxidase
+A0A803MCM4,PER17: Peroxidase 17,1,1,0,0,lignification,lignification:peroxidase
+A0A803MHF1,PER55: Peroxidase 55,1,1,0,0,lignification,lignification:peroxidase
+A0A803N275,GSVIVT00023967001: Peroxidase 4,1,1,0,0,lignification,lignification:peroxidase
+A0A803N5D6,cat: Catalase,1,1,0,0,lignification,lignification:peroxidase
+A0A803N7H4,GSVIVT00023967001: Peroxidase 4,1,1,0,0,lignification,lignification:peroxidase
+A0A803NCB8,PER60: Peroxidase 60,1,1,0,0,lignification,lignification:peroxidase
+A0A803NEN1,PNC1: Cationic peroxidase 1,1,1,0,0,lignification,lignification:peroxidase
+A0A803KMX8,GSVIVT00037159001: Peroxidase 5,1,1,0,0,lignification,lignification:peroxidase
+A0A803KN46,GSVIVT00037159001: Peroxidase 5,1,1,0,0,lignification,lignification:peroxidase
+A0A803KN47,PER2: Peroxidase 2,1,1,0,0,lignification,lignification:peroxidase
+A0A803KVE6,Peroxidase 2,1,1,0,0,lignification,lignification:peroxidase
+A0A803KXE5,PER64: Peroxidase 64,1,1,0,0,lignification,lignification:peroxidase
+A0A803L7G9,PER57: Peroxidase 57,1,1,0,0,lignification,lignification:peroxidase
+A0A803LCZ9,Protein of unknown function,1,1,0,0,lignification,lignification:peroxidase
+A0A803LD00,PER2: Peroxidase 2,1,1,0,0,lignification,lignification:peroxidase
+A0A803LD04,PER57: Peroxidase 57,1,1,0,0,lignification,lignification:peroxidase
+A0A803LD05,PNC2: Cationic peroxidase 2,1,1,0,0,lignification,lignification:peroxidase
+A0A803LL86,PER3: Peroxidase 3,1,1,0,0,lignification,lignification:peroxidase
+A0A803LLS2,PER19: Peroxidase 19,1,1,0,0,lignification,lignification:peroxidase
+A0A803LPN6,PER3: Peroxidase 3,1,1,0,0,lignification,lignification:peroxidase
+A0A803LV15,"APXT: L-ascorbate peroxidase T, chloroplastic",1,1,0,0,lignification,lignification:peroxidase
+A0A803M441,PNC1: Cationic peroxidase 1,1,1,0,0,lignification,lignification:peroxidase
+A0A803M6I1,GSVIVT00023967001: Peroxidase 4,1,1,0,0,lignification,lignification:peroxidase
+A0A803MHS2,PNC1: Cationic peroxidase 1,1,1,0,0,lignification,lignification:peroxidase
+A0A803MHS4,pod: Peroxidase 15,1,1,0,0,lignification,lignification:peroxidase
+A0A803MHS7,PER29: Peroxidase 29,1,1,0,0,lignification,lignification:peroxidase
+A0A803MMD7,PER63: Peroxidase 63,1,1,0,0,lignification,lignification:peroxidase
+A0A803MW59,GSVIVT00023967001: Peroxidase 4,1,1,0,0,lignification,lignification:peroxidase
+A0A803MW61,PNC1: Cationic peroxidase 1,1,1,0,0,lignification,lignification:peroxidase
+A0A803N2A6,PER40: Peroxidase 40,1,1,0,0,lignification,lignification:peroxidase
+A0A803N945,PER56: Peroxidase 56,1,1,0,0,lignification,lignification:peroxidase
+A0A803NE57,"APXT: L-ascorbate peroxidase T, chloroplastic",1,1,0,0,lignification,lignification:peroxidase
+A0A803NF10,GSVIVT00023967001: Peroxidase 4,1,1,0,0,lignification,lignification:peroxidase
+A0A803KVE7,PER60: Peroxidase 60,1,1,0,0,lignification,lignification:peroxidase
+A0A803KVG1,PER11: Peroxidase 11,1,1,0,0,lignification,lignification:peroxidase
+A0A803KWN2,PER55: Peroxidase 55,1,1,0,0,lignification,lignification:peroxidase
+A0A803KY75,PER50: Peroxidase 50,1,1,0,0,lignification,lignification:peroxidase
+A0A803L284,"APX5: L-ascorbate peroxidase 5, peroxisomal",1,1,0,0,lignification,lignification:peroxidase
+A0A803L288,GSVIVT00037159001: Peroxidase 5,1,1,0,0,lignification,lignification:peroxidase
+A0A803L3A2,"APX2: L-ascorbate peroxidase 2, cytosolic",1,1,0,0,lignification,lignification:peroxidase
+A0A803L6U5,PER27: Peroxidase 27,1,1,0,0,lignification,lignification:peroxidase
+A0A803L7I3,PER11: Peroxidase 11,1,1,0,0,lignification,lignification:peroxidase
+A0A803LCZ8,PNC2: Cationic peroxidase 2,1,1,0,0,lignification,lignification:peroxidase
+A0A803LU67,PER20: Peroxidase 20,1,1,0,0,lignification,lignification:peroxidase
+A0A803LVC7,PNC2: Cationic peroxidase 2,1,1,0,0,lignification,lignification:peroxidase
+A0A803M434,PER32: Peroxidase 32,1,1,0,0,lignification,lignification:peroxidase
+A0A803M435,HRPA2: Peroxidase A2,1,1,0,0,lignification,lignification:peroxidase
+A0A803MBS9,PER57: Peroxidase 57,1,1,0,0,lignification,lignification:peroxidase
+A0A803MHS5,PER43: Peroxidase 43,1,1,0,0,lignification,lignification:peroxidase
+A0A803MW37,PER60: Peroxidase 60,1,1,0,0,lignification,lignification:peroxidase
+A0A803MW38,PER54: Peroxidase 54,1,1,0,0,lignification,lignification:peroxidase
+A0A803MW41,Protein of unknown function,1,1,0,0,lignification,lignification:peroxidase
+A0A803MW42,PNC2: Cationic peroxidase 2,1,1,0,0,lignification,lignification:peroxidase
+A0A803MXC4,CAT1: Catalase isozyme 1,1,1,0,0,lignification,lignification:peroxidase
+A0A803MXT0,PER60: Peroxidase 60,1,1,0,0,lignification,lignification:peroxidase
+A0A803N308,PER39: Peroxidase 39,1,1,0,0,lignification,lignification:peroxidase
+A0A803N5D1,Catalase,1,1,0,0,lignification,lignification:peroxidase
+A0A803N7H3,Peroxidase,1,1,0,0,lignification,lignification:peroxidase
+A0A803NCB9,PER57: Peroxidase 57,1,1,0,0,lignification,lignification:peroxidase
+A0A803NDW0,Protein of unknown function,1,1,0,0,lignification,lignification:peroxidase
+A0A803NE84,PER12: Peroxidase 12,1,1,0,0,lignification,lignification:peroxidase
+A0A803KN48,PER24: Peroxidase 24,1,1,0,0,lignification,lignification:peroxidase
+A0A803KV71,PER57: Peroxidase 57,1,1,0,0,lignification,lignification:peroxidase
+A0A803KVE8,PNC1: Cationic peroxidase 1,1,1,0,0,lignification,lignification:peroxidase
+A0A803KWN3,PER55: Peroxidase 55,1,1,0,0,lignification,lignification:peroxidase
+A0A803KXE4,Protein of unknown function,1,1,0,0,lignification,lignification:peroxidase
+A0A803KYG2,PER27: Peroxidase 27,1,1,0,0,lignification,lignification:peroxidase
+A0A803L286,PER39: Peroxidase 39,1,1,0,0,lignification,lignification:peroxidase
+A0A803L287,pod: Peroxidase 15,1,1,0,0,lignification,lignification:peroxidase
+A0A803L3A0,PER52: Peroxidase 52,1,1,0,0,lignification,lignification:peroxidase
+A0A803L520,PER47: Peroxidase 47,1,1,0,0,lignification,lignification:peroxidase
+A0A803LK21,"APXT: L-ascorbate peroxidase T, chloroplastic",1,1,0,0,lignification,lignification:peroxidase
+A0A803LYQ2,PER45: Peroxidase 45,1,1,0,0,lignification,lignification:peroxidase
+A0A803M0L1,PER47: Peroxidase 47,1,1,0,0,lignification,lignification:peroxidase
+A0A803M0L2,PER66: Peroxidase 66,1,1,0,0,lignification,lignification:peroxidase
+A0A803M7X7,PER27: Peroxidase 27,1,1,0,0,lignification,lignification:peroxidase
+A0A803MHT0,PER65: Peroxidase 65,1,1,0,0,lignification,lignification:peroxidase
+A0A803MSQ2,PER39: Peroxidase 39,1,1,0,0,lignification,lignification:peroxidase
+A0A803MW39,PER3: Peroxidase 3,1,1,0,0,lignification,lignification:peroxidase
+A0A803MW40,Protein of unknown function,1,1,0,0,lignification,lignification:peroxidase
+A0A803N5X3,PER7: Peroxidase 7,1,1,0,0,lignification,lignification:peroxidase
+A0A803NA24,PER7: Peroxidase 7,1,1,0,0,lignification,lignification:peroxidase
+A0A803NCC1,Protein of unknown function,1,1,0,0,lignification,lignification:peroxidase
+A0A803ND82,GSVIVT00023967001: Peroxidase 4,1,1,0,0,lignification,lignification:peroxidase
+A0A803NE63,GSVIVT00023967001: Peroxidase 4,1,1,0,0,lignification,lignification:peroxidase

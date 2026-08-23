@@ -52,33 +52,33 @@ def repair_file(path: Path) -> tuple[int, int]:
 
 
 def rebuild_master() -> None:
-    """Reconstruit master_plant_db.json à partir des fichiers corrigés,
-    avec un organism_counts propre (dédupliqué sur le vrai nom d'espèce,
-    pas sur les variantes polluées d'avant)."""
-    all_genes = []
-    organism_counts: dict[str, int] = {}
+    """Reconstruit master_plant_db.json à partir des fichiers corrigés.
 
-    for path in sorted(SPECIES_DIR.glob("*_all_sources.json")):
-        with path.open(encoding="utf-8") as f:
-            data = json.load(f)
-        genes = data.get("genes", [])
-        all_genes.extend(genes)
-        for gene in genes:
-            org = gene.get("organism", "Unknown")
-            organism_counts[org] = organism_counts.get(org, 0) + 1
+    NE PAS réimplémenter cette logique ici. La reconstruction du master
+    est centralisée dans rebuild_master_safe.py (racine du projet),
+    seul point de vérité pour la fusion. L'ancienne version de cette
+    fonction accumulait tous les gènes en mémoire (all_genes.extend)
+    puis faisait un json.dump() unique -- c'est ce qui a produit un
+    master_plant_db.json tronqué (crash mémoire probable en cours
+    d'écriture, sans traceback exploitable). Corrigé le 22/08/2026,
+    voir rebuild_master_safe.py pour la version streaming + atomique.
+    """
+    import subprocess
+    import sys
 
-    master = {
-        "metadata": {
-            "description": "Master plant genomics database — multi-source, multi-species",
-            "total_genes": len(all_genes),
-            "total_species": len(organism_counts),
-            "organism_counts": organism_counts,
-        },
-        "genes": all_genes,
-    }
+    script = ROOT / "rebuild_master_safe.py"
+    if not script.exists():
+        raise SystemExit(
+            f"rebuild_master_safe.py introuvable à {script}. "
+            f"Place-le à la racine du projet avant de relancer repair_organism_field.py."
+        )
 
-    with MASTER_OUT.open("w", encoding="utf-8") as f:
-        json.dump(master, f, ensure_ascii=False)
+    subprocess.run(
+        [sys.executable, str(script),
+         "--species-dir", str(SPECIES_DIR),
+         "--out", str(MASTER_OUT)],
+        check=True,
+    )
 
 
 if __name__ == "__main__":
