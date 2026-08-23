@@ -198,17 +198,17 @@ A0A803NCC1,Protein of unknown function,True,lignification,lignification:peroxida
 A0A803ND82,GSVIVT00023967001: Peroxidase 4,True,lignification,lignification:peroxidase
 A0A803NE63,GSVIVT00023967001: Peroxidase 4,True,lignification,lignification:peroxidase
 A0A803KMJ8,GLU3: Endoglucanase 12,True,lignification,lignification:cellulose synthase
-cqi:110681681,,False,lignification,lignification:phenylpropanoid
-cqi:110681844,,False,lignification,lignification:phenylpropanoid
-cqi:110682049,,False,lignification,lignification:phenylpropanoid
-cqi:110682117,,False,lignification,lignification:phenylpropanoid
-cqi:110682118,,False,lignification,lignification:phenylpropanoid
-cqi:110682322,,False,lignification,lignification:phenylpropanoid
-cqi:110682328,,False,lignification,lignification:phenylpropanoid
-cqi:110682410,,False,lignification,lignification:phenylpropanoid
-cqi:110682507,,False,lignification,lignification:phenylpropanoid
-cqi:110682543,,False,lignification,lignification:phenylpropanoid
-cqi:110682544,,False,lignification,lignification:phenylpropanoid
-cqi:110682545,,False,lignification,lignification:phenylpropanoid
-cqi:110682546,,False,lignification,lignification:phenylpropanoid
-cqi:110682556,,False,hormonal,hormonal:brassinosteroid
+cqi:110681681,,True,lignification,lignification:phenylpropanoid
+cqi:110681844,,True,lignification,lignification:phenylpropanoid
+cqi:110682049,,True,lignification,lignification:phenylpropanoid
+cqi:110682117,,True,lignification,lignification:phenylpropanoid
+cqi:110682118,,True,lignification,lignification:phenylpropanoid
+cqi:110682322,,True,lignification,lignification:phenylpropanoid
+cqi:110682328,,True,lignification,lignification:phenylpropanoid
+cqi:110682410,,True,lignification,lignification:phenylpropanoid
+cqi:110682507,,True,lignification,lignification:phenylpropanoid
+cqi:110682543,,True,lignification,lignification:phenylpropanoid
+cqi:110682544,,True,lignification,lignification:phenylpropanoid
+cqi:110682545,,True,lignification,lignification:phenylpropanoid
+cqi:110682546,,True,lignification,lignification:phenylpropanoid
+cqi:110682556,,True,hormonal,hormonal:brassinosteroid

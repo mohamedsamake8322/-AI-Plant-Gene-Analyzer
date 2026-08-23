@@ -1,39 +1,22 @@
-import gzip
-import os
-import shutil
 
-# Définition des chemins des dossiers
-dossier_source = r"C:\Downloads\id"
-dossier_destination = os.path.join(dossier_source, "extraction_totale")
+import json, glob
 
-# Création du dossier de destination s'il n'existe pas
-if not os.path.exists(dossier_destination):
-    os.makedirs(dossier_destination)
-    print(f"Dossier créé : {dossier_destination}")
+for path in glob.glob(r'C:\Downloads\IA\Data\clean\species\*.json'):
+    try:
+        d = json.load(open(path, encoding='utf-8'))
+    except Exception as e:
+        print(f'{path}: ERREUR LECTURE ({e})')
+        continue
 
-# Liste de tous les fichiers du dossier source
-fichiers = os.listdir(dossier_source)
+    genes = d['genes'] if isinstance(d, dict) and 'genes' in d else d
+    if not isinstance(genes, list):
+        print(f'{path}: format inattendu (genes = {type(genes)})')
+        continue
 
-print("Début de l'extraction...")
-
-for fichier in fichiers:
-    # Filtrer uniquement les fichiers se terminant par .gz
-    if fichier.endswith(".gz"):
-        chemin_archive = os.path.join(dossier_source, fichier)
-
-        # Déterminer le nom du fichier extrait (enlève le .gz final)
-        nom_fichier_extrait = fichier[:-3]
-        chemin_extraction = os.path.join(
-            dossier_destination, nom_fichier_extrait
-        )
-
-        try:
-            print(f"Extraction de : {fichier}")
-            # Lecture du fichier compressé et écriture du fichier extrait
-            with gzip.open(chemin_archive, "rb") as f_entree:
-                with open(chemin_extraction, "wb") as f_sortie:
-                    shutil.copyfileobj(f_entree, f_sortie)
-        except Exception as e:
-            print(f"Erreur lors de l'extraction de {fichier} : {e}")
-
-print(f"\nTerminé ! Tous les fichiers sont réunis dans : {dossier_destination}")
+    n_total = len(genes)
+    n_non_dict = sum(1 for g in genes if not isinstance(g, dict))
+    found = sum(
+        1 for g in genes
+        if isinstance(g, dict) and isinstance(g.get('literature'), dict) and g['literature'].get('publications')
+    )
+    print(f'{path}: {found}/{n_total} gènes avec publications ({n_non_dict} entrées non-dict ignorées)')

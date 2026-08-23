@@ -4,6 +4,54 @@ Application bioinformatique locale et web pour analyser des s�quences ADN/ARN/
 
 ---
 
+## Vérification des sections d'analyse
+
+L'application Streamlit se lance avec :
+
+```bash
+streamlit run app.py
+```
+
+Après avoir collé une séquence et cliqué sur **Analyze Sequence**, les onglets
+suivants sont disponibles :
+
+| Section | Fonction actuelle |
+|---|---|
+| **Statistics** | Nettoie et valide la séquence, calcule la longueur, GC%, AT%, ratio GC/AT, fréquences A/T/G/C/N, bases ambiguës, GC3 et les ORF détectés sur les six cadres. Affiche aussi le profil GC par fenêtre et les motifs connus. |
+| **Similarity** | Compare la séquence à la base locale avec un alignement global Needleman-Wunsch, affiche les meilleurs scores, la classification, la couverture, les gaps, la carte d'alignement et une jauge de confiance. Le mode Deep Search élargit les candidats. |
+| **Mutations** | Compare la requête au meilleur match disponible et liste substitutions, insertions, délétions, identités et positions. Sans meilleur match, l'onglet indique qu'aucun rapport n'est disponible. |
+| **Translation** | Traduit une séquence ADN dans le cadre choisi (+1, +2 ou +3), affiche les six cadres, le statut de l'ORF et les séquences complémentaire et reverse-complement. Pour une protéine, la traduction est signalée comme non applicable. |
+| **AI Interpretation** | Produit une interprétation déterministe basée sur des règles : profil de séquence, GC, similarité, mutations, potentiel fonctionnel, stress et recommandations agricoles. Il ne s'agit pas d'un appel à une API d'IA externe. |
+| **Raw Sequence** | Affiche la séquence nettoyée, sa longueur et ses métriques principales, avec téléchargement FASTA et rapport texte. Une action d'annotation locale est également proposée. |
+| **Alignments** | Outil manuel pour deux séquences ou davantage : MSA guidé par étoile, Needleman-Wunsch global et Smith-Waterman local, avec visualisation et scores. |
+| **Distance Matrix** | Outil manuel multi-séquences. Aligne les séquences puis calcule une matrice avec la méthode choisie : Hamming, Jukes-Cantor, Kimura ou PAM, exportable en CSV. |
+| **Phylogeny** | Outil manuel multi-séquences. Réutilise une matrice Kimura et construit un arbre UPGMA ou Neighbor Joining, affiché en dendrogramme et exportable au format Newick. |
+| **Protein Analysis** | Outil manuel pour une protéine : validation, longueur, composition, masse moléculaire, point isoélectrique, hydrophobicité et graphique des acides aminés. |
+
+### Test de référence vérifié
+
+La séquence de contrôle de 300 bp fournie pour la vérification produit avec le
+pipeline local :
+
+- type détecté : ADN ;
+- GC : 67,67 % ; AT : 32,33 % ;
+- 1 ORF détecté et traduction de 22 acides aminés ;
+- 2 motifs détectés ;
+- aucun meilleur match dans la base locale utilisée au test.
+
+Le dernier point est important : dans ce cas, **Similarity** affiche l'absence
+de résultats et **Mutations** ne peut pas comparer la séquence à une référence.
+Les onglets **Alignments**, **Distance Matrix** et **Phylogeny** demandent leurs
+propres séquences de comparaison dans leurs champs interactifs.
+
+### Limites d'interprétation
+
+Les résultats statistiques, les alignements et les distances sont des calculs
+reproductibles. Les phrases de l'onglet **AI Interpretation** sont des règles
+heuristiques et ne constituent pas une annotation expérimentale ni une preuve
+de fonction ou de résistance agronomique. Les séquences courtes, divergentes ou
+sans référence proche doivent donc être interprétées avec prudence.
+
 ## ?? D�marrage rapide
 
 ### Pr�requis

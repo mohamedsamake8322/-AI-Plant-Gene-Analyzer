@@ -217,12 +217,16 @@ def create_tables() -> None:
                     date_added TIMESTAMPTZ,
                     record JSONB,
                     sequence_hash TEXT,
-                    -- "sequence_backed" (has/had a real NCBI/UniProt/etc.
-                    -- sequence) vs "plaza_only" (PLAZA enrichment data with
-                    -- no sequence attached -- see collect_all_sources.py
-                    -- PLAZA block). Similarity/BLAST-type queries should
-                    -- filter WHERE origin = 'sequence_backed'; relations/
-                    -- orthologs queries can use either.
+                    -- "sequence_backed" (has/had a real NCBI/UniProt/KEGG/
+                    -- etc. sequence) vs "annotation_only" (a real source
+                    -- record exists -- e.g. KEGG pathway, UniProt GO terms,
+                    -- PlantTFDB TF family -- but no sequence was ever
+                    -- attached to it) vs "plaza_only" (PLAZA enrichment
+                    -- data with no sequence attached -- see
+                    -- collect_all_sources.py PLAZA block). Similarity/
+                    -- BLAST-type queries should filter
+                    -- WHERE origin = 'sequence_backed'; relations/orthologs
+                    -- queries can use any of the three.
                     origin TEXT DEFAULT 'sequence_backed',
                     -- Orthologs and PLAZA family IDs -- without this
                     -- column, that data would only live inside the
@@ -356,12 +360,18 @@ _UPSERT_SQL = sql.SQL(
         date_added = EXCLUDED.date_added,
         record = EXCLUDED.record,
         sequence_hash = COALESCE(NULLIF(EXCLUDED.sequence_hash, ''), genes.sequence_hash),
-        -- Never downgrade a gene that's already known to be sequence-backed
-        -- just because a later PLAZA-only enrichment pass touches the same
-        -- key (shouldn't normally happen given how plaza_only keys are
-        -- prefixed, but defensive).
-        origin = CASE WHEN genes.origin = 'sequence_backed' OR EXCLUDED.origin = 'sequence_backed'
-            THEN 'sequence_backed' ELSE EXCLUDED.origin END;
+        -- Never downgrade a gene's origin when a later pass touches the
+        -- same key (shouldn't normally happen given how plaza_only keys
+        -- are prefixed, but defensive). Priority order, best to worst:
+        -- sequence_backed (real sequence) > annotation_only (real source
+        -- record, no sequence) > plaza_only (pure PLAZA ortholog stub).
+        origin = CASE
+            WHEN genes.origin = 'sequence_backed' OR EXCLUDED.origin = 'sequence_backed'
+                THEN 'sequence_backed'
+            WHEN genes.origin = 'annotation_only' OR EXCLUDED.origin = 'annotation_only'
+                THEN 'annotation_only'
+            ELSE EXCLUDED.origin
+        END;
     """
 )
 
@@ -539,7 +549,15 @@ def _record_to_params(record: dict) -> dict:
         # create_tables(). Without this, all the PLAZA orthology work
         # would be stored in `record` JSONB only and not easily queryable.
         "relations": json.dumps(relations),
-        "origin": record.get("origin", "sequence_backed"),
+        # Defensive fallback only -- restructure_to_schema() now always
+        # sets origin explicitly (sequence_backed / annotation_only /
+        # plaza_only), so this default should rarely if ever trigger. It
+        # deliberately does NOT default to "sequence_backed": doing so was
+        # exactly the bug that silently mislabeled UniProt/KEGG/PlantTFDB
+        # records with no real sequence (see collect_all_sources.py fix,
+        # 2026-08-22). "annotation_only" is the safe, non-optimistic default
+        # when origin is unexpectedly absent.
+        "origin": record.get("origin", "annotation_only"),
         "length": record.get("length") or (len(sequence) if sequence else None),
         "date_added": record.get("date_added"),
         "record": json.dumps(record),
