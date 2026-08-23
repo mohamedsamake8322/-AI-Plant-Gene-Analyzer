@@ -425,12 +425,48 @@ textarea::placeholder {
 }
 
 /* ── Tabs ── */
+.section-heading {
+    display: flex;
+    align-items: baseline;
+    gap: 0.7rem;
+    margin: 1.8rem 0 0.65rem;
+    padding-bottom: 0.55rem;
+    border-bottom: 1px solid rgba(0, 217, 163, 0.28);
+    color: #e8f4f0;
+    font-family: 'Space Grotesk', 'Segoe UI', Arial, sans-serif;
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+}
+
+.section-heading-secondary {
+    margin-top: 2.4rem;
+    border-bottom-color: rgba(79, 195, 247, 0.24);
+}
+
+.section-heading small {
+    margin-left: auto;
+    color: #7fa89c;
+    font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+    font-size: 0.78rem;
+    font-weight: 500;
+}
+
+.section-index {
+    color: #00d9a3;
+    font-family: 'JetBrains Mono', 'Consolas', monospace;
+    font-size: 0.78rem;
+    letter-spacing: 1px;
+}
+
 .stTabs [data-baseweb="tab-list"] {
-    gap: 8px;
+    gap: 6px;
+    padding: 0.25rem;
+    border: 1px solid rgba(0, 217, 163, 0.15);
+    border-radius: 10px;
+    background: rgba(6, 11, 20, 0.42);
     overflow-x: auto;
     scrollbar-width: none;
-    -webkit-mask-image: linear-gradient(to right, black 92%, transparent 100%);
-    mask-image: linear-gradient(to right, black 92%, transparent 100%);
 }
 
 .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar {
@@ -438,8 +474,10 @@ textarea::placeholder {
 }
 
 .stTabs [data-baseweb="tab"] {
-    background: rgba(13, 27, 42, 0.6);
-    border-radius: 8px;
+    min-height: 2.45rem;
+    padding: 0.35rem 0.85rem;
+    background: transparent;
+    border-radius: 7px;
     color: #9fd6c8;
     font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
     font-size: 0.98rem;
@@ -451,6 +489,21 @@ textarea::placeholder {
     background: rgba(0, 217, 163, 0.15) !important;
     color: #00d9a3 !important;
     border-bottom: 2px solid #00d9a3 !important;
+}
+
+@media (max-width: 700px) {
+    .section-heading {
+        font-size: 1.1rem;
+    }
+
+    .section-heading small {
+        display: none;
+    }
+
+    .stTabs [data-baseweb="tab"] {
+        font-size: 0.88rem;
+        padding-inline: 0.65rem;
+    }
 }
 
 /* ── Alert boxes (st.success / st.info / st.warning / st.error) ── */

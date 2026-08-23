@@ -23,6 +23,16 @@ Ouvrir ensuite http://localhost:8501, coller une séquence et cliquer sur **Anal
 | **Phylogeny** | Construit un arbre UPGMA ou Neighbor Joining à partir d'une matrice Kimura. Export Newick disponible. |
 | **Protein Analysis** | Analyse une protéine : validation, longueur, composition, masse moléculaire, point isoélectrique et hydrophobicité. |
 
+## Organisation de l'interface
+
+Après une analyse, l'interface sépare la navigation en deux groupes :
+
+- **Analysis results** : Statistics, Similarity, Mutations, Translation, AI Interpretation et Raw Sequence.
+- **Advanced tools** : Alignments, Distance Matrix, Phylogeny et Protein Analysis.
+
+Cette séparation évite de mélanger les résultats automatiques avec les outils
+qui nécessitent leurs propres séquences et leur propre bouton d'exécution.
+
 ## Outils indépendants
 
 Les outils **Alignments**, **Distance Matrix**, **Phylogeny** et **Protein

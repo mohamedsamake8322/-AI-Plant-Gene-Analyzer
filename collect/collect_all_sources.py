@@ -663,8 +663,16 @@ def collect_species(
 
 
 def merge_all_species(species_files: list[Path], out_file: Path) -> int:
-    """Stream-merge per-species JSON files into a single master JSON file.
+    """DEPRECIEE (22/08/2026) -- ne plus appeler.
 
+    Contient les memes bugs que l'ancien rebuild_master_stream.py :
+    organism_counts rempli de None au lieu de vrais comptes, et ecriture
+    non-atomique du fichier final (un crash en cours de route laisse un
+    master_plant_db.json tronque et corrompu). Remplacee par un appel a
+    rebuild_master_safe.py dans main(). Conservee ici seulement pour
+    reference/historique -- ne pas reactiver cet appel.
+
+    Stream-merge per-species JSON files into a single master JSON file.
     This writes a temporary JSONL file of individual gene records to avoid
     building the full master object in memory, then streams the JSONL lines
     into the final `out_file` as a JSON array.
@@ -949,12 +957,31 @@ def main(argv: list[str] | None = None) -> None:
             print(f"   {r['plant']}: {r.get('error', 'unknown error')}")
 
     # ── Merge into master ─────────────────────────────────────────────────────
+    # NE PLUS appeler merge_all_species() ici -- cette fonction a le meme bug
+    # que l'ancien rebuild_master_stream.py (organism_counts rempli de None,
+    # ecriture non-atomique). La fusion est desormais centralisee dans
+    # rebuild_master_safe.py (racine du projet), seul point de verite, avec
+    # dedoublonnage + auto-verification par relecture + ecriture atomique.
+    # Corrige le 22/08/2026.
     if not args.no_merge:
-        print(f"\n📦 Merging all species into master database...")
-        species_files = list(out_dir.glob("*_all_sources.json"))
+        print(f"\n📦 Merging all species into master database (rebuild_master_safe.py)...")
+        rebuild_script = ROOT / "rebuild_master_safe.py"
         out_master = Path(args.out_master)
-        total = merge_all_species(species_files, out_master)
-        print(f"✓ Master DB: {total:,} unique genes → {out_master}")
+        if not rebuild_script.exists():
+            print(f"✗ rebuild_master_safe.py introuvable à {rebuild_script} -- fusion sautée.")
+            print(f"  Place-le à la racine du projet, ou relance-le manuellement ensuite.")
+        else:
+            import subprocess
+            result = subprocess.run(
+                [sys.executable, str(rebuild_script),
+                 "--species-dir", str(out_dir),
+                 "--out", str(out_master)],
+            )
+            if result.returncode == 0:
+                print(f"✓ Master DB reconstruit et vérifié → {out_master}")
+            else:
+                print(f"✗ Échec de la reconstruction du master (code {result.returncode}).")
+                print(f"  master_plant_db.json existant n'a PAS été modifié -- voir messages ci-dessus.")
 
     # ── Load to PostgreSQL ────────────────────────────────────────────────────
     if args.load_db:

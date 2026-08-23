@@ -25,6 +25,7 @@ import re
 import sequence_loader as loader
 import config
 import pipeline
+import trait_research as tr
 
 SCRIPT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_ROOT / "scripts"))
@@ -483,10 +484,15 @@ analyze_btn = st.button("🔬 Analyze Sequence", width='stretch', type="primary"
 st.markdown("---")
 
 
+@st.cache_data(show_spinner=False)
+def load_trait_genes_cached(species_file_str: str) -> dict:
+    return tr.load_genes(Path(species_file_str))
+
+
 def render_independent_tools() -> None:
     """Render tools that do not require the primary sequence analysis."""
     st.markdown("## Independent analysis tools")
-    tool_tabs = st.tabs(["Alignments", "Distance Matrix", "Phylogeny", "Protein Analysis"])
+    tool_tabs = st.tabs(["Alignments", "Distance Matrix", "Phylogeny", "Protein Analysis", "Recherche par thème"])
 
     with tool_tabs[0]:
         st.markdown("#### Multiple and pairwise alignment")
@@ -575,6 +581,89 @@ def render_independent_tools() -> None:
                 result = bio.generate_protein_statistics(cleaned)
                 st.write({"length_aa": result["length"], "molecular_weight": result["molecular_weight"], "isoelectric_point": result["isoelectric_point"], "hydrophobicity": result["hydrophobicity"]})
                 st.plotly_chart(viz.plot_amino_acid_bar(result["amino_acid_distribution"]), width="stretch")
+
+    with tool_tabs[4]:
+        st.markdown("#### Recherche de gènes candidats par thème")
+        st.caption(
+            "Cherche des gènes candidats pour un thème (verse, sécheresse...) "
+            "dans un fichier espèce du dataset, avec sourcing PubMed et export Word."
+        )
+
+        species_dir = st.text_input(
+            "Dossier des fichiers espèce", value="Data/clean/species", key="trait_species_dir"
+        )
+        species_files = sorted(Path(species_dir).glob("*_all_sources.json")) if Path(species_dir).exists() else []
+
+        if not species_files:
+            st.warning(f"Aucun fichier *_all_sources.json trouvé dans {species_dir}")
+        else:
+            selected_file = st.selectbox(
+                "Espèce", species_files,
+                format_func=lambda p: p.stem.replace("_all_sources", "").replace("_", " ").title(),
+                key="trait_species_file",
+            )
+            topic_input = st.text_input("Thème (ex: verse, sécheresse)", key="trait_topic")
+            top_n = st.number_input("Nombre de candidats à afficher", min_value=5, max_value=50, value=15, key="trait_top_n")
+
+            if st.button("Rechercher", key="trait_search_btn"):
+                topic_key = tr.match_topic(topic_input)
+                if topic_key is None:
+                    topic_key = tr.match_topic(topic_input.replace("é", "e").replace("è", "e").replace("ê", "e"))
+                if not topic_key:
+                    st.error(f"Thème non couvert. Thèmes disponibles : {list(tr.TOPIC_TEMPLATES.keys())}")
+                else:
+                    template = tr.TOPIC_TEMPLATES[topic_key]
+                    species_name = selected_file.stem.replace("_all_sources", "").replace("_", " ")
+                    with st.spinner(f"Recherche des candidats pour « {template['label']} »..."):
+                        genes = load_trait_genes_cached(str(selected_file))
+                        species_filter = tr.resolve_species_filter(species_name)
+                        candidates = tr.search_candidates(genes, template, species_filter)
+                        candidates = tr.score_candidates(candidates, template)[:top_n]
+
+                    st.session_state["trait_candidates"] = candidates
+                    st.session_state["trait_template"] = template
+                    st.session_state["trait_species_name"] = species_name
+                    st.success(f"{len(candidates)} candidats trouvés pour « {template['label']} ».")
+
+        if st.session_state.get("trait_candidates"):
+            candidates = st.session_state["trait_candidates"]
+            import pandas as pd
+            rows = [{
+                "Gène": c["gene"].get("common_name", "") or c["gene_id"],
+                "Accession": c["gene_id"],
+                "Score": c["score"],
+                "Catégories": ", ".join(c["categories"]),
+                "Références": len(c.get("references", [])),
+            } for c in candidates]
+            st.dataframe(pd.DataFrame(rows), width="stretch")
+
+            col_a, col_b = st.columns(2)
+            with col_a:
+                if st.button("Chercher les références PubMed (lent, ~0.35s/gène)", key="trait_fetch_refs_btn"):
+                    template = st.session_state["trait_template"]
+                    with st.spinner("Recherche PubMed en cours..."):
+                        for c in candidates:
+                            term = tr.pick_search_term(c["gene"], c["gene_id"])
+                            c["references"] = (
+                                tr.fetch_pubmed_references(term, extra_terms=[template["pubmed_context"]])
+                                if term else []
+                            )
+                    st.session_state["trait_candidates"] = candidates
+                    st.success("Références PubMed récupérées.")
+                    st.rerun()
+
+            with col_b:
+                if st.button("Générer le rapport Word", key="trait_generate_docx_btn"):
+                    buf = io.BytesIO()
+                    tr.generate_docx_report(
+                        st.session_state["trait_template"]["label"],
+                        st.session_state["trait_species_name"],
+                        candidates, buf, top_n=len(candidates),
+                    )
+                    st.download_button(
+                        "Télécharger le rapport (.docx)", buf.getvalue(),
+                        file_name="rapport_candidats.docx", key="trait_download_docx",
+                    )
 
 
 # ─── Analysis pipeline ─────────────────────────────────────────────────────────
@@ -858,17 +947,22 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
     st.markdown("---")
 
     # ── Tabs ───────────────────────────────────────────────────────────────────
+    st.markdown('<div class="section-heading"><span class="section-index">01</span><span>Analysis results</span></div>', unsafe_allow_html=True)
     tabs = st.tabs([
-        "📊 Statistics",
-        "🔍 Similarity",
-        "🧪 Mutations",
-        "🔬 Translation",
-        "🤖 AI Interpretation",
-        "📋 Raw Sequence",
-        "🧩 Alignments",
-        "📐 Distance Matrix",
-        "🌳 Phylogeny",
-        "🔬 Protein Analysis",
+        "Statistics",
+        "Similarity",
+        "Mutations",
+        "Translation",
+        "AI Interpretation",
+        "Raw Sequence",
+    ])
+
+    st.markdown('<div class="section-heading section-heading-secondary"><span class="section-index">02</span><span>Advanced tools</span><small>Run independent analyses</small></div>', unsafe_allow_html=True)
+    tool_tabs = st.tabs([
+        "Alignments",
+        "Distance Matrix",
+        "Phylogeny",
+        "Protein Analysis",
     ])
 
     # ── Tab 1: Statistics ──────────────────────────────────────────────────────
@@ -1347,7 +1441,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 st.error(f"Annotation failed: {e}")
 
     # ── Tab 7: Alignments (MSA + pairwise) ─────────────────────────────────
-    with tabs[6]:
+    with tool_tabs[0]:
         st.markdown("#### Multiple Sequence Alignment")
         seqs_input = st.text_area("Paste multiple FASTA sequences or one per line:", height=160)
         msa_btn = st.button("Run MSA", key="msa_run")
@@ -1408,7 +1502,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                     pass
 
     # ── Tab 8: Distance Matrix ───────────────────────────────────────────────
-    with tabs[7]:
+    with tool_tabs[1]:
         st.markdown("#### Compute Pairwise Distance Matrix")
         dm_input = st.text_area("Paste FASTA or one sequence per line:", height=160)
         dm_method = st.selectbox("Method", options=["hamming", "jukes_cantor", "kimura", "pam"], index=2)
@@ -1435,7 +1529,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 st.download_button("Download CSV", df.to_csv().encode('utf-8'), file_name="distance_matrix.csv")
 
     # ── Tab 9: Phylogeny ─────────────────────────────────────────────────────
-    with tabs[8]:
+    with tool_tabs[2]:
         st.markdown("#### Build Phylogenetic Tree")
         ph_input = st.text_area("Paste sequences for phylogeny (FASTA or lines):", height=160)
         ph_method = st.selectbox("Tree algorithm", options=["upgma", "neighbor_joining"], index=0)
@@ -1482,7 +1576,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                     )
 
     # ── Tab 10: Protein Analysis ─────────────────────────────────────────────
-    with tabs[9]:
+    with tool_tabs[3]:
         st.markdown("#### Protein biochemical analysis")
         prot_seq = st.text_area("Paste protein sequence:", height=120, value=sequence if sequence_type == "protein" else "")
         if st.button("Analyze protein", key="prot_analyze"):
