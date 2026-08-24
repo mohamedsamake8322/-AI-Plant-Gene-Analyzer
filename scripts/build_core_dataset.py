@@ -37,11 +37,13 @@ Usage :
 from __future__ import annotations
 
 import argparse
+import bisect
 import hashlib
 import json
 import sys
 import time
 from pathlib import Path
+from decimal import Decimal
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
@@ -61,6 +63,43 @@ _VALID_CHARS = {
 }
 
 
+def load_master_genes(path: Path):
+    """Yield master records incrementally without loading the whole JSON."""
+    import ijson
+
+    with path.open("rb") as stream:
+        yield from ijson.items(stream, "genes.item")
+
+
+def normalize_master_record(rec: dict) -> dict:
+    """Flatten the nested sequence fields used by master_plant_db.json."""
+    normalized = dict(rec)
+    sequence_field = rec.get("sequence") or {}
+    if isinstance(sequence_field, dict):
+        for sequence_type in ("dna", "rna"):
+            sequence = sequence_field.get(sequence_type)
+            if sequence:
+                normalized["sequence"] = sequence
+                normalized["sequence_type"] = sequence_type
+                break
+        else:
+            normalized["sequence"] = ""
+            normalized["sequence_type"] = ""
+    annotation = rec.get("annotation") or {}
+    if isinstance(annotation, dict):
+        normalized["annotations"] = annotation
+        normalized["pathways"] = annotation.get("kegg_pathways") or []
+    normalized["publications"] = (rec.get("literature") or {}).get("publications", [])
+    return normalized
+
+
+def json_default(value):
+    """Serialize numeric database values that the standard encoder rejects."""
+    if isinstance(value, Decimal):
+        return float(value)
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
 # ---------------------------------------------------------------------------
 # Étape 1+2 : qualité + type nucléotidique
 # ---------------------------------------------------------------------------
@@ -71,7 +110,9 @@ def quality_and_type_filter(genes: list[dict], min_length: int, max_n_ratio: flo
               "rejected_too_short": 0, "rejected_too_many_n": 0, "rejected_invalid_chars": 0,
               "rejected_empty": 0}
 
-    for rec in genes:
+    normalized_genes = []
+    for original_rec in genes:
+        rec = normalize_master_record(original_rec)
         seq = str(rec.get("sequence") or "").upper().strip()
         seq_type = str(rec.get("sequence_type") or "").lower()
 
@@ -105,16 +146,26 @@ def quality_and_type_filter(genes: list[dict], min_length: int, max_n_ratio: flo
 
 def label_richness(rec: dict) -> int:
     """Score utilisé à la fois pour choisir le meilleur représentant d'un
-    cluster ET pour prioriser dans la sélection finale par palier."""
+    cluster ET pour prioriser dans la sélection finale par palier.
+
+    Noms de champs alignés sur le vrai schéma master_plant_db.json :
+    "annotation" (singulier, pas "annotations"), pathways sous
+    annotation.kegg_pathways (pas un champ "pathways" au top niveau),
+    publications sous literature.publications (pas un champ "publications"
+    au top niveau). Avec les anciens noms, ann/pathways/publications
+    valaient toujours {} / None -- has_tf/has_pathway/has_go étaient
+    structurellement toujours False dans classify_tier()."""
     score = 0
     score += len(rec.get("traits") or [])
-    score += len(rec.get("pathways") or [])
-    score += len(rec.get("publications") or [])
-    ann = rec.get("annotations") or {}
+    ann = rec.get("annotation") or {}
     if isinstance(ann, dict):
+        score += len(ann.get("kegg_pathways") or [])
         score += len(ann.get("go_terms") or [])
         score += len(ann.get("tf_family") or [])
         score += sum(1 for v in ann.values() if v)
+    lit = rec.get("literature") or {}
+    if isinstance(lit, dict):
+        score += len(lit.get("publications") or [])
     return score
 
 
@@ -156,22 +207,34 @@ class UnionFind:
 
 def homology_dedup(
     genes: list[dict], similarity_threshold: float, top_n: int = 3, candidate_pool_multiplier: int = 3,
+    max_length_ratio: float = 3.0,
 ) -> tuple[list[dict], dict]:
-    """Regroupe les séquences très similaires en clusters, en réutilisant
-    find_similar_genes (backend pg_trgm, PAS l'ancienne table gene_kmers --
-    voir son docstring) pour récupérer rapidement un petit lot de candidats
-    plausibles par gène, puis en confirmant l'identité réelle avec
-    Needleman-Wunsch seulement sur ce petit lot.
+    """Regroupe les séquences très similaires en clusters -- 100% local,
+    sans Postgres.
 
-    top_n/candidate_pool_multiplier sont volontairement réduits par rapport
-    aux défauts de la fonction (top_n=3, multiplier=3 -> ~9 candidats par
-    gène au lieu de ~120) : on n'a pas besoin de la marge de précision
-    complète pour du dédoublonnage d'homologie en masse, seulement pour
-    une recherche de similarité unique dans l'appli. Chaque appel paie un
-    coût de connexion Postgres (~1-2s mesuré) -- c'est pour ça que ce
-    clustering doit tourner sur un sous-ensemble déjà réduit par palier de
-    label (voir select_balanced_core, appelé AVANT cette fonction dans
-    main()), pas sur les 23k+ gènes bruts.
+    CORRIGÉ (session du 22-23/08/2026) : la version précédente appelait
+    sim.find_similar_genes(), qui est en réalité 100% dépendante de
+    Postgres (retourne vide immédiatement si Postgres n'est pas
+    configuré -- confirmé en traçant similarityengine.py), malgré le
+    docstring du fichier affirmant "ne touche PAS à Postgres". Sans
+    Postgres, candidates était donc toujours vide et AUCUNE fusion ne se
+    produisait jamais -- silencieusement (near_duplicates_collapsed: 0,
+    qui ressemble à "aucun doublon trouvé" plutôt qu'à "l'étape n'a
+    jamais tourné"). Deuxième bug indépendant sur la même fonction :
+    le test de seuil lisait m["alignment"]["identity_percent"], une clé
+    qui n'existe pas dans ce que retourne compare_with_database() (le
+    vrai champ est "similarity_score" à la racine) -- donc identity
+    valait toujours 0, et même avec Postgres configuré, 0 >= 90 aurait
+    toujours été faux.
+
+    Nouvelle approche : tri des gènes par longueur de séquence une seule
+    fois (O(n log n)), puis pour chaque gène, une recherche par
+    dichotomie (bisect) limite la comparaison aux gènes dont la longueur
+    est dans un ratio [1/max_length_ratio, max_length_ratio] -- exactement
+    le "bucket par tranche de longueur" que le docstring original disait
+    vouloir faire. Confirmation de l'identité réelle via
+    compare_with_database() (Needleman-Wunsch), qui est lui bien
+    JSON-only et fonctionne sans Postgres.
     """
     keyed = {}
     for i, rec in enumerate(genes):
@@ -181,33 +244,74 @@ def homology_dedup(
     ids = list(keyed.keys())
     uf = UnionFind(ids)
 
+    # Tri unique par longueur -- chaque gène ne regarde ensuite qu'une
+    # fenêtre étroite de la liste triée au lieu de scanner tous les autres.
+    lengths = [(key, len(keyed[key].get("sequence") or "")) for key in ids]
+    lengths = [(k, l) for k, l in lengths if l > 0]
+    lengths.sort(key=lambda x: x[1])
+    sorted_keys = [k for k, _ in lengths]
+    sorted_lengths = [l for _, l in lengths]
+    kmer_index = {
+        key: sim._local_kmer_hashes(
+            keyed[key].get("sequence") or "", sim.DEFAULT_KMER, "dna"
+        )
+        for key in sorted_keys
+    }
+
     t0 = time.time()
-    for i, key in enumerate(ids):
+    for idx, (key, length) in enumerate(lengths):
         seq = keyed[key].get("sequence") or ""
-        if not seq:
+
+        lo = bisect.bisect_left(sorted_lengths, length / max_length_ratio)
+        hi = bisect.bisect_right(sorted_lengths, length * max_length_ratio)
+        window_keys = [k for k in sorted_keys[lo:hi] if k != key]
+
+        if not window_keys:
             continue
+
+        query_kmers = kmer_index[key]
+        if query_kmers:
+            # Shared k-mers are a cheap local proxy for homology. Only the
+            # strongest overlaps enter the expensive Needleman-Wunsch step.
+            window_keys.sort(
+                key=lambda candidate_key: len(
+                    query_kmers & kmer_index[candidate_key]
+                ),
+                reverse=True,
+            )
+        candidate_limit = max(1, top_n * candidate_pool_multiplier)
+        candidates = {
+            k: keyed[k] for k in window_keys[:candidate_limit]
+        }
+        if query_kmers:
+            min_shared = max(1, int(len(query_kmers) * 0.4))
+            candidates = {
+                candidate_key: candidate
+                for candidate_key, candidate in candidates.items()
+                if len(query_kmers & kmer_index[candidate_key]) >= min_shared
+            }
 
         try:
-            candidates = sim.find_similar_genes(
-                seq, top_n=top_n, candidate_pool_multiplier=candidate_pool_multiplier,
+            matches = sim.compare_with_database(
+                seq, db_source=candidates,
+                top_n=candidate_limit,
+                max_length_ratio=max_length_ratio,
             )
         except Exception as e:
-            print(f"  (avertissement: find_similar_genes a échoué pour {key}: {e} -- gène laissé seul dans son cluster)")
+            print(f"  (avertissement: compare_with_database a échoué pour {key}: {e} -- gène laissé seul dans son cluster)")
             continue
 
-        if candidates:
-            matches = sim.compare_with_database(seq, db_source=candidates, top_n=top_n)
-            for m in matches:
-                other_id = m.get("gene_name")
-                identity = m.get("alignment", {}).get("identity_percent", 0)
-                if other_id and other_id in uf.parent and other_id != key and identity >= similarity_threshold:
-                    uf.union(key, other_id)
+        for m in matches:
+            other_id = m.get("gene_name")
+            identity = m.get("similarity_score", 0)
+            if other_id and other_id in uf.parent and other_id != key and identity >= similarity_threshold:
+                uf.union(key, other_id)
 
-        if (i + 1) % 100 == 0:
+        if (idx + 1) % 100 == 0:
             elapsed = time.time() - t0
-            rate = (i + 1) / elapsed
-            eta_min = (len(ids) - i - 1) / rate / 60 if rate > 0 else float("inf")
-            print(f"  clustering... [{i + 1}/{len(ids)}] ({rate:.2f} gènes/s, ETA {eta_min:.1f} min)")
+            rate = (idx + 1) / elapsed
+            eta_min = (len(lengths) - idx - 1) / rate / 60 if rate > 0 else float("inf")
+            print(f"  clustering... [{idx + 1}/{len(lengths)}] ({rate:.2f} gènes/s, ETA {eta_min:.1f} min)")
 
     clusters: dict[str, list[str]] = {}
     for key in ids:
@@ -223,6 +327,7 @@ def homology_dedup(
         "input": len(genes), "clusters_found": len(clusters),
         "representatives_kept": len(representatives),
         "near_duplicates_collapsed": len(genes) - len(representatives),
+        "method": "local_length_bucket_no_postgres",
     }
     return representatives, stats
 
@@ -232,9 +337,9 @@ def homology_dedup(
 # ---------------------------------------------------------------------------
 
 def classify_tier(rec: dict) -> str:
-    ann = rec.get("annotations") or {}
+    ann = rec.get("annotation") or {}
     has_tf = bool(isinstance(ann, dict) and ann.get("tf_family"))
-    has_pathway = bool(rec.get("pathways"))
+    has_pathway = bool(isinstance(ann, dict) and ann.get("kegg_pathways"))
     has_go = bool(isinstance(ann, dict) and ann.get("go_terms"))
     has_trait = bool(rec.get("traits"))
 
@@ -312,9 +417,8 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     report: dict = {}
 
-    print(f"Chargement de {args.input}...")
-    raw = json.loads(Path(args.input).read_text(encoding="utf-8"))
-    genes = raw.get("genes", raw) if isinstance(raw, dict) else raw
+    print(f"Chargement streaming de {args.input}...")
+    genes = list(load_master_genes(Path(args.input)))
     print(f"  {len(genes)} gènes chargés")
 
     print("\n[1/5] Filtrage qualité + type nucléotidique...")
@@ -346,10 +450,10 @@ def main() -> None:
 
     print("\n[6/6] Écriture des fichiers...")
     (out_dir / "core_dataset.json").write_text(
-        json.dumps({"metadata": {"count": len(core)}, "genes": core}, ensure_ascii=False, indent=2),
+        json.dumps({"metadata": {"count": len(core)}, "genes": core}, ensure_ascii=False, indent=2, default=json_default),
         encoding="utf-8",
     )
-    (out_dir / "core_dataset_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    (out_dir / "core_dataset_report.json").write_text(json.dumps(report, indent=2, default=json_default), encoding="utf-8")
 
     print(f"\nTerminé. {len(core)} gènes dans le core dataset.")
     print(f"  -> {out_dir / 'core_dataset.json'}")

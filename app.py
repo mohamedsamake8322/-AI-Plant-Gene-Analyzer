@@ -158,7 +158,7 @@ def _cached_analyze(
 
 # ─── Load gene database with caching ────────────────────────────────────────────────────────────
 @st.cache_data
-def load_gene_database_cached(db_path: str = "genes_database.json") -> dict:
+def load_gene_database_cached(db_path: str = str(config.DATABASE_PATH)) -> dict:
     """
     Load gene database with Streamlit caching to improve performance.
     Prefer PostgreSQL if the helper is available and configured.
@@ -210,7 +210,7 @@ def load_gene_database_cached(db_path: str = "genes_database.json") -> dict:
 
     except json.JSONDecodeError as e:
         logger.error(f"JSON parsing error: {e}")
-        st.error("❌ Error parsing genes_database.json")
+        st.error(f"❌ Error parsing gene database: {db_path}")
         return {}
     except Exception as e:
         logger.error(f"Error loading database: {e}")
@@ -352,9 +352,9 @@ with st.sidebar:
         except Exception as e:
             logger.warning(f"Lightweight gene metadata load failed: {e}")
             st.warning("Could not load gene metadata preview. Falling back to full database load.")
-            db = load_gene_database_cached("genes_database.json")
+            db = load_gene_database_cached(str(config.DATABASE_PATH))
     else:
-        db = load_gene_database_cached("genes_database.json")
+        db = load_gene_database_cached(str(config.DATABASE_PATH))
 
     if db is not None:
         if not db:
@@ -484,11 +484,6 @@ analyze_btn = st.button("🔬 Analyze Sequence", width='stretch', type="primary"
 st.markdown("---")
 
 
-@st.cache_data(show_spinner=False)
-def load_trait_genes_cached(species_file_str: str) -> dict:
-    return tr.load_genes(Path(species_file_str))
-
-
 def render_independent_tools() -> None:
     """Render tools that do not require the primary sequence analysis."""
     st.markdown("## Independent analysis tools")
@@ -583,87 +578,7 @@ def render_independent_tools() -> None:
                 st.plotly_chart(viz.plot_amino_acid_bar(result["amino_acid_distribution"]), width="stretch")
 
     with tool_tabs[4]:
-        st.markdown("#### Recherche de gènes candidats par thème")
-        st.caption(
-            "Cherche des gènes candidats pour un thème (verse, sécheresse...) "
-            "dans un fichier espèce du dataset, avec sourcing PubMed et export Word."
-        )
-
-        species_dir = st.text_input(
-            "Dossier des fichiers espèce", value="Data/clean/species", key="trait_species_dir"
-        )
-        species_files = sorted(Path(species_dir).glob("*_all_sources.json")) if Path(species_dir).exists() else []
-
-        if not species_files:
-            st.warning(f"Aucun fichier *_all_sources.json trouvé dans {species_dir}")
-        else:
-            selected_file = st.selectbox(
-                "Espèce", species_files,
-                format_func=lambda p: p.stem.replace("_all_sources", "").replace("_", " ").title(),
-                key="trait_species_file",
-            )
-            topic_input = st.text_input("Thème (ex: verse, sécheresse)", key="trait_topic")
-            top_n = st.number_input("Nombre de candidats à afficher", min_value=5, max_value=50, value=15, key="trait_top_n")
-
-            if st.button("Rechercher", key="trait_search_btn"):
-                topic_key = tr.match_topic(topic_input)
-                if topic_key is None:
-                    topic_key = tr.match_topic(topic_input.replace("é", "e").replace("è", "e").replace("ê", "e"))
-                if not topic_key:
-                    st.error(f"Thème non couvert. Thèmes disponibles : {list(tr.TOPIC_TEMPLATES.keys())}")
-                else:
-                    template = tr.TOPIC_TEMPLATES[topic_key]
-                    species_name = selected_file.stem.replace("_all_sources", "").replace("_", " ")
-                    with st.spinner(f"Recherche des candidats pour « {template['label']} »..."):
-                        genes = load_trait_genes_cached(str(selected_file))
-                        species_filter = tr.resolve_species_filter(species_name)
-                        candidates = tr.search_candidates(genes, template, species_filter)
-                        candidates = tr.score_candidates(candidates, template)[:top_n]
-
-                    st.session_state["trait_candidates"] = candidates
-                    st.session_state["trait_template"] = template
-                    st.session_state["trait_species_name"] = species_name
-                    st.success(f"{len(candidates)} candidats trouvés pour « {template['label']} ».")
-
-        if st.session_state.get("trait_candidates"):
-            candidates = st.session_state["trait_candidates"]
-            import pandas as pd
-            rows = [{
-                "Gène": c["gene"].get("common_name", "") or c["gene_id"],
-                "Accession": c["gene_id"],
-                "Score": c["score"],
-                "Catégories": ", ".join(c["categories"]),
-                "Références": len(c.get("references", [])),
-            } for c in candidates]
-            st.dataframe(pd.DataFrame(rows), width="stretch")
-
-            col_a, col_b = st.columns(2)
-            with col_a:
-                if st.button("Chercher les références PubMed (lent, ~0.35s/gène)", key="trait_fetch_refs_btn"):
-                    template = st.session_state["trait_template"]
-                    with st.spinner("Recherche PubMed en cours..."):
-                        for c in candidates:
-                            term = tr.pick_search_term(c["gene"], c["gene_id"])
-                            c["references"] = (
-                                tr.fetch_pubmed_references(term, extra_terms=[template["pubmed_context"]])
-                                if term else []
-                            )
-                    st.session_state["trait_candidates"] = candidates
-                    st.success("Références PubMed récupérées.")
-                    st.rerun()
-
-            with col_b:
-                if st.button("Générer le rapport Word", key="trait_generate_docx_btn"):
-                    buf = io.BytesIO()
-                    tr.generate_docx_report(
-                        st.session_state["trait_template"]["label"],
-                        st.session_state["trait_species_name"],
-                        candidates, buf, top_n=len(candidates),
-                    )
-                    st.download_button(
-                        "Télécharger le rapport (.docx)", buf.getvalue(),
-                        file_name="rapport_candidats.docx", key="trait_download_docx",
-                    )
+        tr.render_trait_research_tab("Data/clean/species")
 
 
 # ─── Analysis pipeline ─────────────────────────────────────────────────────────
