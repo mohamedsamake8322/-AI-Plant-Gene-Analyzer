@@ -28,11 +28,26 @@ import json
 import re
 import time
 import argparse
+import unicodedata
 from pathlib import Path
 from dataclasses import dataclass, field
 from urllib.parse import quote
 
 import requests
+
+
+def _normalize_text(s: str) -> str:
+    """Normalise unicode (NFC) et casse avant toute comparaison de string
+    tapée par un utilisateur.
+
+    Sans ça : un accent tapé via un terminal, un heredoc PowerShell, ou
+    collé depuis certaines sources peut être encodé en forme décomposée
+    (NFD -- 'e' + accent combinant séparé) plutôt que composée (NFC --
+    un seul point de code pour 'é'). Visuellement identique à l'écran,
+    mais `"secheresse" in q` échoue silencieusement entre les deux
+    formes, sans la moindre erreur. C'est ce qui a fait échouer
+    match_topic("sécheresse") testé en ligne de commande."""
+    return unicodedata.normalize("NFC", s or "").strip().lower()
 
 # ── Bibliothèque de modèles de thèmes ───────────────────────────────────────
 # Chaque modèle définit des catégories de mots-clés (utilisées pour le score
@@ -60,7 +75,7 @@ def resolve_species_filter(species_input: str | None) -> str | None:
     rencontré en testant le thème sécheresse sur le maïs (0 candidats)."""
     if not species_input:
         return None
-    key = species_input.strip().lower()
+    key = _normalize_text(species_input)
     return SPECIES_ALIASES.get(key, key)  # si pas dans la table, on tente tel quel
 
 
@@ -136,9 +151,9 @@ def match_topic(user_query: str) -> str | None:
     l'utilisateur. Retourne la clé du modèle, ou None si aucun match --
     dans ce cas l'app doit indiquer que le thème n'est pas encore couvert
     (extension future : génération de mots-clés via LLM)."""
-    q = user_query.lower()
+    q = _normalize_text(user_query)
     for key, tpl in TOPIC_TEMPLATES.items():
-        if any(alias in q for alias in tpl["aliases"]):
+        if any(_normalize_text(alias) in q for alias in tpl["aliases"]):
             return key
     return None
 
@@ -306,7 +321,6 @@ def generate_docx_report(topic_label: str, species: str, candidates: list[dict],
 
 # ── Point d'entrée CLI pour tester le module hors Streamlit ────────────────
 
-import re as _re
 
 
 def _looks_like_systematic_id(name: str) -> bool:
@@ -316,9 +330,9 @@ def _looks_like_systematic_id(name: str) -> bool:
     (ils n'apparaissent presque jamais tels quels dans un titre/résumé)."""
     if not name:
         return True
-    if _re.match(r"^[A-Za-z]{1,3}\d{4,}[A-Za-z0-9]*$", name):  # Zm00001e014008
+    if re.match(r"^[A-Za-z]{1,3}\d{4,}[A-Za-z0-9]*$", name):  # Zm00001e014008
         return True
-    if _re.match(r"^[A-Z][0-9][A-Z0-9]{3,8}$", name):  # accession UniProt brute (P41979...)
+    if re.match(r"^[A-Z][0-9][A-Z0-9]{3,8}$", name):  # accession UniProt brute (P41979...)
         return True
     return False
 
@@ -348,6 +362,135 @@ def pick_search_term(gene: dict, gene_id: str) -> str | None:
         return mapman[0]["description"].split(".")[-1].strip()
 
     return None
+
+
+# ── Interface Streamlit (à appeler depuis app.py, voir guide d'intégration) ──
+
+try:
+    import streamlit as st
+except ImportError:
+    st = None
+
+SPECIES_FILES: dict[str, str] = {
+    "quinoa": "chenopodium_quinoa_all_sources.json",
+    "riz": "oryza_sativa_all_sources.json",
+    "maïs": "zea_mays_all_sources.json",
+    "tomate": "solanum_lycopersicum_all_sources.json",
+    "raisin": "vitis_vinifera_all_sources.json",
+    "tabac": "nicotiana_tabacum_all_sources.json",
+    "pomme de terre": "solanum_tuberosum_all_sources.json",
+}
+
+
+def render_trait_research_tab(species_dir: str) -> None:
+    """Section Streamlit complète "Recherche par thème". À appeler depuis
+    app.py avec le chemin du dossier contenant les fichiers
+    <espece>_all_sources.json (voir guide d'intégration).
+
+    Ne dépend d'AUCUNE séquence saisie par l'utilisateur -- fonctionne de
+    façon totalement indépendante du flux d'analyse de séquence existant.
+    """
+    if st is None:
+        raise RuntimeError("streamlit n'est pas installé dans cet environnement.")
+
+    st.markdown("### 🌱 Recherche de gènes candidats par thème")
+    st.markdown(
+        "Choisis une espèce et décris un problème agronomique "
+        "(ex. *verse chez le quinoa*, *sécheresse chez le maïs*) pour obtenir "
+        "une liste de gènes candidats sourcée dans la littérature scientifique."
+    )
+
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        species_label = st.selectbox("Espèce", options=list(SPECIES_FILES.keys()))
+    with col2:
+        topic_query = st.text_input(
+            "Thème / problème étudié",
+            placeholder="ex. verse, sécheresse, résistance au froid...",
+        )
+
+    fetch_refs = st.checkbox(
+        "Chercher les références PubMed (plus lent, ~0.7s par gène)",
+        value=True,
+    )
+    top_n = st.slider("Nombre de candidats à afficher", 5, 50, 20)
+
+    if not st.button("🔍 Lancer la recherche", type="primary"):
+        return
+
+    topic_key = match_topic(topic_query) if topic_query else None
+    if not topic_key:
+        st.warning(
+            f"⚠ Thème non reconnu. Thèmes actuellement disponibles : "
+            f"{', '.join(t['label'] for t in TOPIC_TEMPLATES.values())}. "
+            f"Pour ajouter un nouveau thème, voir TOPIC_TEMPLATES dans trait_research.py."
+        )
+        return
+
+    template = TOPIC_TEMPLATES[topic_key]
+    species_file = Path(species_dir) / SPECIES_FILES[species_label]
+
+    with st.spinner(f"Chargement des données {species_label}..."):
+        genes = _load_genes_cached(str(species_file))
+
+    species_filter = resolve_species_filter(species_label)
+    candidates = search_candidates(genes, template, species_filter)
+    candidates = score_candidates(candidates, template)
+
+    if not candidates:
+        st.info("Aucun candidat trouvé pour cette combinaison espèce/thème.")
+        return
+
+    st.success(f"{len(candidates)} candidats trouvés — top {min(top_n, len(candidates))} affichés.")
+
+    if fetch_refs:
+        progress = st.progress(0, text="Recherche PubMed en cours...")
+        for i, c in enumerate(candidates[:top_n]):
+            term = pick_search_term(c["gene"], c["gene_id"])
+            c["references"] = fetch_pubmed_references(term, extra_terms=[template["pubmed_context"]]) if term else []
+            progress.progress((i + 1) / min(top_n, len(candidates)))
+        progress.empty()
+    else:
+        for c in candidates[:top_n]:
+            c["references"] = []
+
+    table_rows = [{
+        "Gène": c["gene"].get("common_name", "") or c["gene_id"],
+        "Accession": c["gene_id"],
+        "Score": c["score"],
+        "Catégories": ", ".join(c["categories"]),
+        "Références": len(c.get("references", [])),
+    } for c in candidates[:top_n]]
+    st.dataframe(table_rows, width="stretch")
+
+    with st.expander("Voir le détail des références PubMed trouvées"):
+        for c in candidates[:top_n]:
+            refs = c.get("references", [])
+            if refs:
+                name = c["gene"].get("common_name", "") or c["gene_id"]
+                st.markdown(f"**{name}** ({c['gene_id']})")
+                for r in refs:
+                    st.markdown(f"- {r['title']} ({r['year']}) — [{r['pmid']}]({r['url']})")
+
+    out_path = f"/tmp/rapport_{topic_key}_{species_label}.docx"
+    generate_docx_report(template["label"], species_label, candidates, out_path, top_n)
+    with open(out_path, "rb") as f:
+        st.download_button(
+            "📄 Télécharger le rapport Word",
+            data=f.read(),
+            file_name=f"candidats_{topic_key}_{species_label}.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+
+
+def _load_genes_cached(species_file: str) -> dict:
+    """Wrapper cache Streamlit autour de load_genes -- évite de relire
+    et re-parser un fichier de plusieurs dizaines de milliers de gènes à
+    chaque interaction avec un widget de la page."""
+    if st is not None:
+        cached = st.cache_data(show_spinner=False)(load_genes)
+        return cached(Path(species_file))
+    return load_genes(Path(species_file))
 
 
 def main():

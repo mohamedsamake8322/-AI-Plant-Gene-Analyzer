@@ -147,15 +147,38 @@ def _normalize_database(raw: object) -> dict:
 
 def _flatten_sequence(item: dict) -> dict:
     """Extract the primary sequence string from the nested star-schema
-    `sequence` object (`{"value": ..., "type": ...}`) so the rest of
-    similarityengine.py — which expects `sequence` as a plain string —
-    keeps working unchanged on the new master_plant_db.json schema."""
+    `sequence` object so the rest of similarityengine.py — which expects
+    `sequence` as a plain string — keeps working unchanged on the real
+    master_plant_db.json schema.
+
+    IMPORTANT: the actual schema is `{"dna": ..., "rna": ..., "protein": ...}`
+    (confirmed across rank_lodging_candidates.py, trait_research.py, and
+    direct inspection of master_plant_db.json) -- NOT `{"value": ...,
+    "type": ...}` as a previous version of this function assumed. That
+    mismatch meant `seq_field.get("value")` always returned None, silently
+    flattening every single gene's sequence to an empty string regardless
+    of origin/sequence_backed status. Every downstream similarity search
+    (compare_with_database) then skipped every entry as empty, which is
+    almost certainly the actual cause of "no match found" on real data --
+    not an indexing/origin-filter issue. Priority: dna > rna > protein.
+    """
     seq_field = item.get("sequence")
     if isinstance(seq_field, dict):
         item = dict(item)  # avoid mutating shared refs
-        item["sequence"] = seq_field.get("value") or ""
-        if not item.get("sequence_type"):
-            item["sequence_type"] = seq_field.get("type")
+        dna = seq_field.get("dna") or ""
+        rna = seq_field.get("rna") or ""
+        protein = seq_field.get("protein") or ""
+        if dna:
+            seq, seq_type = dna, "dna"
+        elif rna:
+            seq, seq_type = rna, "rna"
+        elif protein:
+            seq, seq_type = protein, "protein"
+        else:
+            seq, seq_type = "", None
+        item["sequence"] = seq
+        if not item.get("sequence_type") and seq_type:
+            item["sequence_type"] = seq_type
     return item
 
 
@@ -364,6 +387,18 @@ def compare_with_database(
     aligned_count = 0
 
     for gene_name, gene_info in database.items():
+        # Skip entries without a real sequence up front (plaza_only /
+        # annotation_only -- ~85-90% of the dataset by construction).
+        # This is a cheap dict-key check before doing any string work on
+        # a sequence we already know is absent, and it also protects
+        # against a sequence_backed entry whose sequence data is missing
+        # for some other reason (e.g. the master_plant_db.json truncation
+        # bug found earlier this session) rather than relying solely on
+        # the empty-string check below to catch it.
+        if isinstance(gene_info, dict) and gene_info.get("origin") not in (None, "sequence_backed"):
+            skipped_entries.append(gene_name)
+            continue
+
         try:
             raw_seq = gene_info["sequence"]
         except (TypeError, KeyError):
