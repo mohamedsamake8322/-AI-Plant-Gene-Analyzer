@@ -331,3 +331,17 @@ Multiple connection attempts failed. All failures were:
 2026-08-25 20:48:30,136 - __main__ - INFO - K-mer index built for database (cached)
 2026-08-25 20:48:30,209 - __main__ - INFO - CSS loaded successfully from style.css
 2026-08-25 20:48:30,291 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-25 20:49:53,593 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-25 20:49:53,608 - __main__ - INFO - Loaded 195 genes from database
+2026-08-25 20:49:54,120 - __main__ - INFO - K-mer index built for database (cached)
+2026-08-25 20:49:54,214 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-25 20:49:54,286 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-25 20:49:54,438 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-25 20:49:54,500 - __main__ - INFO - Starting analysis for record 1/2: cqi:110682188|Chenopodium quinoa
+2026-08-25 20:55:42,309 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-25 20:55:42,373 - __main__ - INFO - Loaded 195 genes from database
+2026-08-25 20:55:42,936 - __main__ - INFO - K-mer index built for database (cached)
+2026-08-25 20:56:39,192 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-25 20:57:35,271 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-25 20:57:35,289 - __main__ - INFO - Loaded 195 genes from database
+2026-08-25 20:57:35,900 - __main__ - INFO - K-mer index built for database (cached)

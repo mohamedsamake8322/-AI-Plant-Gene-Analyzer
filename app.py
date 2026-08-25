@@ -472,14 +472,14 @@ with col_demo:
     if selected_demo != "Select a demo…":
         demo = DEMO_SEQUENCES[selected_demo]
         st.markdown(f"*{demo['desc']}*")
-        if st.button("Load Demo Sequence", width='stretch'):
+        if st.button("Load Demo Sequence"):
             raw_sequence = demo["seq"]
             st.session_state["loaded_demo"] = demo["seq"]
 
     if "loaded_demo" in st.session_state and not raw_sequence:
         raw_sequence = st.session_state["loaded_demo"]
 
-analyze_btn = st.button("🔬 Analyze Sequence", width='stretch', type="primary")
+analyze_btn = st.button("🔬 Analyze Sequence", type="primary")
 
 st.markdown("---")
 
@@ -742,7 +742,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
     export_col1, export_col2, export_col3, export_col4 = st.columns(4)
     
     with export_col1:
-        if st.button("📄 Download JSON", width='stretch'):
+        if st.button("📄 Download JSON"):
             try:
                 json_path = export_util.export_results_json(result)
                 with open(json_path, "r", encoding="utf-8") as f:
@@ -751,7 +751,6 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                         f.read(),
                         file_name=f"analysis_{stats['length']}bp.json",
                         mime="application/json",
-                        width='stretch',
                     )
                 logger.info(f"JSON export created: {json_path}")
                 st.success("✅ JSON exported successfully")
@@ -760,7 +759,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 st.error(f"Export failed: {e}")
     
     with export_col2:
-        if st.button("📊 Download CSV", width='stretch'):
+        if st.button("📊 Download CSV"):
             try:
                 csv_path = export_util.export_results_csv(result)
                 with open(csv_path, "r", encoding="utf-8") as f:
@@ -769,7 +768,6 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                         f.read(),
                         file_name=f"analysis_{stats['length']}bp.csv",
                         mime="text/csv",
-                        width='stretch',
                     )
                 logger.info(f"CSV export created: {csv_path}")
                 st.success("✅ CSV exported successfully")
@@ -778,7 +776,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 st.error(f"Export failed: {e}")
     
     with export_col3:
-        if st.button("🌐 Download HTML", width='stretch'):
+        if st.button("🌐 Download HTML"):
             try:
                 html_path = export_util.export_results_html(result)
                 with open(html_path, "r", encoding="utf-8") as f:
@@ -787,7 +785,6 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                         f.read(),
                         file_name=f"analysis_{stats['length']}bp.html",
                         mime="text/html",
-                        width='stretch',
                     )
                 logger.info(f"HTML export created: {html_path}")
                 st.success("✅ HTML exported successfully")
@@ -795,7 +792,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 logger.error(f"HTML export failed: {e}")
                 st.error(f"Export failed: {e}")
     with export_col4:
-        if st.button("📑 Download XLSX", width='stretch'):
+        if st.button("📑 Download XLSX"):
             try:
                 xlsx_path = export_util.export_results_xlsx(result)
                 with open(xlsx_path, "rb") as f:
@@ -804,7 +801,6 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                         f.read(),
                         file_name=f"analysis_{stats['length']}bp.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        width='stretch',
                     )
                 logger.info(f"XLSX export created: {xlsx_path}")
                 st.success("✅ XLSX exported successfully")
