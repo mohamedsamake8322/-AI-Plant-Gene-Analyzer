@@ -144,19 +144,26 @@ def _parse_kegg_flat(text: str, gene_id: str, org_code: str, species: str) -> di
         if parts:
             ko_ids.append(parts[0])
 
-    # Sequence (NTSEQ or AASEQ)
-    seq_lines = fields.get("NTSEQ", fields.get("AASEQ", []))
-    sequence = ""
-    seq_type = "dna"
-    if seq_lines:
-        # First line may be length, rest is sequence
-        for sl in seq_lines[1:]:
-            sequence += sl.replace(" ", "")
-        if fields.get("AASEQ") and not fields.get("NTSEQ"):
-            seq_type = "protein"
+    # Sequence (NTSEQ and/or AASEQ)
+    # BUGFIX: KEGG gene entries very commonly carry BOTH the nucleotide
+    # sequence (NTSEQ) and the protein sequence (AASEQ) in the same
+    # flat-file record. The old code did
+    #   fields.get("NTSEQ", fields.get("AASEQ", []))
+    # which only ever reads ONE of the two blocks -- NTSEQ wins whenever
+    # it's present, silently dropping the protein sequence for the vast
+    # majority of entries (confirmed: 1000/1000 sampled records had
+    # sequence.dna filled and sequence.protein empty). We now parse both
+    # blocks independently.
+    def _read_seq_block(lines: list[str]) -> str:
+        # First line is the reported sequence length, not sequence data.
+        return "".join(sl.replace(" ", "") for sl in lines[1:])
 
-    if not sequence:
-        seq_type = ""
+    nt_lines = fields.get("NTSEQ", [])
+    aa_lines = fields.get("AASEQ", [])
+    dna_sequence = _read_seq_block(nt_lines).upper() if nt_lines else ""
+    protein_sequence = _read_seq_block(aa_lines).upper() if aa_lines else ""
+
+    if not dna_sequence and not protein_sequence:
         # No NTSEQ/AASEQ in this KEGG entry -- still keep pathway/KO data
         # instead of discarding the whole record, same reasoning as the
         # PlantTFDB fix: metadata without a sequence is still useful.
@@ -179,18 +186,28 @@ def _parse_kegg_flat(text: str, gene_id: str, org_code: str, species: str) -> di
         "gene_id": f"{org_code}:{gene_id}",
         "symbol": symbol,
         "organism": species,
-        "sequence": sequence.upper(),
-        "sequence_type": seq_type,
+        # BUGFIX: was a single ambiguous "sequence"/"sequence_type" pair.
+        # Downstream (collect_all_sources.py KEGG block) now reads this
+        # dict directly to fill sequence.dna AND sequence.protein.
+        "sequences": {
+            "dna": dna_sequence or None,
+            "protein": protein_sequence or None,
+        },
         "description": description,
-        "length": len(sequence),
+        "length": len(dna_sequence) or len(protein_sequence),
         "source": "kegg",
         "pathways": pathways,
         "annotations": {
             "ko_ids": ko_ids,
             "kegg_org": org_code,
-            "sequence_available": bool(sequence),
+            "sequence_available": bool(dna_sequence or protein_sequence),
         },
         "external_links": external,
+        # NOTE: this is a placeholder, not real phenotype data -- it just
+        # echoes the first 5 pathway names so the field isn't empty. Real
+        # trait data (verse/lodging, drought, etc.) needs the separate
+        # manually-curated, PubMed-sourced trait table mentioned elsewhere
+        # in this pipeline. Don't treat this as ground truth.
         "traits": [p["name"] for p in pathways[:5]],
         "expression_profiles": [],
         "publications": [],

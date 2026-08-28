@@ -44,12 +44,6 @@ except ImportError:
     search_gene_metadata = None
     count_gene_metadata_matches = None
 
-# ── Mode local temporaire (Neon bloqué jusqu'au 1er septembre) ──
-load_gene_database_from_postgres = None
-get_gene_count = None
-search_gene_metadata = None
-count_gene_metadata_matches = None
-
 # ─── Configure logging ─────────────────────────────────────────────────────────
 logger = config.get_logger(__name__)
 

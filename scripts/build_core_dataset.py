@@ -43,7 +43,6 @@ import json
 import sys
 import time
 from pathlib import Path
-from decimal import Decimal
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
@@ -63,43 +62,6 @@ _VALID_CHARS = {
 }
 
 
-def load_master_genes(path: Path):
-    """Yield master records incrementally without loading the whole JSON."""
-    import ijson
-
-    with path.open("rb") as stream:
-        yield from ijson.items(stream, "genes.item")
-
-
-def normalize_master_record(rec: dict) -> dict:
-    """Flatten the nested sequence fields used by master_plant_db.json."""
-    normalized = dict(rec)
-    sequence_field = rec.get("sequence") or {}
-    if isinstance(sequence_field, dict):
-        for sequence_type in ("dna", "rna"):
-            sequence = sequence_field.get(sequence_type)
-            if sequence:
-                normalized["sequence"] = sequence
-                normalized["sequence_type"] = sequence_type
-                break
-        else:
-            normalized["sequence"] = ""
-            normalized["sequence_type"] = ""
-    annotation = rec.get("annotation") or {}
-    if isinstance(annotation, dict):
-        normalized["annotations"] = annotation
-        normalized["pathways"] = annotation.get("kegg_pathways") or []
-    normalized["publications"] = (rec.get("literature") or {}).get("publications", [])
-    return normalized
-
-
-def json_default(value):
-    """Serialize numeric database values that the standard encoder rejects."""
-    if isinstance(value, Decimal):
-        return float(value)
-    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
-
-
 # ---------------------------------------------------------------------------
 # Étape 1+2 : qualité + type nucléotidique
 # ---------------------------------------------------------------------------
@@ -110,9 +72,7 @@ def quality_and_type_filter(genes: list[dict], min_length: int, max_n_ratio: flo
               "rejected_too_short": 0, "rejected_too_many_n": 0, "rejected_invalid_chars": 0,
               "rejected_empty": 0}
 
-    normalized_genes = []
-    for original_rec in genes:
-        rec = normalize_master_record(original_rec)
+    for rec in genes:
         seq = str(rec.get("sequence") or "").upper().strip()
         seq_type = str(rec.get("sequence_type") or "").lower()
 
@@ -251,12 +211,6 @@ def homology_dedup(
     lengths.sort(key=lambda x: x[1])
     sorted_keys = [k for k, _ in lengths]
     sorted_lengths = [l for _, l in lengths]
-    kmer_index = {
-        key: sim._local_kmer_hashes(
-            keyed[key].get("sequence") or "", sim.DEFAULT_KMER, "dna"
-        )
-        for key in sorted_keys
-    }
 
     t0 = time.time()
     for idx, (key, length) in enumerate(lengths):
@@ -269,32 +223,12 @@ def homology_dedup(
         if not window_keys:
             continue
 
-        query_kmers = kmer_index[key]
-        if query_kmers:
-            # Shared k-mers are a cheap local proxy for homology. Only the
-            # strongest overlaps enter the expensive Needleman-Wunsch step.
-            window_keys.sort(
-                key=lambda candidate_key: len(
-                    query_kmers & kmer_index[candidate_key]
-                ),
-                reverse=True,
-            )
-        candidate_limit = max(1, top_n * candidate_pool_multiplier)
-        candidates = {
-            k: keyed[k] for k in window_keys[:candidate_limit]
-        }
-        if query_kmers:
-            min_shared = max(1, int(len(query_kmers) * 0.4))
-            candidates = {
-                candidate_key: candidate
-                for candidate_key, candidate in candidates.items()
-                if len(query_kmers & kmer_index[candidate_key]) >= min_shared
-            }
+        candidates = {k: keyed[k] for k in window_keys}
 
         try:
             matches = sim.compare_with_database(
                 seq, db_source=candidates,
-                top_n=candidate_limit,
+                top_n=top_n * candidate_pool_multiplier,
                 max_length_ratio=max_length_ratio,
             )
         except Exception as e:
@@ -417,8 +351,16 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     report: dict = {}
 
-    print(f"Chargement streaming de {args.input}...")
-    genes = list(load_master_genes(Path(args.input)))
+    print(f"Chargement de {args.input}...")
+    # IMPORTANT : on réutilise sim.load_gene_database() plutôt qu'un
+    # json.loads() brut. Le schéma réel de master_plant_db.json stocke
+    # "sequence" comme un dict imbriqué {"dna":..., "rna":..., "protein":...},
+    # pas une chaîne. sim.load_gene_database() -> _normalize_database() ->
+    # _flatten_sequence() aplatit déjà ça correctement (et pose
+    # "sequence_type" au passage) -- indispensable, sinon quality_and_type_filter()
+    # rejette 100% des gènes dès l'étape 1 (voir historique de session).
+    genes_dict = sim.load_gene_database(args.input)
+    genes = list(genes_dict.values())
     print(f"  {len(genes)} gènes chargés")
 
     print("\n[1/5] Filtrage qualité + type nucléotidique...")
@@ -450,10 +392,10 @@ def main() -> None:
 
     print("\n[6/6] Écriture des fichiers...")
     (out_dir / "core_dataset.json").write_text(
-        json.dumps({"metadata": {"count": len(core)}, "genes": core}, ensure_ascii=False, indent=2, default=json_default),
+        json.dumps({"metadata": {"count": len(core)}, "genes": core}, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    (out_dir / "core_dataset_report.json").write_text(json.dumps(report, indent=2, default=json_default), encoding="utf-8")
+    (out_dir / "core_dataset_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
 
     print(f"\nTerminé. {len(core)} gènes dans le core dataset.")
     print(f"  -> {out_dir / 'core_dataset.json'}")

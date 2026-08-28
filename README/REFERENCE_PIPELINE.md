@@ -11,7 +11,7 @@ Ce document existe pour une seule raison : que tu n'aies plus jamais à te deman
 | **Pipeline** | `collect_all_sources.py` — moderne, parallèle, multi-espèces | `run_pipeline.py` + `collect_plant_data.py` — historique, un fichier combiné |
 | **Sortie** | Un fichier JSON **par espèce** (`data/clean/species/*.json`) | Un **seul** fichier JSON combiné (`plant_data_clean.json`) |
 | **Statut** | ✅ **C'est celui que tu utilises activement** | 🔒 En réserve, ne pas lancer en parallèle du premier |
-| **Import Postgres** | `scripts/import_species_to_postgres.py` | `scripts/load_to_postgres.py` |
+| **Import Postgres** | `scripts/load_to_postgres.py` sur le master actuel | `scripts/load_to_postgres.py` |
 
 **Règle d'or : ne jamais mélanger les deux dans le même cycle de collecte.** Le workflow à suivre est détaillé en bas de ce document.
 
@@ -21,7 +21,7 @@ Ce document existe pour une seule raison : que tu n'aies plus jamais à te deman
 
 | Fichier | À lancer directement ? | Rôle |
 |---|---|---|
-| **`collect_all_sources.py`** | ✅ **Oui — c'est LE point d'entrée** | Orchestre toute la collecte : NCBI, UniProt, KEGG, PlantTFDB, PubMed, Expression Atlas, GEO, en parallèle sur plusieurs espèces. Écrit un fichier par espèce + fusionne en `master_plant_db.json` à la fin. |
+| **`collect_all_sources.py`** | ✅ **Oui — c'est LE point d'entrée** | Orchestre toute la collecte : NCBI, UniProt, KEGG, PlantTFDB, PubMed, Expression Atlas et GEO, en parallèle sur plusieurs espèces. Écrit un fichier par espèce puis reconstruit `master_plant_db.json` avec `rebuild_master_safe.py`. |
 | `collect_all_plants.ps1` / `.sh` | Optionnel | Simple wrapper qui appelle `collect_all_sources.py` avec des options prédéfinies. Pratique mais pas obligatoire — tu peux appeler `collect_all_sources.py` directement avec tes propres arguments (ce qu'on fait depuis le début). |
 | `run_collect_with_log.py` / `.ps1` | Optionnel | Wrapper qui ajoute une journalisation automatique. Alternative à `Start-Transcript`. |
 | `collect_uniprot.py` | ❌ Jamais seul | Utilisé automatiquement par `collect_all_sources.py` pour la source `uniprot`. Contient `fetch_uniprot(species, retmax)`. |
@@ -30,7 +30,7 @@ Ce document existe pour une seule raison : que tu n'aies plus jamais à te deman
 | `collect_pubmed.py` | ❌ Jamais seul | Idem pour `pubmed`. Retourne un paquet de publications par espèce (pas des gènes individuels). Corrigé récemment (ne prétend plus avoir une séquence ADN). |
 | `collect_atlas.py` | ❌ Jamais seul | Pont vers `scripts/collect_expression_atlas.py`. Retourne un pseudo-enregistrement par espèce regroupant les expériences Expression Atlas trouvées. |
 | `collect_geon.py` | ❌ Jamais seul | Pont vers `scripts/collect_geo.py`. Même principe, pour les datasets NCBI GEO. |
-| `collect_ensembl.py` ⚠️ | ❌ Jamais, et **actuellement cassé** | **À renommer en `collect_ensembl_stub.py`** — on l'avait décidé pour éviter une collision de nom avec `scripts/collect_ensembl.py` (deux fichiers différents, même nom). Tant qu'il n'est pas renommé, si tu demandes un jour `--sources ensembl` explicitement, ça plantera. Sans le demander, aucun impact (exclu du défaut). |
+| `collect_ensembl.py` | ❌ Pas utilisé par la collecte bulk | Lookup unitaire fonctionnel par symbole ou identifiant. Il ne fournit pas l'interface bulk attendue par `collect_all_sources.py`. Pour `--sources ensembl` dans le pipeline bulk, `collect_ensembl_stub.py` est appelé et retourne zéro résultat. |
 | `__pycache__/` | Ignorer | Cache Python auto-généré, jamais à toucher ni committer. |
 
 ---
@@ -62,14 +62,14 @@ Ce document existe pour une seule raison : que tu n'aies plus jamais à te deman
 | `transform_schema.py` | Rarement | Convertit un ancien format JSON "legacy" vers le schéma professionnel enrichi. |
 | `integrate_professional_schema.py` | Rarement | Guide/assistant de migration vers le schéma pro — plutôt un outil de conseil que d'exécution automatique. |
 | `migrate_genes_db.py` | Rarement | Migre l'ancienne base locale `genes_database.json` vers un format standard. |
-| `rebuild_master.py` | ❌ Pas nécessaire | Reconstruit `master_plant_db.json` depuis les fichiers espèces — mais `collect_all_sources.py` le fait déjà automatiquement à la fin de chaque run. |
-| `rebuild_master_stream.py` | ❌ Pas nécessaire | Version streaming du même besoin, pour de très gros volumes. |
+| **`rebuild_master_safe.py`** | ✅ Ponctuellement | Point unique de vérité pour reconstruire le master. Lit un fichier espèce à la fois, dédoublonne par `(organism, gene_id)`, écrit un temporaire, vérifie le JSON en streaming, puis remplace le master atomiquement. Crée aussi `master_plant_db.integrity.json`. |
+| `rebuild_master.py` / `rebuild_master_stream.py` | ❌ À éviter | Anciennes versions de reconstruction qui ne doivent plus être utilisées pour le master actuel. |
 
 ### Validation
 
 | Fichier | À lancer directement ? | Rôle |
 |---|---|---|
-| **`verify_gene_records.py`** | ✅ **Oui, systématiquement après chaque collecte/import** | Lit depuis Postgres (`--db`) ou un JSON (`--json-file`), classe les enregistrements (dna/protein/metadata/...), génère CSV/JSON de rapport. Options `--csv-out`, `--stats-out` pour ne pas perdre le résumé dans un terminal trop long. |
+| **`verify_gene_records.py`** | ✅ Oui, avec réserve | Lit depuis Postgres (`--db`) ou un JSON (`--json-file`), classe les enregistrements et génère un rapport. Le master actuel utilise `sequence.dna/rna/protein` imbriqué : ce script attend surtout un format plat et ne suffit donc pas à certifier les types de séquences du master. |
 | `validate_and_add_gene.py` | ❌ Utilisé en interne | Valide un enregistrement avant insertion dans `genes_database.json`. |
 | `validate_bioinformatics.py` | ✅ Ponctuel | Teste les moteurs d'alignement/mutation/phylogénie eux-mêmes (pas tes données) — pertinent quand tu travailles sur `alignment_engine.py` etc., pas sur la collecte. |
 | `test_postgres_connection.py` | ✅ Dès qu'il y a un doute de connexion | Diagnostique DNS/TCP/auth vers Postgres, étape par étape. Aurait pu nous faire gagner du temps sur le bug de port 5432/5433 ! À utiliser en premier réflexe la prochaine fois qu'une connexion échoue. |
@@ -78,8 +78,8 @@ Ce document existe pour une seule raison : que tu n'aies plus jamais à te deman
 
 | Fichier | À lancer directement ? | Rôle |
 |---|---|---|
-| **`import_species_to_postgres.py`** | ✅ **Oui — c'est l'import du pipeline principal** | Lit tous les `data/clean/species/*_all_sources.json` et les upsert dans Postgres. |
-| `load_to_postgres.py` | ✅ Pour l'autre pipeline uniquement | Charge le JSON combiné de `run_pipeline.py`/`clean_data.py`. Pas utilisé par ton flux principal. |
+| **`load_to_postgres.py`** | ✅ **Oui — import compatible avec le schéma actuel** | Charge le master JSON, extrait les séquences imbriquées et les upsert dans PostgreSQL. Peut créer les tables avec `--create-tables`. |
+| `import_species_to_postgres.py` | ⚠️ À corriger avant usage | Attend encore `sequence` comme chaîne plate et n'est donc pas compatible tel quel avec `sequence.dna/rna/protein`. |
 | `postgres_utils.py` | ❌ Jamais seul | Bibliothèque partagée (connexion, upsert, création de tables) utilisée par tous les scripts d'import/lecture Postgres ci-dessus. |
 | `db_utils.py` | ❌ Jamais seul | Équivalent mais pour la base JSON locale `genes_database.json` (pas Postgres). |
 
@@ -95,30 +95,41 @@ Ce document existe pour une seule raison : que tu n'aies plus jamais à te deman
 
 ### 1. Collecter
 ```powershell
-python collect/collect_all_sources.py --plant-file toutes_especes.txt --workers 4 --retmax 300 --create-tables
+python collect/collect_all_sources.py --plant-file toutes_especes.txt --workers 4 --retmax 300
 ```
-**Ce que ça fait** : lance 4 collectes en parallèle (une par espèce à la fois par worker), interroge NCBI/UniProt/KEGG/PlantTFDB/PubMed/Atlas/GEO pour chaque espèce, écrit un fichier JSON par espèce dans `data/clean/species/`, puis fusionne tout dans `data/clean/master_plant_db.json` à la fin. `--create-tables` s'assure que la table Postgres existe (sans importer les données elles-mêmes).
+**Ce que ça fait** : lance 4 collectes en parallèle, interroge NCBI/UniProt/KEGG/PlantTFDB/PubMed/Atlas/GEO pour chaque espèce, écrit un fichier JSON par espèce dans `data/clean/species/`, puis reconstruit le master avec `rebuild_master_safe.py` à la fin. Les sources Atlas, GEO et PubMed produisent principalement des métadonnées au niveau espèce ou dataset, pas des séquences par gène.
+
+Le pipeline utilise `--skip-existing` par défaut : pour recollecter une espèce déjà présente, ajouter `--force`. Les sources par défaut sont `ncbi,uniprot,kegg,planttfdb,pubmed,atlas,geon`; Ensembl et PLAZA doivent être demandés explicitement et ont des contraintes particulières.
+
+`--create-tables` crée seulement les tables PostgreSQL. Pour importer également les données, utiliser `--load-db --create-tables` après avoir vérifié la connexion.
 
 ### 2. Nettoyer
 **Rien à faire** — déjà inclus dans l'étape 1.
 
-### 3. Valider avant l'import massif
+### 3. Vérifier avant l'import massif
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\verify_gene_records.py --json-file data\clean\master_plant_db.json --stats-out data\clean\stats_avant_import.json
 ```
-**Ce que ça fait** : lit le JSON fusionné, classe chaque enregistrement, écrit un résumé. Sert à repérer un problème (comme les chromosomes entiers de la dernière fois) **avant** de polluer la base Postgres avec.
+**Limite importante** : le master actuel stocke les séquences dans `sequence.dna`, `sequence.rna` et `sequence.protein`. `verify_gene_records.py` attend surtout une séquence plate et son classement des types ne suffit donc pas à valider le master. Contrôler aussi les compteurs d'espèces, `origin`, les séquences imbriquées et les doublons `(organism, gene_id)`.
 
 ### 4. Envoyer vers Postgres
 ```powershell
-.\.venv\Scripts\python.exe .\scripts\import_species_to_postgres.py --species-dir data\clean\species
+.\.venv\Scripts\python.exe .\scripts\load_to_postgres.py --json-file data\clean\master_plant_db.json --create-tables
 ```
-**Ce que ça fait** : lit chaque fichier espèce, upsert chaque gène dans la table `genes` (met à jour si le gène existe déjà, insère sinon — sans écraser une séquence existante par du vide, grâce au correctif qu'on a fait).
+**Ce que ça fait** : charge le master, extrait les séquences depuis la structure imbriquée et upsert les enregistrements dans PostgreSQL. `import_species_to_postgres.py` n'est pas compatible tel quel avec le champ `sequence` imbriqué et ne doit pas être utilisé avant adaptation.
 
 ### 5. Vérifier le résultat final
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\verify_gene_records.py --db --csv-out data\clean\rapport_final.csv --stats-out data\clean\stats_final.json
 ```
 **Ce que ça fait** : relit directement depuis Postgres (source de vérité), confirme que ce qui est en base correspond à ce qui a été collecté.
+
+### Reconstruction manuelle du master
+Si la collecte est terminée mais que le master doit être régénéré :
+```powershell
+.\.venv\Scripts\python.exe .\rebuild_master_safe.py --species-dir data\clean\species --out data\clean\master_plant_db.json
+```
+Le script prend tous les fichiers `*_all_sources.json` présents dans le dossier, pas uniquement ceux du dernier run. Il dédoublonne par `(organism, gene_id)`, vérifie le fichier temporaire en streaming, remplace le master atomiquement et écrit `master_plant_db.integrity.json`.
 
 ---
 

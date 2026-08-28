@@ -102,7 +102,18 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--atlas-species", default=None, help="Species for Expression Atlas searches (default: all species)")
     parser.add_argument("--retmax", type=int, default=100, help="Maximum records for GEO and NCBI search")
     parser.add_argument("--size", type=int, default=100, help="Maximum Expression Atlas results")
-    parser.add_argument("--max-length", type=int, default=0, help="Max sequence length for NCBI fetch (0 = no limit)")
+    parser.add_argument(
+        "--max-length", type=int, default=100_000,
+        help=(
+            "Max sequence length for NCBI fetch. SAFETY DEFAULT changed from 0 "
+            "(no limit) to 100000: a plain species-name term search on NCBI's "
+            "'nucleotide' db returns everything catalogued under that organism, "
+            "including whole chromosome/scaffold assembly entries (tens of "
+            "millions of bp) -- see collect_multi_type.py's docstring, which "
+            "already hit this exact issue. Pass --max-length 0 explicitly if "
+            "you really want no limit."
+        ),
+    )
     parser.add_argument("--mrna-only", action="store_true", help="Restrict NCBI search to mRNA sequences")
     parser.add_argument(
         "--plants-only", dest="plants_only", action="store_true", default=True,

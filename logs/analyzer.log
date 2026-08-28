@@ -345,3 +345,14 @@ Multiple connection attempts failed. All failures were:
 2026-08-25 20:57:35,271 - __main__ - INFO - CSS loaded successfully from style.css
 2026-08-25 20:57:35,289 - __main__ - INFO - Loaded 195 genes from database
 2026-08-25 20:57:35,900 - __main__ - INFO - K-mer index built for database (cached)
+2026-08-25 21:00:41,875 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-25 21:03:08,429 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-25 21:03:23,677 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-25 21:03:33,014 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-25 21:03:33,299 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-25 21:03:57,065 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-25 21:04:40,959 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-25 21:04:49,219 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-25 21:04:49,482 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-25 21:04:49,543 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-08-25 21:09:33,225 - __main__ - INFO - CSS loaded successfully from style.css
