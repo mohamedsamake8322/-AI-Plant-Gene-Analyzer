@@ -448,11 +448,17 @@ def collect_species(
                     if r.get("annotations", {}).get("ko_ids"):
                         existing.setdefault("annotations", {})["ko_ids"] = \
                             r["annotations"]["ko_ids"]
-                if gid and r.get("sequence"):
-                    seq_type = r.get("sequence_type") or "dna"
-                    all_records[gid].setdefault("_raw_sequences", {}).setdefault(
-                        seq_type, r["sequence"]
-                    )
+                # BUGFIX: KEGG can supply BOTH a dna and a protein sequence
+                # for the same gene (see collect_kegg.py). Store each one
+                # that's present -- setdefault() still won't overwrite a
+                # sequence already supplied by NCBI/UniProt for this gene.
+                if gid:
+                    seqs = r.get("sequences") or {}
+                    raw = all_records[gid].setdefault("_raw_sequences", {})
+                    if seqs.get("dna"):
+                        raw.setdefault("dna", seqs["dna"])
+                    if seqs.get("protein"):
+                        raw.setdefault("protein", seqs["protein"])
             source_counts["kegg"] = len(all_records) - before
         except Exception as e:
             errors.append(f"kegg: {e}")

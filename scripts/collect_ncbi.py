@@ -517,19 +517,37 @@ def fetch_by_term(
                 except Exception as inner_exc:
                     print(f"  Small batch fetch failed for {small_batch[:3]}: {inner_exc}")
 
-        # Correlate each parsed FASTA record back to its resolved GeneID via
-        # accession (records are returned by efetch in request order for
-        # this endpoint, and the accession is each record's own header
-        # token -- matching on that, rather than raw list position, avoids
-        # silently mis-attributing a GeneID if a UID yielded 0 or >1
-        # FASTA records).
+        # Correlate each parsed FASTA record back to its resolved GeneID.
+        # BUGFIX: this used to compare `uid` (a numeric internal NCBI UID,
+        # e.g. "2534184271") directly against `acc` (the record's own
+        # accession, e.g. "XM_021897016.1") via `if uid == acc or uid ==
+        # versionless`. UIDs and accessions are two different identifier
+        # namespaces -- that condition can never be true, so
+        # uid_by_accession always ended up empty and GeneID resolution
+        # silently failed for every record (confirmed: 100% of sampled
+        # XM_/NM_/NP_/YP_ records kept their own accession as gene_id,
+        # exactly what you'd see if this correlation step never worked).
+        #
+        # Fix: efetch's FASTA output for a straightforward batch request
+        # preserves the input id order -- same documented NCBI behavior
+        # already relied on for esummary in _prefilter_batch_by_length
+        # above. Guard with a count check so a mismatch (e.g. a UID that
+        # produced zero or >1 FASTA records, or a partial-failure retry
+        # that dropped some sub-batches) makes us skip correlation for
+        # this batch entirely rather than risk mis-attributing a GeneID
+        # to the wrong record.
         uid_by_accession: dict[str, str] = {}
-        for header, _ in records:
-            acc = header.split()[0]
-            versionless = acc.split(".", 1)[0]
-            for uid in batch:
-                if uid == acc or uid == versionless:
-                    uid_by_accession[acc] = uid
+        if len(records) == len(batch):
+            for uid, (header, _seq) in zip(batch, records):
+                acc = header.split()[0]
+                uid_by_accession[acc] = uid
+        else:
+            print(
+                f"Warning: batch produced {len(records)} FASTA record(s) for "
+                f"{len(batch)} requested UID(s) -- skipping GeneID correlation "
+                "for this batch (falling back to accession as gene_id) to "
+                "avoid mis-attribution."
+            )
         for header, seq in records:
             acc = header.split()[0]
             uid = uid_by_accession.get(acc)
