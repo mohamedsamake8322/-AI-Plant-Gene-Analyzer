@@ -135,8 +135,27 @@ def _resolve_existing(candidates: list[str]) -> Path:
     """Returns the first candidate filename (under PLAZA_DIR) that actually
     exists on disk, or the first candidate (even if missing) as a fallback
     -- callers already handle a missing file gracefully (empty dict), so
-    this never raises."""
+    this never raises.
+
+    BUGFIX: PLAZA's download page serves these files as .csv.gz by
+    default (e.g. id_conversion.cqu.csv.gz), and nothing requires the
+    user to decompress them by hand first. The old version only ever
+    checked the plain .csv name -- if only the .gz was present (the
+    normal case, straight off the download page), _resolve_existing()
+    silently fell through to its "missing file" fallback, and every
+    _load_* function above returned an EMPTY dict with no error at all.
+    This is confirmed to be the root cause of the PLAZA UniProt crosswalk
+    never matching anything (id_conversion.cqu.csv.gz present on disk,
+    but only id_conversion.cqu.csv / id_conversion_cqu.csv were ever
+    looked for). Now every candidate is tried both as given and with a
+    .gz suffix appended.
+    """
+    expanded: list[str] = []
     for name in candidates:
+        expanded.append(name)
+        if not name.endswith(".gz"):
+            expanded.append(name + ".gz")
+    for name in expanded:
         p = PLAZA_DIR / name
         if p.exists():
             return p
@@ -149,11 +168,20 @@ def _iter_plaza_rows(path: Path):
     the fact that PLAZA's header line is itself '#'-prefixed (see module
     docstring). Pure metadata comments (no tab) are skipped; the header is
     the first '#'-prefixed line that DOES contain a tab.
+
+    BUGFIX: transparently handles gzip-compressed files (path ending in
+    .gz), which is the format PLAZA actually serves on its download page.
+    Files were previously only ever opened as plain text -- see
+    _resolve_existing()'s docstring for how that combined with the old
+    .csv-only candidate list to silently return zero rows for every
+    PLAZA file the user hadn't manually gunzip'd first.
     """
     if not path.exists():
         return
+    import gzip
+    opener = gzip.open if path.suffix == ".gz" else open
     header: list[str] | None = None
-    with path.open(encoding="utf-8") as f:
+    with opener(path, mode="rt", encoding="utf-8") as f:
         for raw_line in f:
             line = raw_line.rstrip("\n")
             if not line:
