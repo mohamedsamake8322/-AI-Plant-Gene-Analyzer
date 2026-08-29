@@ -413,20 +413,68 @@ def collect_species(
             cu = import_local_collect_module("collect_uniprot")
             recs = cu.fetch_uniprot(name, retmax=retmax, reviewed_only=reviewed_only)
             before = len(all_records)
+
+            # Crosswalk: NCBI-sourced records always keep their own raw
+            # accession under "accession" (see collect_ncbi.make_record_
+            # from_fasta), even when their all_records KEY has become a
+            # resolved "GeneID:xxxxx" (see the ELink fix). UniProt already
+            # tells us, per protein, which RefSeq nucleotide/protein
+            # accession is the very same gene
+            # (external_links.refseq_nucleotide/refseq_protein) -- this was
+            # being collected but never consumed (see collect_uniprot.py:
+            # "Clé de jointure vers NCBI -- consommée par le futur
+            # collecteur"). Build {accession: existing_key} once so a
+            # UniProt record can merge into an already-collected NCBI
+            # record instead of always creating its own separate key.
+            accession_index: dict[str, str] = {}
+            for key, rec in all_records.items():
+                acc = rec.get("accession")
+                if acc:
+                    accession_index[acc] = key
+
+            merged_via_ncbi = 0
             for r in recs:
                 gid = r.get("gene_id")
                 if not gid:
                     continue
-                if gid not in all_records:
-                    all_records[gid] = r
-                entry = all_records[gid]
+                ext = r.get("external_links") or {}
+                target = gid
+                for candidate in (ext.get("refseq_nucleotide"), ext.get("refseq_protein")):
+                    if candidate and candidate in accession_index:
+                        target = accession_index[candidate]
+                        merged_via_ncbi += 1
+                        break
+
+                if target not in all_records:
+                    all_records[target] = r
+                entry = all_records[target]
+
                 # Keep protein sequences in the structure consumed by
                 # restructure_to_schema().
                 if r.get("sequence"):
                     entry.setdefault("_raw_sequences", {}).setdefault(
                         "protein", r["sequence"]
                     )
+
+                if target != gid:
+                    # Merged into a pre-existing NCBI record -- that dict
+                    # is `entry` itself (not `r`), so UniProt's own
+                    # contribution (GO terms, other xrefs, KEGG gene refs
+                    # for the next block, traits) has to be folded in
+                    # explicitly rather than relying on setdefault(gid, r).
+                    entry.setdefault("external_links", {}).update(
+                        {k: v for k, v in ext.items() if v}
+                    )
+                    if r.get("annotations"):
+                        entry.setdefault("annotations", {}).update(r["annotations"])
+                    if r.get("traits"):
+                        entry["traits"] = sorted(set(entry.get("traits", [])) | set(r["traits"]))
+                    # Keep the UniProt accession discoverable even though
+                    # it's no longer the dict's key -- needed by the KEGG
+                    # block below, and useful for the app/API either way.
+                    entry.setdefault("uniprot_accession", gid)
             source_counts["uniprot"] = len(all_records) - before
+            source_counts["uniprot_merged_via_ncbi"] = merged_via_ncbi
         except Exception as e:
             errors.append(f"uniprot: {e}")
 
@@ -436,13 +484,30 @@ def collect_species(
             ck = import_local_collect_module("collect_kegg")
             recs = ck.fetch_kegg(name, retmax=retmax)
             before = len(all_records)
+
+            # Crosswalk: UniProt already resolves and stores each protein's
+            # KEGG gene reference(s) under external_links.kegg_gene_refs,
+            # in the exact same "cqi:110681782" format KEGG itself uses as
+            # gene_id (see collect_uniprot.py). If a KEGG entry's own
+            # gene_id shows up in some UniProt record's kegg_gene_refs, merge
+            # into THAT record's key instead of creating a brand-new one --
+            # same principle as the UniProt->NCBI crosswalk just above.
+            kegg_ref_index: dict[str, str] = {}
+            for key, rec in all_records.items():
+                for ref in (rec.get("external_links") or {}).get("kegg_gene_refs") or []:
+                    kegg_ref_index[ref] = key
+
+            merged_via_uniprot = 0
             for r in recs:
                 gid = r.get("gene_id")
-                if gid and gid not in all_records:
-                    all_records[gid] = r
-                elif gid:
+                target = kegg_ref_index.get(gid, gid) if gid else gid
+                if target != gid:
+                    merged_via_uniprot += 1
+                if target and target not in all_records:
+                    all_records[target] = r
+                elif target:
                     # Enrich existing record with pathway data
-                    existing = all_records[gid]
+                    existing = all_records[target]
                     if r.get("pathways") and not existing.get("pathways"):
                         existing["pathways"] = r["pathways"]
                     if r.get("annotations", {}).get("ko_ids"):
@@ -452,14 +517,15 @@ def collect_species(
                 # for the same gene (see collect_kegg.py). Store each one
                 # that's present -- setdefault() still won't overwrite a
                 # sequence already supplied by NCBI/UniProt for this gene.
-                if gid:
+                if target:
                     seqs = r.get("sequences") or {}
-                    raw = all_records[gid].setdefault("_raw_sequences", {})
+                    raw = all_records[target].setdefault("_raw_sequences", {})
                     if seqs.get("dna"):
                         raw.setdefault("dna", seqs["dna"])
                     if seqs.get("protein"):
                         raw.setdefault("protein", seqs["protein"])
             source_counts["kegg"] = len(all_records) - before
+            source_counts["kegg_merged_via_uniprot"] = merged_via_uniprot
         except Exception as e:
             errors.append(f"kegg: {e}")
 
