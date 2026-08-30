@@ -395,8 +395,20 @@ def collect_species(
                     # accumulate all three under one entry per gene, stashed
                     # in _raw_sequences (consumed by restructure_to_schema()
                     # below, which turns it into sequence.dna/rna/protein).
+                    #
+                    # BUGFIX 2: the replacement dict below only ever kept
+                    # gene_id/organism/source -- "accession" from the raw
+                    # record `r` (e.g. "NM_001422336.1") was silently
+                    # dropped. This made the UniProt->NCBI crosswalk below
+                    # find ZERO matches even when UniProt's own
+                    # refseq_nucleotide/refseq_protein correctly pointed at
+                    # this exact accession (confirmed empirically: 35% of
+                    # sampled UniProt records had a valid, correctly
+                    # version-suffixed match -- the index just had nothing
+                    # to match against). Preserve it explicitly.
                     entry = all_records.setdefault(gid, {
                         "gene_id": gid,
+                        "accession": r.get("accession"),
                         "organism": r.get("organism", name),
                         "source": r.get("source", "ncbi"),
                     })
