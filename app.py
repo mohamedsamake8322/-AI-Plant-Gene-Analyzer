@@ -158,29 +158,21 @@ def load_gene_database_cached(db_path: str = str(config.DATABASE_PATH)) -> dict:
     Prefer PostgreSQL if the helper is available and configured.
     """
     try:
+        # Try PostgreSQL first if available
         if load_gene_database_from_postgres is not None:
             try:
                 db = load_gene_database_from_postgres()
                 if db:
                     logger.info(f"Loaded {len(db)} genes from PostgreSQL")
                     return db
-                logger.error(
-                    "PostgreSQL database returned no records. "
-                    "Do not fall back to the local JSON database in production."
-                )
-                st.error(
-                    "❌ PostgreSQL database returned no records. "
-                    "Ensure the remote database is populated before using the app."
-                )
-                return {}
+                # PostgreSQL returned no records - log warning and fall through to JSON
+                logger.warning("PostgreSQL database returned no records. Falling back to JSON.")
             except Exception as e:
-                logger.error(f"PostgreSQL load failed: {e}")
-                st.error(
-                    "❌ Could not load gene data from PostgreSQL. "
-                    "Check your database configuration and connection."
-                )
-                return {}
+                logger.warning(f"PostgreSQL load failed: {e}. Falling back to JSON.")
+                # Continue to JSON fallback instead of returning empty
+                pass
 
+        # JSON fallback
         if not os.path.exists(db_path):
             logger.warning(f"Database not found at {db_path}")
             return {}

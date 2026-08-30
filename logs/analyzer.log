@@ -356,3 +356,24 @@ Multiple connection attempts failed. All failures were:
 2026-08-25 21:04:49,482 - __main__ - INFO - CSS loaded successfully from style.css
 2026-08-25 21:04:49,543 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
 2026-08-25 21:09:33,225 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-30 23:47:09,919 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-30 23:47:10,735 - __main__ - WARNING - Lightweight gene metadata load failed: relation "genes" does not exist
+LINE 1: SELECT COUNT(*) FROM genes;
+                             ^
+2026-08-30 23:47:11,637 - __main__ - ERROR - PostgreSQL load failed: relation "genes" does not exist
+LINE 6:                     FROM genes;
+                                 ^
+2026-08-30 23:54:06,119 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-30 23:54:06,981 - __main__ - WARNING - Lightweight gene metadata load failed: relation "genes" does not exist
+LINE 1: SELECT COUNT(*) FROM genes;
+                             ^
+2026-08-30 23:54:07,707 - __main__ - ERROR - PostgreSQL load failed: relation "genes" does not exist
+LINE 6:                     FROM genes;
+                                 ^
+2026-08-30 23:55:27,578 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-30 23:55:29,037 - __main__ - WARNING - Lightweight gene metadata load failed: relation "genes" does not exist
+LINE 1: SELECT COUNT(*) FROM genes;
+                             ^
+2026-08-31 00:06:35,748 - __main__ - INFO - CSS loaded successfully from style.css
+2026-08-31 00:06:59,326 - __main__ - INFO - Loaded 80938 genes from database
+2026-08-31 00:07:45,719 - __main__ - INFO - CSS loaded successfully from style.css
