@@ -103,7 +103,7 @@ def create_report_row(rec: dict, preview_length: int, show_seq: bool) -> dict:
     source = normalize_value(rec.get("source") or "")
     date_added = normalize_value(rec.get("date_added") or "")
     url = normalize_value(rec.get("url") or rec.get("api_url") or "")
-    title = normalize_value(rec.get("title") or rec.get("record", {}).get("description") or "")
+    title = normalize_value(rec.get("title") or rec.get("description") or "")
     preview = seq[:preview_length] + ("..." if len(seq) > preview_length else "") if seq else ""
     row = {
         "gene_id": gene_id,

@@ -300,9 +300,9 @@ def main():
             result = {
                 'query_seq': seq_name,
                 'gene_key': gene_key,
-                'gene_name': gene_info.get('gene_name', ''),
+                'gene_name': gene_info.get('symbol', ''),
                 'organism': gene_info.get('organism', ''),
-                'trait': gene_info.get('trait', ''),
+                'trait': ', '.join(gene_info.get('traits', [])) if isinstance(gene_info.get('traits'), list) else '',
                 'identity_percent': alignment['identity_percent'],
                 'aligned_length': alignment['aligned_length'],
                 'gaps': alignment['gap_count'],
