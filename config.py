@@ -38,7 +38,7 @@ MIN_SEQUENCE_LENGTH = 10  # bp, for DNA/RNA input
 MIN_PROTEIN_LENGTH = 5  # aa, for protein input
 MAX_SEQUENCE_LENGTH = 1_000_000  # 1 million bp — hard cap for O(n) stats (GC%, motifs, translation)
 
-# Length-ratio prefilter for similarity search: a global alignment between
+# Length-ratio prefiltepython collect/collect_all_sources.py --plant "Zea mays" --sources ncbi,uniprot,kegg,plaza --retmax 20000 --plaza-retmax 0 --forcer for similarity search: a global alignment between
 # sequences differing in length by more than this factor is dominated by
 # forced gaps and essentially never ranks highly, so candidates outside this
 # ratio are skipped before running a full O(n*m) alignment against them.

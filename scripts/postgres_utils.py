@@ -215,7 +215,6 @@ def create_tables() -> None:
                     traits JSONB,
                     length INTEGER,
                     date_added TIMESTAMPTZ,
-                    record JSONB,
                     sequence_hash TEXT,
                     -- "sequence_backed" (has/had a real NCBI/UniProt/KEGG/
                     -- etc. sequence) vs "annotation_only" (a real source
@@ -228,9 +227,9 @@ def create_tables() -> None:
                     -- WHERE origin = 'sequence_backed'; relations/orthologs
                     -- queries can use any of the three.
                     origin TEXT DEFAULT 'sequence_backed',
-                    -- Orthologs and PLAZA family IDs -- without this
-                    -- column, that data would only live inside the
-                    -- `record` JSONB blob and not be easily queryable.
+                    -- Orthologs and PLAZA family IDs live here, in their
+                    -- own queryable column (previously would only have
+                    -- lived inside the now-removed `record` JSONB blob).
                     relations JSONB DEFAULT '{}'::jsonb
                 );
                 """
@@ -317,13 +316,13 @@ _UPSERT_SQL = sql.SQL(
         gene_id, symbol, organism, sequence, sequence_type,
         description, source, source_url, external_links,
         expression_profiles, pathways, publications,
-        annotations, traits, length, date_added, record, sequence_hash,
+        annotations, traits, length, date_added, sequence_hash,
         origin, relations
     ) VALUES (
         %(gene_id)s, %(symbol)s, %(organism)s, %(sequence)s, %(sequence_type)s,
         %(description)s, %(source)s, %(source_url)s, %(external_links)s,
         %(expression_profiles)s, %(pathways)s, %(publications)s,
-        %(annotations)s, %(traits)s, %(length)s, %(date_added)s, %(record)s, %(sequence_hash)s,
+        %(annotations)s, %(traits)s, %(length)s, %(date_added)s, %(sequence_hash)s,
         %(origin)s, %(relations)s
     )
     ON CONFLICT (COALESCE(gene_id, symbol))
@@ -358,7 +357,6 @@ _UPSERT_SQL = sql.SQL(
         -- known length from a previous insert.
         length = COALESCE(NULLIF(EXCLUDED.length, 0), genes.length),
         date_added = EXCLUDED.date_added,
-        record = EXCLUDED.record,
         sequence_hash = COALESCE(NULLIF(EXCLUDED.sequence_hash, ''), genes.sequence_hash),
         -- Never downgrade a gene's origin when a later pass touches the
         -- same key (shouldn't normally happen given how plaza_only keys
@@ -446,7 +444,17 @@ def dedupe_by_sequence(record: dict, conn: psycopg.Connection | None = None) -> 
     if existing_key and existing_key != incoming_key:
         links = dict(record.get("external_links") or {})
         if incoming_key:
-            src = record.get("source") or "unknown_source"
+            # record here is the raw pre-restructure dict, which carries
+            # "sources_summary" (a list, e.g. ["ncbi", "uniprot"]) rather
+            # than the flat "source" string that only exists after
+            # restructure_to_schema() runs. Mirror that same fallback
+            # logic here so this alt_id key reflects the real source(s)
+            # instead of always falling through to "unknown_source".
+            sources_summary = record.get("sources_summary")
+            if sources_summary:
+                src = ",".join(sources_summary)
+            else:
+                src = record.get("source") or "unknown_source"
             links[f"alt_id_{src}"] = incoming_key
         record["external_links"] = links
         record["gene_id"] = existing_key
@@ -560,7 +568,6 @@ def _record_to_params(record: dict) -> dict:
         "origin": record.get("origin", "annotation_only"),
         "length": record.get("length") or (len(sequence) if sequence else None),
         "date_added": record.get("date_added"),
-        "record": json.dumps(record),
         "sequence_hash": record.get("sequence_hash") or sequence_hash(sequence),
     }
 
@@ -680,12 +687,12 @@ def insert_gene_records(records: list[dict], batch_size: int = 500) -> int:
 
 def load_gene_database_from_postgres(batch_size: int = 1000) -> dict:
     """Load all gene records from Postgres, streaming in batches instead of
-    a single fetchall(). With tens of thousands of rows -- each duplicating
-    its data once in individual columns and again in the `record` JSONB
-    blob -- an unbounded fetchall() can exhaust available memory (this bit
-    us with "out of memory for query result" once the dataset passed ~49k
-    rows). A named (server-side) cursor keeps only `batch_size` rows in
-    memory at a time.
+    a single fetchall(). With tens of thousands of rows, an unbounded
+    fetchall() can exhaust available memory (this bit us with "out of
+    memory for query result" once the dataset passed ~49k rows -- at the
+    time, each row also duplicated its data into a since-removed `record`
+    JSONB blob, which made it worse). A named (server-side) cursor keeps
+    only `batch_size` rows in memory at a time.
     """
     records: dict[str, dict] = {}
     with get_connection() as conn:
@@ -698,7 +705,7 @@ def load_gene_database_from_postgres(batch_size: int = 1000) -> dict:
                     SELECT gene_id, symbol, organism, sequence, sequence_type,
                            description, source, source_url, external_links,
                            expression_profiles, pathways, publications,
-                           annotations, traits, length, date_added, record
+                           annotations, traits, length, date_added
                     FROM genes;
                     """
                 )
@@ -720,7 +727,6 @@ def load_gene_database_from_postgres(batch_size: int = 1000) -> dict:
                         traits,
                         length,
                         date_added,
-                        record,
                     ) = row
 
                     if isinstance(external_links, str):
@@ -735,8 +741,6 @@ def load_gene_database_from_postgres(batch_size: int = 1000) -> dict:
                         annotations = json.loads(annotations)
                     if isinstance(traits, str):
                         traits = json.loads(traits)
-                    if isinstance(record, str):
-                        record = json.loads(record)
 
                     key = gene_id or symbol
                     if not key:
@@ -759,7 +763,6 @@ def load_gene_database_from_postgres(batch_size: int = 1000) -> dict:
                         "traits": traits or [],
                         "length": length,
                         "date_added": date_added,
-                        "record": record,
                     }
         finally:
             conn.commit()  # read-only, just closes the transaction cleanly

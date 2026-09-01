@@ -73,6 +73,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--dbpath", default=str(DEFAULT_DB), help="Path to local genes_database.json")
     parser.add_argument("--batch-size", type=int, default=50, help="Number of records to process before pause (default: 50)")
     parser.add_argument("--batch-pause", type=int, default=2, help="Seconds to pause between batches (default: 2)")
+    parser.add_argument(
+        "--skip-existing", action="store_true",
+        help="Skip records whose gene_id/symbol already exists in the database entirely "
+             "-- no update attempt, no sequence re-sent over the network. Useful for "
+             "incremental loads and to conserve network transfer quota (e.g. Neon free tier).",
+    )
     args = parser.parse_args(argv)
 
     if args.create_tables:
@@ -106,13 +112,33 @@ def main(argv: list[str] | None = None) -> None:
         print("  and that DATABASE_URL / DB_* variables in .env are correct.")
         sys.exit(1)
 
+    existing_keys: set[str] = set()
+    if args.skip_existing:
+        print("Récupération des identifiants déjà présents en base (léger, pas de séquences)...")
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COALESCE(gene_id, symbol) FROM genes")
+                existing_keys = {row[0] for row in cur.fetchall() if row[0]}
+            print(f"  → {len(existing_keys)} gène(s) déjà en base -- ceux-là seront ignorés.\n")
+        except Exception as e:
+            print(f"⚠ Impossible de récupérer les identifiants existants ({e}) -- --skip-existing désactivé pour ce run.")
+            existing_keys = set()
+
     inserted = 0
     failed = 0
     skipped_quality = 0
+    skipped_existing = 0
     skipped_reasons: dict[str, int] = {}
     merged_by_sequence = 0
     try:
         for i, record in enumerate(records, 1):
+            key = record.get("gene_id") or record.get("symbol")
+            if args.skip_existing and key in existing_keys:
+                skipped_existing += 1
+                if skipped_existing % 1000 == 0:
+                    print(f"  ⏭ {skipped_existing} enregistrement(s) déjà en base ignoré(s) jusqu'ici...")
+                continue
+
             # Extract the one sequence this row will carry (see
             # extract_primary_sequence's docstring for the dna > protein >
             # rna priority and why) -- handles both the new nested schema
@@ -190,7 +216,8 @@ def main(argv: list[str] | None = None) -> None:
         conn.close()
 
     print(f"\n✓ Import complete: {inserted} inserted, {failed} failed, "
-          f"{skipped_quality} skipped (quality), {merged_by_sequence} merged "
+          f"{skipped_quality} skipped (quality), {skipped_existing} skipped (already in database), "
+          f"{merged_by_sequence} merged "
           f"(identical sequence, different id) out of {len(records)} total.")
     if skipped_reasons:
         print("  Quality skip breakdown:", skipped_reasons)
