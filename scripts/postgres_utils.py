@@ -705,7 +705,8 @@ def load_gene_database_from_postgres(batch_size: int = 1000) -> dict:
                     SELECT gene_id, symbol, organism, sequence, sequence_type,
                            description, source, source_url, external_links,
                            expression_profiles, pathways, publications,
-                           annotations, traits, length, date_added
+                           annotations, traits, length, date_added,
+                           origin, relations
                     FROM genes;
                     """
                 )
@@ -727,6 +728,8 @@ def load_gene_database_from_postgres(batch_size: int = 1000) -> dict:
                         traits,
                         length,
                         date_added,
+                        origin,
+                        relations,
                     ) = row
 
                     if isinstance(external_links, str):
@@ -741,6 +744,8 @@ def load_gene_database_from_postgres(batch_size: int = 1000) -> dict:
                         annotations = json.loads(annotations)
                     if isinstance(traits, str):
                         traits = json.loads(traits)
+                    if isinstance(relations, str):
+                        relations = json.loads(relations)
 
                     key = gene_id or symbol
                     if not key:
@@ -763,6 +768,8 @@ def load_gene_database_from_postgres(batch_size: int = 1000) -> dict:
                         "traits": traits or [],
                         "length": length,
                         "date_added": date_added,
+                        "origin": origin,
+                        "relations": relations or {},
                     }
         finally:
             conn.commit()  # read-only, just closes the transaction cleanly
