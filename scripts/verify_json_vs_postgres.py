@@ -79,19 +79,25 @@ def _richness(value) -> int:
     return 1  # scalaire non-vide (ex: une string)
 
 
+def _sources_set(sources_summary_or_string) -> set:
+    """Normalise en un set de tokens individuels, que la source d'entrée
+    soit une liste (sources_summary du JSON) ou une chaîne déjà jointe par
+    des virgules (colonne `source` en base, ou fallback JSON)."""
+    if not sources_summary_or_string:
+        return set()
+    if isinstance(sources_summary_or_string, (list, set, tuple)):
+        return {s.strip() for s in sources_summary_or_string if s and s.strip()}
+    return {s.strip() for s in str(sources_summary_or_string).split(",") if s.strip()}
+
+
 def summarize_record(record: dict) -> dict:
     key = record.get("gene_id") or record.get("symbol")
     summary = {"key": key, "has_sequence": bool(record.get("sequence"))}
     for field in FIELDS_TO_COMPARE:
         summary[field] = _richness(record.get(field))
-    # sources_summary (liste) ou source (string) -- normalise en set de sources
-    sources_summary = record.get("sources_summary")
-    if sources_summary:
-        summary["sources"] = set(sources_summary)
-    elif record.get("source"):
-        summary["sources"] = {record["source"]}
-    else:
-        summary["sources"] = set()
+    # sources_summary (liste) ou source (string déjà jointe) -- toujours
+    # normalisé en set de tokens individuels pour une comparaison fiable.
+    summary["sources"] = _sources_set(record.get("sources_summary") or record.get("source"))
     return summary
 
 
@@ -156,7 +162,7 @@ def summarize_db_record(record: dict) -> dict:
     }
     for field in FIELDS_TO_COMPARE:
         summary[field] = _richness(record.get(field))
-    summary["sources"] = {record["source"]} if record.get("source") else set()
+    summary["sources"] = _sources_set(record.get("source"))
     return summary
 
 
