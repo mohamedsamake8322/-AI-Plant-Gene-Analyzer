@@ -695,8 +695,29 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             logger.info("Analysis session state saved")
 
         except Exception as e:
+            error_msg = str(e)
             logger.error(f"Unexpected error during analysis: {e}")
-            st.error(f"❌ Analysis failed: {e}")
+            
+            # Provide user-friendly messages for common database errors
+            if "SSL connection" in error_msg and "closed" in error_msg:
+                st.error(
+                    "⚠️ **Database connection interrupted** — The server temporarily lost connection to the gene database. "
+                    "This sometimes happens with high volume. Please try again in a few seconds.\n\n"
+                    "_Technical: SSL connection to PostgreSQL pooler was closed unexpectedly._"
+                )
+            elif "consuming input" in error_msg:
+                st.error(
+                    "⚠️ **Database query timeout** — The similarity search took too long. "
+                    "Try using fewer top matches or disable deep search mode, then retry.\n\n"
+                    f"_Error: {error_msg[:100]}_"
+                )
+            elif "connection" in error_msg.lower():
+                st.error(
+                    "⚠️ **Could not connect to the gene database** — Check your internet connection and try again.\n\n"
+                    f"_Technical: {error_msg[:150]}_"
+                )
+            else:
+                st.error(f"❌ Analysis failed: {e}")
             st.stop()
 
     last_results = st.session_state.get("last_results")

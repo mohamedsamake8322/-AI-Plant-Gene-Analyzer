@@ -9,6 +9,7 @@ import hashlib
 import json
 import logging
 import os
+import time
 from pathlib import Path
 from urllib.parse import quote_plus
 
@@ -131,9 +132,10 @@ _pool: ConnectionPool | None = None
 _CONNECT_KWARGS = {
     "connect_timeout": 10,
     "keepalives": 1,
-    "keepalives_idle": 20,
-    "keepalives_interval": 10,
-    "keepalives_count": 3,
+    "keepalives_idle": 5,  # Match Neon pooler timeout (~5-8s); was 20s
+    "keepalives_interval": 2,  # More frequent heartbeats; was 10s
+    "keepalives_count": 5,  # More aggressive probing; was 3
+    "options": "-c statement_timeout=30000",  # 30s query timeout to prevent holding connections
 }
 
 
@@ -831,44 +833,64 @@ def load_gene_sequences_by_keys(keys: list[str]) -> dict:
     A single round trip via `= ANY(%s)` against the same
     `COALESCE(gene_id, symbol)` expression used for upserts (so it hits the
     genes_dedup_key_idx unique index) is used rather than one query per key.
+    
+    Includes exponential backoff retry logic for SSL connection timeouts.
     """
     if not keys:
         return {}
 
     records: dict[str, dict] = {}
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT gene_id, symbol, organism, sequence, sequence_type,
-                       description, source, source_url, traits, length
-                FROM genes
-                WHERE COALESCE(gene_id, symbol) = ANY(%s);
-                """,
-                (list(keys),),
-            )
-            for row in cur.fetchall():
-                (
-                    gene_id, symbol, organism, sequence, sequence_type,
-                    description, source, source_url, traits, length,
-                ) = row
-                if isinstance(traits, str):
-                    traits = json.loads(traits)
-                key = gene_id or symbol
-                if not key:
-                    continue
-                records[key] = {
-                    "gene_id": gene_id,
-                    "symbol": symbol,
-                    "organism": organism,
-                    "sequence": sequence,
-                    "sequence_type": sequence_type,
-                    "description": description,
-                    "source": source,
-                    "source_url": source_url,
-                    "traits": traits or [],
-                    "length": length,
-                }
+    
+    # Retry logic for Neon pooler SSL disconnects
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            with get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT gene_id, symbol, organism, sequence, sequence_type,
+                               description, source, source_url, traits, length
+                        FROM genes
+                        WHERE COALESCE(gene_id, symbol) = ANY(%s);
+                        """,
+                        (list(keys),),
+                    )
+                    for row in cur.fetchall():
+                        (
+                            gene_id, symbol, organism, sequence, sequence_type,
+                            description, source, source_url, traits, length,
+                        ) = row
+                        if isinstance(traits, str):
+                            traits = json.loads(traits)
+                        key = gene_id or symbol
+                        if not key:
+                            continue
+                        records[key] = {
+                            "gene_id": gene_id,
+                            "symbol": symbol,
+                            "organism": organism,
+                            "sequence": sequence,
+                            "sequence_type": sequence_type,
+                            "description": description,
+                            "source": source,
+                            "source_url": source_url,
+                            "traits": traits or [],
+                            "length": length,
+                        }
+            return records
+        except (psycopg.errors.OperationalError, OSError) as e:
+            if attempt < max_retries - 1:
+                wait_time = 0.5 * (2 ** attempt)
+                logging.getLogger(__name__).warning(
+                    f"load_gene_sequences_by_keys: connection lost ({type(e).__name__}); "
+                    f"retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})"
+                )
+                time.sleep(wait_time)
+                close_pool()
+            else:
+                raise
+    
     return records
 
 
@@ -1094,6 +1116,9 @@ def find_candidate_genes_by_kmer(
     A legacy list of k-mer hashes is still accepted for backward
     compatibility; in that case it falls back to the old `gene_kmers` table
     if present, otherwise returns an empty list.
+    
+    Includes exponential backoff retry logic for SSL connection timeouts
+    caused by Neon's pooler closing idle connections.
     """
     if isinstance(query, str):
         sequence = query.upper().replace(" ", "")
@@ -1102,23 +1127,40 @@ def find_candidate_genes_by_kmer(
         query_len = len(sequence)
         min_len = max(1, int(query_len / length_ratio))
         max_len = int(query_len * length_ratio)
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT COALESCE(gene_id, symbol) AS gene_key,
-                           similarity(sequence, %(query)s) AS score
-                    FROM genes
-                    WHERE sequence IS NOT NULL
-                      AND sequence <> ''
-                      AND sequence %% %(query)s
-                      AND length BETWEEN %(min_len)s AND %(max_len)s
-                    ORDER BY score DESC
-                    LIMIT %(limit)s;
-                    """,
-                    {"query": sequence, "min_len": min_len, "max_len": max_len, "limit": limit},
-                )
-                return [(row[0], float(row[1])) for row in cur.fetchall()]
+        
+        # Retry logic for Neon pooler SSL disconnects
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                with get_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            SELECT COALESCE(gene_id, symbol) AS gene_key,
+                                   similarity(sequence, %(query)s) AS score
+                            FROM genes
+                            WHERE sequence IS NOT NULL
+                              AND sequence <> ''
+                              AND sequence %% %(query)s
+                              AND length BETWEEN %(min_len)s AND %(max_len)s
+                            ORDER BY score DESC
+                            LIMIT %(limit)s;
+                            """,
+                            {"query": sequence, "min_len": min_len, "max_len": max_len, "limit": limit},
+                        )
+                        return [(row[0], float(row[1])) for row in cur.fetchall()]
+            except (psycopg.errors.OperationalError, OSError) as e:
+                # SSL connection closed, connection reset, etc.
+                if attempt < max_retries - 1:
+                    wait_time = 0.5 * (2 ** attempt)  # 0.5s, 1s, 2s
+                    logging.getLogger(__name__).warning(
+                        f"find_candidate_genes_by_kmer: connection lost ({type(e).__name__}); "
+                        f"retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})"
+                    )
+                    time.sleep(wait_time)
+                    close_pool()  # Force reconnect on next get_connection()
+                else:
+                    raise
 
     kmer_list = list(query)
     if not kmer_list:
@@ -1196,6 +1238,8 @@ def find_gene_keys_by_length_range(
     the genes_length_idx index so this is a fast range scan on Postgres's
     side instead of requiring the app to hold a full metadata dict in
     memory just to filter by length in Python.
+    
+    Includes exponential backoff retry logic for SSL connection timeouts.
     """
     where = "WHERE length BETWEEN %(min_len)s AND %(max_len)s"
     params: dict = {"min_len": min_length, "max_len": max_length, "limit": limit}
@@ -1203,13 +1247,30 @@ def find_gene_keys_by_length_range(
         where += " AND sequence_type = %(seq_type)s"
         params["seq_type"] = sequence_type
 
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                f"SELECT COALESCE(gene_id, symbol) FROM genes {where} LIMIT %(limit)s;",
-                params,
-            )
-            return [row[0] for row in cur.fetchall() if row[0]]
+    # Retry logic for Neon pooler SSL disconnects
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            with get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"SELECT COALESCE(gene_id, symbol) FROM genes {where} LIMIT %(limit)s;",
+                        params,
+                    )
+                    return [row[0] for row in cur.fetchall() if row[0]]
+        except (psycopg.errors.OperationalError, OSError) as e:
+            if attempt < max_retries - 1:
+                wait_time = 0.5 * (2 ** attempt)
+                logging.getLogger(__name__).warning(
+                    f"find_gene_keys_by_length_range: connection lost ({type(e).__name__}); "
+                    f"retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})"
+                )
+                time.sleep(wait_time)
+                close_pool()
+            else:
+                raise
+    
+    return []
 
 
 def load_gene_database_metadata_from_postgres(batch_size: int = 1000) -> dict:
