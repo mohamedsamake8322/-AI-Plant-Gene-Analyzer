@@ -8,6 +8,7 @@ Run with:
 """
 
 import streamlit as st
+import pandas as pd
 import json
 import os
 import io
