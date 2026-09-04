@@ -1,12 +1,8 @@
 
-import ijson
-path = r'data\clean\species\chenopodium_quinoa_all_sources.json'
-with open(path, 'rb') as f:
-    found = False
-    for prefix, event, value in ijson.parse(f):
-        if event == 'map_key' and value == 'genes' and prefix == '':
-            found = True
-            continue
-        if found:
-            print('Premier événement après genes:', event)
-            break
+import sys
+sys.path.insert(0, 'scripts')
+from postgres_utils import get_connection
+with get_connection() as conn:
+    with conn.cursor() as cur:
+        cur.execute('SELECT COUNT(*) FROM genes;')
+        print('Total lignes en base:', cur.fetchone()[0])

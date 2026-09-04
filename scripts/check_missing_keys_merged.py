@@ -17,11 +17,33 @@ Usage :
 """
 
 import csv
+import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from postgres_utils import load_gene_database_from_postgres
+from postgres_utils import get_connection
+
+
+def load_external_links() -> dict[str, dict]:
+    """Load only identifiers and external links needed by this check."""
+    links_by_gene: dict[str, dict] = {}
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT COALESCE(gene_id, symbol), external_links
+                FROM genes
+                WHERE (gene_id IS NOT NULL OR symbol IS NOT NULL)
+                  AND external_links IS NOT NULL
+                  AND external_links <> '{}'::jsonb;
+                """
+            )
+            for key, links in cur.fetchall():
+                if isinstance(links, str):
+                    links = json.loads(links)
+                links_by_gene[key] = links or {}
+    return links_by_gene
 
 
 def main():
@@ -39,14 +61,13 @@ def main():
     print(f"{len(missing_keys)} clés manquantes à vérifier.")
     missing_set = set(missing_keys)
 
-    print("Chargement de la table genes depuis Postgres ...")
-    db_records = load_gene_database_from_postgres()
-    print(f"{len(db_records)} enregistrements chargés.\n")
+    print("Chargement des external_links depuis Postgres ...")
+    links_by_gene = load_external_links()
+    print(f"{len(links_by_gene)} enregistrements avec external_links chargés.\n")
 
     # Construit un index: valeur d'alt_id -> gene_id canonique qui la porte.
     found_as_alt_id: dict[str, str] = {}
-    for key, record in db_records.items():
-        links = record.get("external_links") or {}
+    for key, links in links_by_gene.items():
         for link_key, link_value in links.items():
             if not str(link_key).startswith("alt_id_"):
                 continue

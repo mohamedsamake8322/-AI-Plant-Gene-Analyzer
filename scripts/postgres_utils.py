@@ -118,6 +118,22 @@ def _resolve_database_url() -> str:
 
 _pool: ConnectionPool | None = None
 
+# Without these, a network that silently black-holes packets (drops them
+# without sending RST/FIN -- common behavior of restrictive institutional
+# firewalls/DPI) leaves psycopg waiting forever for a reply that will
+# never come: no error, no timeout, just a permanent hang. connect_timeout
+# bounds the initial handshake; the keepalive settings make the OS notice
+# a dead connection (no ACK after repeated probes) and surface an error
+# within roughly keepalives_idle + keepalives_interval * keepalives_count
+# seconds instead of hanging indefinitely mid-query.
+_CONNECT_KWARGS = {
+    "connect_timeout": 10,
+    "keepalives": 1,
+    "keepalives_idle": 20,
+    "keepalives_interval": 10,
+    "keepalives_count": 3,
+}
+
 
 class _DirectConnectionPool:
     """Minimal fallback pool wrapper used when psycopg_pool is unavailable."""
@@ -126,7 +142,7 @@ class _DirectConnectionPool:
         self._dsn = dsn
 
     def connection(self) -> psycopg.Connection:
-        return psycopg.connect(self._dsn, autocommit=True)
+        return psycopg.connect(self._dsn, autocommit=True, **_CONNECT_KWARGS)
 
 
 def _reset_connection(conn: psycopg.Connection) -> None:
@@ -161,7 +177,7 @@ def _get_pool() -> ConnectionPool:
                 _resolve_database_url(),
                 min_size=1,
                 max_size=max_size,
-                kwargs={"autocommit": True},
+                kwargs={"autocommit": True, **_CONNECT_KWARGS},
                 reset=_reset_connection,
                 open=True,
             )
@@ -337,7 +353,18 @@ _UPSERT_SQL = sql.SQL(
         sequence = COALESCE(NULLIF(EXCLUDED.sequence, ''), genes.sequence),
         sequence_type = COALESCE(NULLIF(EXCLUDED.sequence_type, ''), genes.sequence_type),
         description = COALESCE(NULLIF(EXCLUDED.description, ''), genes.description),
-        source = EXCLUDED.source,
+        -- Merge instead of overwrite: if this gene_id appeared more than
+        -- once in the raw JSON (once per source, before full merging),
+        -- each upsert should ADD to the known source list, not replace it
+        -- with whatever this particular incoming record happened to carry.
+        source = (
+            SELECT string_agg(DISTINCT s, ',' ORDER BY s)
+            FROM unnest(
+                string_to_array(COALESCE(genes.source, ''), ',')
+                || string_to_array(COALESCE(EXCLUDED.source, ''), ',')
+            ) AS s
+            WHERE s != ''
+        ),
         source_url = COALESCE(NULLIF(EXCLUDED.source_url, ''), genes.source_url),
         -- JSONB objects: shallow-merge instead of replace, so new keys from
         -- a later source add to what's already known rather than erasing it.
@@ -351,8 +378,14 @@ _UPSERT_SQL = sql.SQL(
             THEN genes.pathways ELSE EXCLUDED.pathways END,
         publications = CASE WHEN EXCLUDED.publications = '[]'::jsonb
             THEN genes.publications ELSE EXCLUDED.publications END,
-        traits = CASE WHEN EXCLUDED.traits = '[]'::jsonb
-            THEN genes.traits ELSE EXCLUDED.traits END,
+        -- Merge instead of replace: same reasoning as source above -- a
+        -- later duplicate upsert for the same gene_id shouldn't blow away
+        -- traits collected from an earlier one just because its own
+        -- traits list happens to be shorter.
+        traits = (
+            SELECT COALESCE(jsonb_agg(DISTINCT elem), '[]'::jsonb)
+            FROM jsonb_array_elements(genes.traits || EXCLUDED.traits) AS elem
+        ),
         -- Don't let a 0/NULL length (no sequence fetched) overwrite a real
         -- known length from a previous insert.
         length = COALESCE(NULLIF(EXCLUDED.length, 0), genes.length),
@@ -686,32 +719,60 @@ def insert_gene_records(records: list[dict], batch_size: int = 500) -> int:
 
 
 def load_gene_database_from_postgres(batch_size: int = 1000) -> dict:
-    """Load all gene records from Postgres, streaming in batches instead of
-    a single fetchall(). With tens of thousands of rows, an unbounded
-    fetchall() can exhaust available memory (this bit us with "out of
-    memory for query result" once the dataset passed ~49k rows -- at the
-    time, each row also duplicated its data into a since-removed `record`
-    JSONB blob, which made it worse). A named (server-side) cursor keeps
-    only `batch_size` rows in memory at a time.
+    """Load all gene records from Postgres.
+
+    Paginates with keyset pagination (WHERE id > last_id ORDER BY id LIMIT
+    batch_size) instead of a single fetchall() or a long-lived named
+    server-side cursor. Two reasons:
+
+    1. Memory: with tens of thousands of rows, an unbounded fetchall() can
+       exhaust available memory (this bit us with "out of memory for query
+       result" once the dataset passed ~49k rows -- at the time, each row
+       also duplicated its data into a since-removed `record` JSONB blob,
+       which made it worse).
+    2. Network resilience: a named server-side cursor is one long-lived
+       connection held open for the entire fetch. On a restrictive network
+       (institutional firewall/DPI that silently drops packets rather than
+       sending RST), that single long-lived stream can stall forever with
+       no error. Short, independent per-batch queries bound the damage: a
+       stalled batch hits statement_timeout and raises clearly, instead of
+       hanging the whole load with no feedback.
     """
     records: dict[str, dict] = {}
+    last_id = 0
+    batch_num = 0
     with get_connection() as conn:
-        conn.autocommit = False
+        with conn.cursor() as cur:
+            # Per-connection safety net: if a single batch query stalls
+            # server-side for any reason, fail after 60s with a clear
+            # error instead of hanging silently.
+            cur.execute("SET statement_timeout = '60s';")
         try:
-            with conn.cursor(name="gene_export_cursor") as cur:
-                cur.itersize = batch_size
-                cur.execute(
-                    """
-                    SELECT gene_id, symbol, organism, sequence, sequence_type,
-                           description, source, source_url, external_links,
-                           expression_profiles, pathways, publications,
-                           annotations, traits, length, date_added,
-                           origin, relations
-                    FROM genes;
-                    """
-                )
-                for row in cur:
+            while True:
+                batch_num += 1
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT id, gene_id, symbol, organism, sequence, sequence_type,
+                               description, source, source_url, external_links,
+                               expression_profiles, pathways, publications,
+                               annotations, traits, length, date_added,
+                               origin, relations
+                        FROM genes
+                        WHERE id > %s
+                        ORDER BY id
+                        LIMIT %s;
+                        """,
+                        (last_id, batch_size),
+                    )
+                    rows = cur.fetchall()
+
+                if not rows:
+                    break
+
+                for row in rows:
                     (
+                        row_id,
                         gene_id,
                         symbol,
                         organism,
@@ -748,6 +809,7 @@ def load_gene_database_from_postgres(batch_size: int = 1000) -> dict:
                         relations = json.loads(relations)
 
                     key = gene_id or symbol
+                    last_id = row_id
                     if not key:
                         continue
 
@@ -771,8 +833,16 @@ def load_gene_database_from_postgres(batch_size: int = 1000) -> dict:
                         "origin": origin,
                         "relations": relations or {},
                     }
+
+                print(f"  ... lot {batch_num} charge ({len(records)} enregistrements au total)")
+
+                if len(rows) < batch_size:
+                    break  # dernier lot, pas la peine de refaire un aller-retour
         finally:
+            with conn.cursor() as cur:
+                cur.execute("RESET statement_timeout;")
             conn.commit()  # read-only, just closes the transaction cleanly
+
 
     return records
 

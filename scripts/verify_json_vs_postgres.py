@@ -90,9 +90,24 @@ def _sources_set(sources_summary_or_string) -> set:
     return {s.strip() for s in str(sources_summary_or_string).split(",") if s.strip()}
 
 
+def _has_real_sequence(record: dict) -> bool:
+    """Reflete la meme regle que extract_primary_sequence() dans
+    postgres_utils.py : le champ "sequence" peut etre un dict imbrique
+    {"dna": ..., "rna": ..., "protein": ...} dont TOUTES les valeurs
+    peuvent etre null (ex: entrees PLAZA "orthologs only", origin=
+    "plaza_only") -- un simple bool(dict) est vrai a tort dans ce cas
+    puisque le dict lui-meme n'est pas vide. On verifie donc le contenu."""
+    seq = record.get("sequence")
+    if seq is None:
+        return False
+    if isinstance(seq, dict):
+        return bool(seq.get("dna") or seq.get("rna") or seq.get("protein"))
+    return bool(seq)  # ancien format: chaine simple
+
+
 def summarize_record(record: dict) -> dict:
     key = record.get("gene_id") or record.get("symbol")
-    summary = {"key": key, "has_sequence": bool(record.get("sequence"))}
+    summary = {"key": key, "has_sequence": _has_real_sequence(record)}
     for field in FIELDS_TO_COMPARE:
         summary[field] = _richness(record.get(field))
     # sources_summary (liste) ou source (string déjà jointe) -- toujours
