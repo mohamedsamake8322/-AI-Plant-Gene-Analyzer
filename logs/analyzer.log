@@ -380,3 +380,5 @@ LINE 1: SELECT COUNT(*) FROM genes;
 2026-08-31 00:08:12,139 - __main__ - INFO - CSS loaded successfully from style.css
 2026-08-31 00:08:13,135 - __main__ - INFO - CSS loaded successfully from style.css
 2026-08-31 00:08:33,157 - __main__ - INFO - Loaded 80938 genes from database
+2026-09-04 07:04:30,411 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-04 07:04:37,579 - __main__ - INFO - CSS loaded successfully from style.css

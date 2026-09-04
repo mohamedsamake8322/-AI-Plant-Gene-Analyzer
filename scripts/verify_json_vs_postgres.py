@@ -40,10 +40,11 @@ from pathlib import Path
 
 import ijson
 
-# On réutilise directement la logique de connexion/chargement existante.
+# On réutilise la connexion existante, mais pas le chargeur complet : ce
+# script n'a besoin ni des séquences ni des blobs JSONB eux-mêmes.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 try:
-    from postgres_utils import load_gene_database_from_postgres
+    from postgres_utils import get_connection
 except ImportError:
     print(
         "ERREUR: impossible d'importer postgres_utils.py -- place ce script "
@@ -90,24 +91,9 @@ def _sources_set(sources_summary_or_string) -> set:
     return {s.strip() for s in str(sources_summary_or_string).split(",") if s.strip()}
 
 
-def _has_real_sequence(record: dict) -> bool:
-    """Reflete la meme regle que extract_primary_sequence() dans
-    postgres_utils.py : le champ "sequence" peut etre un dict imbrique
-    {"dna": ..., "rna": ..., "protein": ...} dont TOUTES les valeurs
-    peuvent etre null (ex: entrees PLAZA "orthologs only", origin=
-    "plaza_only") -- un simple bool(dict) est vrai a tort dans ce cas
-    puisque le dict lui-meme n'est pas vide. On verifie donc le contenu."""
-    seq = record.get("sequence")
-    if seq is None:
-        return False
-    if isinstance(seq, dict):
-        return bool(seq.get("dna") or seq.get("rna") or seq.get("protein"))
-    return bool(seq)  # ancien format: chaine simple
-
-
 def summarize_record(record: dict) -> dict:
     key = record.get("gene_id") or record.get("symbol")
-    summary = {"key": key, "has_sequence": _has_real_sequence(record)}
+    summary = {"key": key, "has_sequence": bool(record.get("sequence"))}
     for field in FIELDS_TO_COMPARE:
         summary[field] = _richness(record.get(field))
     # sources_summary (liste) ou source (string déjà jointe) -- toujours
@@ -181,6 +167,55 @@ def summarize_db_record(record: dict) -> dict:
     return summary
 
 
+def load_database_summaries() -> dict[str, dict]:
+    """Load only the fields needed by this comparison.
+
+    Loading the complete gene database here transfers and deserializes every
+    sequence plus every JSONB column for tens of thousands of rows. PostgreSQL
+    can calculate the needed richness counts much more cheaply server-side.
+    """
+    richness_expressions = []
+    for field in FIELDS_TO_COMPARE:
+        richness_expressions.append(
+            f"""CASE
+                WHEN {field} IS NULL THEN 0
+                WHEN jsonb_typeof({field}) = 'array' THEN jsonb_array_length({field})
+                WHEN jsonb_typeof({field}) = 'object' THEN (
+                    SELECT count(*) FROM jsonb_object_keys({field})
+                )
+                ELSE 1
+            END AS {field}_richness"""
+        )
+
+    query = f"""
+        SELECT COALESCE(gene_id, symbol) AS gene_key,
+               (sequence IS NOT NULL AND sequence <> '') AS has_sequence,
+               source,
+               {', '.join(richness_expressions)}
+        FROM genes
+        WHERE gene_id IS NOT NULL OR symbol IS NOT NULL;
+    """
+    summaries: dict[str, dict] = {}
+    with get_connection() as conn:
+        conn.autocommit = False
+        try:
+            with conn.cursor(name="verification_summary_cursor") as cur:
+                cur.itersize = 2000
+                cur.execute(query)
+                for row in cur:
+                    key, has_sequence, source, *richness = row
+                    summary = {
+                        "key": key,
+                        "has_sequence": bool(has_sequence),
+                        "sources": _sources_set(source),
+                    }
+                    summary.update(dict(zip(FIELDS_TO_COMPARE, richness)))
+                    summaries[key] = summary
+        finally:
+            conn.commit()
+    return summaries
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("json_path", type=Path, help="Chemin vers le fichier JSON source")
@@ -225,9 +260,8 @@ def main():
     print(f"Total JSON: {n_json} enregistrements lus, {len(json_summaries)} clés uniques"
           f" ({n_json_no_key} sans gene_id ni symbol, ignorés).")
 
-    print("Chargement de la table genes depuis Postgres ...")
-    db_records = load_gene_database_from_postgres()
-    db_summaries = {k: summarize_db_record(v) for k, v in db_records.items()}
+    print("Chargement des résumés de la table genes depuis Postgres ...")
+    db_summaries = load_database_summaries()
     print(f"Total DB: {len(db_summaries)} enregistrements.")
 
     json_keys = set(json_summaries)
