@@ -472,7 +472,7 @@ st.markdown("---")
 
 def render_independent_tools() -> None:
     """Render tools that do not require the primary sequence analysis."""
-    st.markdown("## Independent analysis tools")
+    #st.markdown("## Independent analysis tools")
     tool_tabs = st.tabs(["Alignments", "Distance Matrix", "Phylogeny", "Protein Analysis", "Recherche par thème"])
 
     with tool_tabs[0]:
