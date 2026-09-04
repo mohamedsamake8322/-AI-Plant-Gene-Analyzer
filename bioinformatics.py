@@ -10,6 +10,7 @@ import re
 from typing import Optional
 
 import sequence_loader
+from quality_rules import quality_report
 
 
 # ─── Codon table (standard genetic code) ──────────────────────────────────────
@@ -129,6 +130,97 @@ def nucleotide_distribution(sequence: str) -> dict[str, int | float]:
     }
 
 
+def cytosine_methylation_context(sequence: str) -> dict[str, object]:
+    """Count plant CG, CHG and CHH cytosine contexts on the sense strand."""
+    counts = {"cg": 0, "chg": 0, "chh": 0}
+    total_c = 0
+    seq = sequence.upper()
+    for index, base in enumerate(seq):
+        if base != "C" or index + 1 >= len(seq):
+            continue
+        next_base = seq[index + 1]
+        if next_base == "G":
+            counts["cg"] += 1
+            total_c += 1
+        elif index + 2 < len(seq) and next_base in "ATC":
+            total_c += 1
+            if seq[index + 2] == "G":
+                counts["chg"] += 1
+            elif seq[index + 2] in "ATC":
+                counts["chh"] += 1
+
+    result: dict[str, object] = {"total_c": total_c}
+    sequence_length = len(seq)
+    for context, count in counts.items():
+        result[context] = {
+            "count": count,
+            "pct": round(count / total_c * 100, 2) if total_c else 0.0,
+            "pct_sequence": round(count / sequence_length * 100, 2) if sequence_length else 0.0,
+        }
+    return result
+
+
+def detect_low_complexity_regions(
+    sequence: str,
+    window: int = 20,
+    max_repeat_unit: int = 6,
+    threshold: float = 0.7,
+) -> dict[str, object]:
+    """Find homopolymers and short tandem repeats covering each window."""
+    seq = sequence.upper()
+    if len(seq) < window or window <= 0:
+        return {"regions": [], "coverage_pct": 0.0}
+
+    regions: list[dict[str, object]] = []
+    for start in range(0, len(seq) - window + 1):
+        chunk = seq[start:start + window]
+        if max(chunk.count(base) for base in set(chunk)) / window >= threshold:
+            base = max(set(chunk), key=chunk.count)
+            regions.append({"start": start + 1, "end": start + window, "type": "homopolymer", "unit": base, "length": window})
+            continue
+        for unit_len in range(1, max_repeat_unit + 1):
+            best_unit = None
+            best_covered = 0
+            for offset in range(0, window - unit_len + 1):
+                unit = chunk[offset:offset + unit_len]
+                covered = 0
+                while chunk[offset + covered:offset + covered + unit_len] == unit:
+                    covered += unit_len
+                if covered > best_covered:
+                    best_covered, best_unit = covered, unit
+            if best_covered / window >= threshold and best_unit:
+                regions.append({"start": start + 1, "end": start + window, "type": "tandem_repeat", "unit": best_unit, "length": window})
+                break
+
+    merged: list[dict[str, object]] = []
+    for region in sorted(regions, key=lambda item: (int(item["start"]), int(item["end"]))):
+        if merged and int(region["start"]) <= int(merged[-1]["end"]) + 1:
+            merged[-1]["end"] = max(int(merged[-1]["end"]), int(region["end"]))
+            merged[-1]["length"] = int(merged[-1]["end"]) - int(merged[-1]["start"]) + 1
+        else:
+            merged.append(dict(region))
+    covered = sum(int(region["length"]) for region in merged)
+    return {"regions": merged, "coverage_pct": round(covered / len(seq) * 100, 2) if seq else 0.0}
+
+
+def gc_skew_profile(sequence: str, window: int = 20) -> list[dict[str, object]]:
+    """Return GC and AT skew values for the same sliding-window stride."""
+    if len(sequence) < window or window <= 0:
+        return []
+    stride = max(1, window // 4)
+    profile = []
+    for start in range(0, len(sequence) - window + 1, stride):
+        chunk = sequence[start:start + window]
+        gc_total = chunk.count("G") + chunk.count("C")
+        at_total = chunk.count("A") + chunk.count("T")
+        profile.append({
+            "position": start + window // 2,
+            "gc_skew": round((chunk.count("G") - chunk.count("C")) / gc_total, 4) if gc_total else None,
+            "at_skew": round((chunk.count("A") - chunk.count("T")) / at_total, 4) if at_total else None,
+        })
+    return profile
+
+
 def _scan_start_stop_codons(sequence: str) -> tuple[bool, bool]:
     """Detect ATG starts and in-frame stop codons across all six reading frames."""
     has_start = False
@@ -190,6 +282,7 @@ def sequence_statistics(sequence: str) -> dict:
         "longest_orf_length": orfs[0]["length"] if orfs else 0,
         "longest_orf_frame": orfs[0]["frame"] if orfs else None,
         "orfs": orfs,
+        "quality": quality_report(sequence, "dna"),
     }
 
 
@@ -437,14 +530,35 @@ def find_orfs(sequence: str, min_length: int = 30, include_reverse: bool = True)
     return orfs
 
 
-def codon_usage(sequence: str) -> dict[str, int]:
-    """Calculate codon usage counts for a DNA sequence."""
+def codon_usage(sequence: str, frame: int = 0) -> dict[str, int]:
+    """Calculate complete, unambiguous codon counts from one reading frame."""
     usage: dict[str, int] = {}
-    for i in range(0, len(sequence) - 2, 3):
+    for i in range(frame, len(sequence) - 2, 3):
         codon = sequence[i : i + 3]
-        if len(codon) == 3:
+        if len(codon) == 3 and codon in CODON_TABLE:
             usage[codon] = usage.get(codon, 0) + 1
     return usage
+
+
+def all_frames_summary(sequence: str) -> list[dict[str, object]]:
+    """Summarize starts, stops and ORFs for all three forward/reverse frames."""
+    summaries = []
+    for strand, strand_sequence in (("+", sequence), ("-", reverse_complement(sequence))):
+        strand_orfs = find_orfs(strand_sequence, min_length=3, include_reverse=False)
+        for frame in range(3):
+            frame_sequence = strand_sequence[frame:]
+            codons = [frame_sequence[i:i + 3] for i in range(0, len(frame_sequence) - 2, 3)]
+            frame_orfs = [orf for orf in strand_orfs if str(orf["frame"]) == f"+{frame + 1}"]
+            summaries.append({
+                "frame": frame + 1,
+                "strand": strand,
+                "label": f"{strand}{frame + 1}",
+                "has_start_codon": "ATG" in codons,
+                "has_stop_codon": any(codon in STOP_CODONS for codon in codons),
+                "longest_orf_length": max((int(orf["length"]) for orf in frame_orfs), default=0),
+                "orf_count": len(frame_orfs),
+            })
+    return summaries
 
 
 def complement(sequence: str) -> str:
