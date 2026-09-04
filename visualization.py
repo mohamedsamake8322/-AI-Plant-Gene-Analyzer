@@ -188,7 +188,11 @@ def plot_amino_acid_bar(dist: dict) -> go.Figure:
 
 # ─── GC content gauge ─────────────────────────────────────────────────────────
 
-def plot_gc_gauge(gc_percent: float) -> go.Figure:
+def plot_gc_gauge(
+    gc_percent: float,
+    reference_low: float = 35.0,
+    reference_high: float = 65.0,
+) -> go.Figure:
     """
     Gauge chart for GC content.
 
@@ -217,14 +221,14 @@ def plot_gc_gauge(gc_percent: float) -> go.Figure:
                 bgcolor=THEME["plot_bg"],
                 bordercolor=TEAL,
                 steps=[
-                    dict(range=[0, 35], color="rgba(79,195,247,0.15)"),
-                    dict(range=[35, 65], color="rgba(0,217,163,0.15)"),
-                    dict(range=[65, 100], color="rgba(255,209,102,0.15)"),
+                    dict(range=[0, reference_low], color="rgba(79,195,247,0.15)"),
+                    dict(range=[reference_low, reference_high], color="rgba(0,217,163,0.15)"),
+                    dict(range=[reference_high, 100], color="rgba(255,209,102,0.15)"),
                 ],
                 threshold=dict(
                     line=dict(color=AMBER, width=3),
                     thickness=0.8,
-                    value=50,
+                    value=(reference_low + reference_high) / 2,
                 ),
             ),
             title=dict(
@@ -524,6 +528,35 @@ def plot_gc_sliding_window(sequence: str, window: int = 20) -> go.Figure:
             )
         ],
     )
+    return fig
+
+
+def plot_gc_skew_profile(profile: list[dict]) -> go.Figure:
+    """Plot GC and AT skew values around the zero reference line."""
+    fig = go.Figure()
+    positions = [item["position"] for item in profile]
+    fig.add_trace(go.Scatter(
+        x=positions,
+        y=[item["gc_skew"] for item in profile],
+        mode="lines",
+        name="GC skew",
+        line=dict(color=TEAL, width=2),
+        connectgaps=False,
+    ))
+    fig.add_trace(go.Scatter(
+        x=positions,
+        y=[item["at_skew"] for item in profile],
+        mode="lines",
+        name="AT skew",
+        line=dict(color=AMBER, width=2),
+        connectgaps=False,
+    ))
+    fig.add_hline(y=0, line=dict(color=SLATE, dash="dash", width=1))
+    layout = _base_layout("GC / AT Skew Profile")
+    layout["xaxis"]["title"] = "Position (bp)"
+    layout["yaxis"]["title"] = "Skew"
+    layout["yaxis"]["range"] = [-1, 1]
+    fig.update_layout(**layout, height=300)
     return fig
 
 

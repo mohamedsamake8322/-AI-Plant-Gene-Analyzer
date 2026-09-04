@@ -16,6 +16,8 @@ from dotenv import load_dotenv
 import psycopg
 from psycopg import sql
 
+from quality_rules import MAX_N_RATIO, MIN_SEQUENCE_LENGTH, validate_sequence_quality
+
 try:
     from psycopg_pool import ConnectionPool
 except ImportError:  # pragma: no cover
@@ -605,24 +607,9 @@ def _record_to_params(record: dict) -> dict:
     }
 
 
-# --- Quality filter -------------------------------------------------------
-# Kept as plain data (not config.py) for the same standalone-module reason
-# documented on find_candidate_genes_by_kmer above.
-_VALID_CHARS = {
-    # T et U sont tous deux acceptes quel que soit le type declare : en
-    # pratique, les sequences "rna" de NCBI (RefSeq NM_*) sont quasi
-    # toujours stockees avec T (convention ADN/cDNA), pas U -- meme
-    # correction que celle appliquee dans build_core_dataset.py. Inclut
-    # aussi les codes IUPAC d'ambiguite standards.
-    "dna": set("ACGTURYSWKMBDHVN"),
-    "rna": set("ACGTURYSWKMBDHVN"),
-    "protein": set("ACDEFGHIKLMNPQRSTVWYXBZJUO*"),
-}
-
-
 def is_valid_sequence(
     sequence: str | None, sequence_type: str | None = "dna",
-    min_length: int = 50, max_n_ratio: float = 0.05,
+    min_length: int = MIN_SEQUENCE_LENGTH, max_n_ratio: float = MAX_N_RATIO,
 ) -> tuple[bool, str]:
     """Reject records before they ever reach the insert path: too short to
     be useful for downstream fine-tuning, too many ambiguous bases (N), or
@@ -630,25 +617,7 @@ def is_valid_sequence(
     Returns (is_valid, reason) — reason is empty when valid, so callers can
     log/count why a record was skipped.
     """
-    if not sequence:
-        return False, "empty"
-    seq = sequence.upper().strip()
-    if len(seq) < min_length:
-        return False, f"too_short(<{min_length})"
-
-    seq_type = (sequence_type or "dna").lower()
-    if seq_type not in _VALID_CHARS:
-        seq_type = "dna"
-
-    n_ratio = seq.count("N") / len(seq) if seq else 0
-    if n_ratio > max_n_ratio:
-        return False, f"too_many_n({n_ratio:.1%})"
-
-    invalid = set(seq) - _VALID_CHARS[seq_type]
-    if invalid:
-        return False, f"invalid_chars({''.join(sorted(invalid))})"
-
-    return True, ""
+    return validate_sequence_quality(sequence, sequence_type, min_length, max_n_ratio)
 
 
 def backfill_sequence_hashes() -> int:
@@ -909,6 +878,60 @@ def get_gene_count() -> int:
         with conn.cursor() as cur:
             cur.execute("SELECT COUNT(*) FROM genes;")
             return cur.fetchone()[0]
+
+
+def get_gc_content_stats_for_organism(organism: str) -> dict[str, float | int]:
+    """Return mean and standard deviation of GC% for sequence-backed genes."""
+    if not organism:
+        return {"mean_gc": 0.0, "stdev_gc": 0.0, "n_sequences": 0}
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT AVG(gc_value), STDDEV_SAMP(gc_value), COUNT(*)
+                FROM (
+                    SELECT 100.0 * (
+                        LENGTH(sequence) - LENGTH(REPLACE(sequence, 'G', ''))
+                        + LENGTH(sequence) - LENGTH(REPLACE(sequence, 'C', ''))
+                    ) / NULLIF(LENGTH(sequence), 0) AS gc_value
+                    FROM genes
+                    WHERE organism = %s AND sequence IS NOT NULL AND sequence <> ''
+                ) AS values;
+                """,
+                (organism,),
+            )
+            mean_gc, stdev_gc, n_sequences = cur.fetchone()
+    return {
+        "mean_gc": round(float(mean_gc or 0.0), 2),
+        "stdev_gc": round(float(stdev_gc or 0.0), 2),
+        "n_sequences": int(n_sequences or 0),
+    }
+
+
+def get_codon_usage_for_organism(organism: str) -> dict[str, float]:
+    """Return per-codon frequencies aggregated server-side for an organism."""
+    if not organism:
+        return {}
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                WITH codons AS (
+                    SELECT SUBSTRING(sequence FROM pos FOR 3) AS codon
+                    FROM genes, generate_series(1, LENGTH(sequence) - 2, 3) AS pos
+                    WHERE organism = %s AND sequence IS NOT NULL AND sequence <> ''
+                ), counts AS (
+                    SELECT codon, COUNT(*)::float AS count
+                    FROM codons
+                    WHERE codon ~ '^[ATGC]{3}$'
+                    GROUP BY codon
+                )
+                SELECT codon, count / NULLIF(SUM(count) OVER (), 0)
+                FROM counts;
+                """,
+                (organism,),
+            )
+            return {codon: float(frequency) for codon, frequency in cur.fetchall()}
 
 
 def search_gene_metadata(query: str | None, limit: int = 20, offset: int = 0) -> list[dict]:

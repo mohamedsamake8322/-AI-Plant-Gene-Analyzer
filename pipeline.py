@@ -68,12 +68,22 @@ def analyze_sequence_record(
         translation = None
         protein_props = bio.protein_properties(sequence)
         orfs = []
+        methylation_context = None
+        low_complexity = {"regions": [], "coverage_pct": 0.0}
+        skew_profile = []
+        frames_summary = []
+        quality = {"valid": True, "reason": None, "n_pct": 0.0, "threshold_pct": 5.0, "applicable": False}
     else:
         stats = bio.sequence_statistics(sequence)
         dist = bio.nucleotide_distribution(sequence)
         translation = bio.translate_dna(sequence, frame=reading_frame)
         protein_props = None
         orfs = stats["orfs"]
+        methylation_context = bio.cytosine_methylation_context(sequence)
+        low_complexity = bio.detect_low_complexity_regions(sequence)
+        skew_profile = bio.gc_skew_profile(sequence, window=config.DEFAULT_WINDOW_SIZE)
+        frames_summary = bio.all_frames_summary(sequence)
+        quality = stats["quality"]
 
     motifs = bio.find_motifs(sequence)
     similarity_results = []
@@ -82,6 +92,7 @@ def analyze_sequence_record(
     variant_report = None
 
     header_metadata = record.get("metadata", {}) or {}
+    organism = record.get("organism") or header_metadata.get("organism") or header_metadata.get("species")
     pipeline_warnings: list[str] = []
     if seq_type == "dna" and header_metadata.get("gc"):
         try:
@@ -219,6 +230,13 @@ def analyze_sequence_record(
         "interpretation": interpretation,
         "sequence_type": seq_type,
         "orfs": orfs,
+        "methylation_context": methylation_context,
+        "low_complexity": low_complexity,
+        "skew_profile": skew_profile,
+        "frames_summary": frames_summary,
+        "quality_report": quality,
+        "organism": organism,
+        "codon_usage": bio.codon_usage(sequence) if seq_type == "dna" else {},
         "header_metadata": header_metadata,
         "metadata_warnings": pipeline_warnings,
         "similarity_search_source": similarity_search_source,

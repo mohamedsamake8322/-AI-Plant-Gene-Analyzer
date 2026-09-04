@@ -12,6 +12,7 @@ import json
 import os
 import io
 import base64
+import hashlib
 import logging
 import sys
 from pathlib import Path
@@ -29,6 +30,18 @@ import trait_research as tr
 
 SCRIPT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_ROOT / "scripts"))
+
+
+def get_source_fingerprint(path: Path) -> str:
+    """Return a short fingerprint of the deployed source file."""
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+    except OSError:
+        return "unavailable"
+
+
+BIOINFORMATICS_FINGERPRINT = get_source_fingerprint(SCRIPT_ROOT / "bioinformatics.py")
+
 try:
     from scripts.postgres_utils import (
         load_gene_database_from_postgres,
@@ -36,6 +49,8 @@ try:
         get_gene_count,
         search_gene_metadata,
         count_gene_metadata_matches,
+        get_gc_content_stats_for_organism,
+        get_codon_usage_for_organism,
     )
 except ImportError:
     load_gene_database_from_postgres = None
@@ -43,6 +58,8 @@ except ImportError:
     get_gene_count = None
     search_gene_metadata = None
     count_gene_metadata_matches = None
+    get_gc_content_stats_for_organism = None
+    get_codon_usage_for_organism = None
 
 # ─── Configure logging ─────────────────────────────────────────────────────────
 logger = config.get_logger(__name__)
@@ -225,6 +242,20 @@ def search_gene_metadata_cached(query: str, limit: int = 20, offset: int = 0) ->
 @st.cache_data(ttl=60, show_spinner=False)
 def count_gene_metadata_matches_cached(query: str) -> int:
     return count_gene_metadata_matches(query)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_gc_content_stats_cached(organism: str) -> dict:
+    if get_gc_content_stats_for_organism is None:
+        return {"mean_gc": 0.0, "stdev_gc": 0.0, "n_sequences": 0}
+    return get_gc_content_stats_for_organism(organism)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_codon_usage_cached(organism: str) -> dict[str, float]:
+    if get_codon_usage_for_organism is None:
+        return {}
+    return get_codon_usage_for_organism(organism)
 
 
 load_css()
@@ -465,6 +496,21 @@ with col_demo:
     if "loaded_demo" in st.session_state and not raw_sequence:
         raw_sequence = st.session_state["loaded_demo"]
 
+if raw_sequence and sequence_input_type != "Protein":
+    preview_dna = bio.clean_sequence(raw_sequence, sequence_type="dna")
+    if preview_dna:
+        with st.expander("Reading-frame preview"):
+            st.caption("Six-frame summary to guide the reading-frame choice before analysis.")
+            st.dataframe(
+                pd.DataFrame(bio.all_frames_summary(preview_dna)).rename(columns={
+                    "label": "Frame", "strand": "Strand", "has_start_codon": "Start",
+                    "has_stop_codon": "Stop", "longest_orf_length": "Longest ORF (bp)",
+                    "orf_count": "ORFs",
+                }),
+                hide_index=True,
+                width="stretch",
+            )
+
 analyze_btn = st.button("🔬 Analyze Sequence", type="primary")
 
 st.markdown("---")
@@ -682,6 +728,10 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
     mutation_report = result["mutation_report"]
     interpretation = result["interpretation"]
     sequence_type = result.get("sequence_type", "dna")
+    organism = result.get("organism") or result.get("header_metadata", {}).get("organism")
+    gc_reference = get_gc_content_stats_cached(organism) if organism else {"n_sequences": 0}
+    organism_codon_usage = get_codon_usage_cached(organism) if organism else {}
+    low_complexity = result.get("low_complexity", {"regions": [], "coverage_pct": 0.0})
 
     if batch_mode:
         average_gc = round(sum(r["stats"].get("gc_content", 0) for r in last_results if r["sequence_type"] == "dna") / max(1, sum(1 for r in last_results if r["sequence_type"] == "dna")), 2)
@@ -897,12 +947,64 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             with col2:
                 st.plotly_chart(viz.plot_nucleotide_bar(dist), width='stretch')
             with col3:
-                st.plotly_chart(viz.plot_gc_gauge(stats["gc_content"]), width='stretch')
+                if gc_reference.get("n_sequences", 0) >= 10:
+                    st.plotly_chart(
+                        viz.plot_gc_gauge(
+                            stats["gc_content"],
+                            reference_low=max(0.0, gc_reference["mean_gc"] - gc_reference["stdev_gc"]),
+                            reference_high=min(100.0, gc_reference["mean_gc"] + gc_reference["stdev_gc"]),
+                        ),
+                        width='stretch',
+                    )
+                    st.caption(f"Based on {gc_reference['n_sequences']:,} sequences of {organism} in database")
+                else:
+                    st.plotly_chart(viz.plot_gc_gauge(stats["gc_content"]), width='stretch')
+                    st.caption("Generic reference bands: insufficient organism-specific sequences")
 
             st.plotly_chart(
                 viz.plot_gc_sliding_window(sequence, window=window_size),
                 width='stretch',
             )
+            skew_profile = bio.gc_skew_profile(sequence, window=window_size)
+            if skew_profile:
+                st.plotly_chart(viz.plot_gc_skew_profile(skew_profile), width='stretch')
+
+            methylation = result.get("methylation_context") or {}
+            st.markdown("#### Cytosine Methylation Context (plant-specific)")
+            if methylation:
+                methyl_cols = st.columns(3)
+                for column, label, key in zip(methyl_cols, ("CG", "CHG", "CHH"), ("cg", "chg", "chh")):
+                    column.metric(label, f"{methylation[key]['pct']:.2f}%", f"{methylation[key]['count']} cytosines")
+                st.caption("Plant methylation contexts: CG, CHG (H = A/T/C), and CHH. Percentages use classifiable cytosines.")
+
+            quality = result.get("quality_report", {})
+            if quality.get("applicable", True):
+                quality_status = "Yes" if quality.get("valid") else "No"
+                reason = f" ({quality.get('reason')})" if quality.get("reason") else ""
+                st.markdown(
+                    f"**Passes collection quality filter:** {quality_status}{reason} "
+                    f"({quality.get('n_pct', 0):.2f}% N, threshold {quality.get('threshold_pct', 5):.2f}%)"
+                )
+
+            if low_complexity.get("regions"):
+                st.warning(
+                    f"{low_complexity['coverage_pct']:.1f}% of this sequence is repetitive/low complexity; "
+                    "similarity matches involving these regions may not reflect true homology."
+                )
+
+            if result.get("codon_usage"):
+                st.markdown("#### Codon usage")
+                query_usage = result["codon_usage"]
+                query_total = sum(query_usage.values()) or 1
+                divergent = []
+                for codon, count in query_usage.items():
+                    query_pct = count / query_total
+                    species_pct = organism_codon_usage.get(codon, 0.0)
+                    divergent.append({"Codon": codon, "Sequence %": round(query_pct * 100, 2), "Species %": round(species_pct * 100, 2), "Delta %": round((query_pct - species_pct) * 100, 2)})
+                divergent.sort(key=lambda row: abs(row["Delta %"]), reverse=True)
+                st.dataframe(pd.DataFrame(divergent[:10]), hide_index=True, width="stretch")
+                if len(sequence) % 3:
+                    st.caption("The sequence was truncated to complete codons; the trailing bases were excluded.")
 
             st.markdown("#### Detailed Statistics")
             stat_col1, stat_col2 = st.columns(2)
@@ -969,6 +1071,12 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             info_lines.append(f"**Skipped by prefilter:** `{similarity_prefiltered_count}`")
         if info_lines:
             st.markdown(" — ".join(info_lines))
+
+        if low_complexity.get("regions"):
+            st.warning(
+                f"{low_complexity['coverage_pct']:.1f}% of this sequence is repetitive/low complexity; "
+                "similarity matches involving these regions may not reflect true homology."
+            )
 
         if not similarity_results:
             st.warning("No similarity results available.")
@@ -1541,3 +1649,9 @@ else:
         )
 
     render_independent_tools()
+
+
+st.markdown(
+    f"<div class=\"app-fingerprint\">bioinformatics.py · source {BIOINFORMATICS_FINGERPRINT}</div>",
+    unsafe_allow_html=True,
+)
