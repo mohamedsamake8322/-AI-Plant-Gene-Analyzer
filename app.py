@@ -1260,6 +1260,11 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 "Similarity search was not run because the sequence exceeds the alignment length threshold. "
                 "This is not the same as no matches being found."
             )
+        elif skipped_reason == "alignment_cost_too_high":
+            st.warning(
+                "Similarity search was not run because the estimated cost across all candidates is too high. "
+                "This is not the same as no matches being found."
+            )
         elif not similarity_results:
             st.warning("Similarity search completed but found no matches.")
         else:

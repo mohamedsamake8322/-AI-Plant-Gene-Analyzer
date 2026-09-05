@@ -48,15 +48,14 @@ MAX_SEQUENCE_LENGTH = 1_000_000  # 1 million bp — hard cap for O(n) stats (GC%
 LENGTH_RATIO_PREFILTER = 3.0
 # similarity search and mutation detection is O(n*m) in both time AND
 # memory (two full DP matrices), unlike the O(n) basic statistics above.
-# With int32 score + int8 traceback matrices (see alignment_engine.py),
-# two 5,000x5,000 matrices are ~125 MB combined -- reasonable for a shared,
-# publicly hosted instance. A larger cap here is not just slower but risks
-# exhausting memory outright (e.g. 20,000x20,000 would be ~1.6 GB). This
-# covers the vast majority of real single-gene/transcript-length plant
-# sequences; true long-sequence alignment (whole loci, chromosomes) needs a
-# different algorithm (BLAST-style seed-and-extend heuristic, already on
-# the project roadmap) rather than a bigger cap on this exact DP.
-MAX_ALIGNMENT_SEQUENCE_LENGTH = 5_000  # bp / aa
+# The DP matrices still scale quadratically in memory; Numba accelerates the
+# loops but does not change that constraint. This cap covers typical genes,
+# while whole loci and chromosomes need a seed-and-extend algorithm instead.
+MAX_ALIGNMENT_SEQUENCE_LENGTH = 15_000  # bp / aa; DP kernels are Numba-accelerated when available
+# The alignment cost grows with query length multiplied by every candidate
+# length, not with the query length alone. Keep a process-level budget so a
+# large candidate pool cannot turn one Streamlit request into a long batch.
+MAX_ALIGNMENT_CELL_BUDGET = 300_000_000
 
 # Uploaded file size cap (bytes), checked before reading the file into memory.
 MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB

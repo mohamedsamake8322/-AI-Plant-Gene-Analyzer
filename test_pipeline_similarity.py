@@ -25,3 +25,16 @@ def test_empty_similarity_results_have_no_skip_reason():
 
     assert result["similarity_skipped_reason"] is None
     assert result["similarity_results"] == []
+
+
+def test_similarity_skip_reason_for_candidate_cost(monkeypatch):
+    monkeypatch.setattr(config, "MAX_ALIGNMENT_CELL_BUDGET", 1)
+    result = pipeline.analyze_sequence_record(
+        {"header": "candidate-cost", "sequence": "ATGAAATAGCCC"},
+        "dna",
+        reading_frame=0,
+        db={"candidate": {"sequence": "ATGAAATAGCCC"}},
+    )
+
+    assert result["similarity_skipped_reason"] == "alignment_cost_too_high"
+    assert result["similarity_results"] == []

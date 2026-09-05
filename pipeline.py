@@ -22,6 +22,19 @@ import variant_analysis
 import config
 
 
+def _estimated_alignment_cells(sequence: str, db: dict) -> int:
+    """Estimate the total DP cells required for all candidate alignments."""
+    query_length = len(sequence)
+    total = 0
+    for record in db.values() if isinstance(db, dict) else ():
+        raw_sequence = record.get("sequence") if isinstance(record, dict) else None
+        if isinstance(raw_sequence, dict):
+            raw_sequence = raw_sequence.get("dna") or raw_sequence.get("protein") or raw_sequence.get("rna")
+        if raw_sequence:
+            total += query_length * len(str(raw_sequence).replace(" ", ""))
+    return total
+
+
 def analyze_sequence_record(
     record: dict[str, str],
     input_type: str,
@@ -134,6 +147,12 @@ def analyze_sequence_record(
             f"{config.MAX_ALIGNMENT_SEQUENCE_LENGTH:,} alignment threshold. Database similarity search "
             "and mutation detection were skipped to keep the app responsive; basic statistics, "
             "translation, and motif search are still shown below."
+        )
+    elif _estimated_alignment_cells(sequence, db) > config.MAX_ALIGNMENT_CELL_BUDGET:
+        similarity_skipped_reason = "alignment_cost_too_high"
+        pipeline_warnings.append(
+            "The estimated total pairwise alignment cost exceeded the configured budget. "
+            "Similarity search and mutation detection were skipped to keep the app responsive."
         )
     else:
         try:

@@ -14,8 +14,13 @@ import numpy as np
 
 import config
 
+try:
+    from numba import njit
+except ImportError:  # pragma: no cover - exercised only without optional acceleration
+    njit = None
+
 # "Negative infinity" sentinel for affine-gap DP. Must be far below any
-# reachable real score (max ~5,000 * 11 for a full BLOSUM62 W-W run at the
+# reachable real score (max ~15,000 * 11 for a full BLOSUM62 W-W run at the
 # MAX_ALIGNMENT_SEQUENCE_LENGTH cap) but far enough from int32's limits
 # (~2.1e9) that repeated gap_extend additions during traceback-adjacent
 # arithmetic can't overflow.
@@ -95,6 +100,90 @@ def _score_lookup_table(seq_type: str) -> tuple[dict[str, int], int, np.ndarray]
 def _encode_sequence(sequence: str, index: dict[str, int], unknown_idx: int) -> np.ndarray:
     """Map a sequence string to an int array of lookup-table indices."""
     return np.array([index.get(ch, unknown_idx) for ch in sequence], dtype=np.int64)
+
+
+if njit is not None:
+    @njit(cache=True)
+    def _needleman_wunsch_dp_numba(enc1, enc2, score_table, gap_open, gap_extend, neg_inf):
+        m, n = len(enc1), len(enc2)
+        M = np.full((m + 1, n + 1), neg_inf, dtype=np.int32)
+        Ix = np.full((m + 1, n + 1), neg_inf, dtype=np.int32)
+        Iy = np.full((m + 1, n + 1), neg_inf, dtype=np.int32)
+        tb_M = np.zeros((m + 1, n + 1), dtype=np.int8)
+        tb_Ix = np.zeros((m + 1, n + 1), dtype=np.int8)
+        tb_Iy = np.zeros((m + 1, n + 1), dtype=np.int8)
+        M[0, 0] = 0
+
+        for i in range(1, m + 1):
+            open_score = M[i - 1, 0] + gap_open
+            extend_score = Ix[i - 1, 0] + gap_extend
+            if open_score >= extend_score:
+                Ix[i, 0], tb_Ix[i, 0] = open_score, 0
+            else:
+                Ix[i, 0], tb_Ix[i, 0] = extend_score, 1
+        for j in range(1, n + 1):
+            open_score = M[0, j - 1] + gap_open
+            extend_score = Iy[0, j - 1] + gap_extend
+            if open_score >= extend_score:
+                Iy[0, j], tb_Iy[0, j] = open_score, 0
+            else:
+                Iy[0, j], tb_Iy[0, j] = extend_score, 1
+
+        for i in range(1, m + 1):
+            for j in range(1, n + 1):
+                best_prev = M[i - 1, j - 1]
+                state = 0
+                if Ix[i - 1, j - 1] > best_prev:
+                    best_prev = Ix[i - 1, j - 1]
+                    state = 1
+                if Iy[i - 1, j - 1] > best_prev:
+                    best_prev = Iy[i - 1, j - 1]
+                    state = 2
+                M[i, j] = score_table[enc1[i - 1], enc2[j - 1]] + best_prev
+                tb_M[i, j] = state
+
+                open_score = M[i - 1, j] + gap_open
+                extend_score = Ix[i - 1, j] + gap_extend
+                if open_score >= extend_score:
+                    Ix[i, j], tb_Ix[i, j] = open_score, 0
+                else:
+                    Ix[i, j], tb_Ix[i, j] = extend_score, 1
+
+                open_score = M[i, j - 1] + gap_open
+                extend_score = Iy[i, j - 1] + gap_extend
+                if open_score >= extend_score:
+                    Iy[i, j], tb_Iy[i, j] = open_score, 0
+                else:
+                    Iy[i, j], tb_Iy[i, j] = extend_score, 1
+        return M, Ix, Iy, tb_M, tb_Ix, tb_Iy
+
+
+    @njit(cache=True)
+    def _smith_waterman_dp_numba(enc1, enc2, score_table, gap_penalty):
+        m, n = len(enc1), len(enc2)
+        score_matrix = np.zeros((m + 1, n + 1), dtype=np.int32)
+        traceback_matrix = np.zeros((m + 1, n + 1), dtype=np.int8)
+        max_score = 0
+        max_i, max_j = 0, 0
+        for i in range(1, m + 1):
+            for j in range(1, n + 1):
+                diagonal = score_matrix[i - 1, j - 1] + score_table[enc1[i - 1], enc2[j - 1]]
+                up = score_matrix[i - 1, j] + gap_penalty
+                left = score_matrix[i, j - 1] + gap_penalty
+                cell = max(0, diagonal, up, left)
+                score_matrix[i, j] = cell
+                if cell == 0:
+                    traceback_matrix[i, j] = 3
+                elif cell == diagonal:
+                    traceback_matrix[i, j] = 0
+                elif cell == up:
+                    traceback_matrix[i, j] = 1
+                else:
+                    traceback_matrix[i, j] = 2
+                if cell > max_score:
+                    max_score = cell
+                    max_i, max_j = i, j
+        return score_matrix, traceback_matrix, max_score, max_i, max_j
 
 
 def alignment_statistics(aligned1: str, aligned2: str) -> Dict:
@@ -190,58 +279,51 @@ def needleman_wunsch(
     enc1 = _encode_sequence(seq1, char_index, unknown_idx)
     enc2 = _encode_sequence(seq2, char_index, unknown_idx)
 
-    # Three DP matrices (Gotoh): M = best score ending in a match/mismatch,
-    # Ix = best score ending with seq1[i-1] aligned to a gap in seq2,
-    # Iy = best score ending with seq2[j-1] aligned to a gap in seq1.
-    M = np.full((m + 1, n + 1), NEG_INF, dtype=np.int32)
-    Ix = np.full((m + 1, n + 1), NEG_INF, dtype=np.int32)
-    Iy = np.full((m + 1, n + 1), NEG_INF, dtype=np.int32)
-    # Traceback codes — tb_M: 0=from M, 1=from Ix, 2=from Iy (diagonal step).
-    # tb_Ix/tb_Iy: 0=gap opened (from M), 1=gap extended (from same matrix).
-    tb_M = np.zeros((m + 1, n + 1), dtype=np.int8)
-    tb_Ix = np.zeros((m + 1, n + 1), dtype=np.int8)
-    tb_Iy = np.zeros((m + 1, n + 1), dtype=np.int8)
-
-    M[0, 0] = 0
-
-    for i in range(1, m + 1):
-        open_ = M[i - 1, 0] + gap_open
-        extend_ = Ix[i - 1, 0] + gap_extend
-        if open_ >= extend_:
-            Ix[i, 0], tb_Ix[i, 0] = open_, 0
-        else:
-            Ix[i, 0], tb_Ix[i, 0] = extend_, 1
-
-    for j in range(1, n + 1):
-        open_ = M[0, j - 1] + gap_open
-        extend_ = Iy[0, j - 1] + gap_extend
-        if open_ >= extend_:
-            Iy[0, j], tb_Iy[0, j] = open_, 0
-        else:
-            Iy[0, j], tb_Iy[0, j] = extend_, 1
-
-    for i in range(1, m + 1):
-        row_score = score_table[enc1[i - 1], enc2]  # precompute row i's scores vs all of seq2
+    if njit is not None:
+        M, Ix, Iy, tb_M, tb_Ix, tb_Iy = _needleman_wunsch_dp_numba(
+            enc1, enc2, score_table, gap_open, gap_extend, NEG_INF
+        )
+    else:
+        M = np.full((m + 1, n + 1), NEG_INF, dtype=np.int32)
+        Ix = np.full((m + 1, n + 1), NEG_INF, dtype=np.int32)
+        Iy = np.full((m + 1, n + 1), NEG_INF, dtype=np.int32)
+        tb_M = np.zeros((m + 1, n + 1), dtype=np.int8)
+        tb_Ix = np.zeros((m + 1, n + 1), dtype=np.int8)
+        tb_Iy = np.zeros((m + 1, n + 1), dtype=np.int8)
+        M[0, 0] = 0
+        for i in range(1, m + 1):
+            open_ = M[i - 1, 0] + gap_open
+            extend_ = Ix[i - 1, 0] + gap_extend
+            if open_ >= extend_:
+                Ix[i, 0], tb_Ix[i, 0] = open_, 0
+            else:
+                Ix[i, 0], tb_Ix[i, 0] = extend_, 1
         for j in range(1, n + 1):
-            s = int(row_score[j - 1])
-            prevs = (M[i - 1, j - 1], Ix[i - 1, j - 1], Iy[i - 1, j - 1])
-            best_prev = max(prevs)
-            M[i, j] = s + best_prev
-            tb_M[i, j] = prevs.index(best_prev)
-
-            open_ = M[i - 1, j] + gap_open
-            extend_ = Ix[i - 1, j] + gap_extend
+            open_ = M[0, j - 1] + gap_open
+            extend_ = Iy[0, j - 1] + gap_extend
             if open_ >= extend_:
-                Ix[i, j], tb_Ix[i, j] = open_, 0
+                Iy[0, j], tb_Iy[0, j] = open_, 0
             else:
-                Ix[i, j], tb_Ix[i, j] = extend_, 1
-
-            open_ = M[i, j - 1] + gap_open
-            extend_ = Iy[i, j - 1] + gap_extend
-            if open_ >= extend_:
-                Iy[i, j], tb_Iy[i, j] = open_, 0
-            else:
-                Iy[i, j], tb_Iy[i, j] = extend_, 1
+                Iy[0, j], tb_Iy[0, j] = extend_, 1
+        for i in range(1, m + 1):
+            for j in range(1, n + 1):
+                s = int(score_table[enc1[i - 1], enc2[j - 1]])
+                prevs = (M[i - 1, j - 1], Ix[i - 1, j - 1], Iy[i - 1, j - 1])
+                best_prev = max(prevs)
+                M[i, j] = s + best_prev
+                tb_M[i, j] = prevs.index(best_prev)
+                open_ = M[i - 1, j] + gap_open
+                extend_ = Ix[i - 1, j] + gap_extend
+                if open_ >= extend_:
+                    Ix[i, j], tb_Ix[i, j] = open_, 0
+                else:
+                    Ix[i, j], tb_Ix[i, j] = extend_, 1
+                open_ = M[i, j - 1] + gap_open
+                extend_ = Iy[i, j - 1] + gap_extend
+                if open_ >= extend_:
+                    Iy[i, j], tb_Iy[i, j] = open_, 0
+                else:
+                    Iy[i, j], tb_Iy[i, j] = extend_, 1
 
     finals = {"M": M[m, n], "Ix": Ix[m, n], "Iy": Iy[m, n]}
     end_state = max(finals, key=finals.get)
@@ -322,30 +404,34 @@ def smith_waterman(seq1: str, seq2: str, gap_penalty: int = -2, seq_type: str = 
     enc1 = _encode_sequence(seq1, char_index, unknown_idx)
     enc2 = _encode_sequence(seq2, char_index, unknown_idx)
 
-    score_matrix = np.zeros((m + 1, n + 1), dtype=np.int32)
-    traceback_matrix = np.zeros((m + 1, n + 1), dtype=np.int8)
-    max_score = 0
-    max_pos = (0, 0)
-
-    for i in range(1, m + 1):
-        row_score = score_table[enc1[i - 1], enc2]
-        for j in range(1, n + 1):
-            match_score = int(row_score[j - 1])
-            diagonal = score_matrix[i - 1, j - 1] + match_score
-            up = score_matrix[i - 1, j] + gap_penalty
-            left = score_matrix[i, j - 1] + gap_penalty
-            score_matrix[i, j] = max(0, diagonal, up, left)
-            if score_matrix[i, j] == 0:
-                traceback_matrix[i, j] = 3
-            elif score_matrix[i, j] == diagonal:
-                traceback_matrix[i, j] = 0
-            elif score_matrix[i, j] == up:
-                traceback_matrix[i, j] = 1
-            else:
-                traceback_matrix[i, j] = 2
-            if score_matrix[i, j] > max_score:
-                max_score = score_matrix[i, j]
-                max_pos = (i, j)
+    if njit is not None:
+        score_matrix, traceback_matrix, max_score, max_i, max_j = _smith_waterman_dp_numba(
+            enc1, enc2, score_table, gap_penalty
+        )
+        max_pos = (max_i, max_j)
+    else:
+        score_matrix = np.zeros((m + 1, n + 1), dtype=np.int32)
+        traceback_matrix = np.zeros((m + 1, n + 1), dtype=np.int8)
+        max_score = 0
+        max_pos = (0, 0)
+        for i in range(1, m + 1):
+            for j in range(1, n + 1):
+                match_score = int(score_table[enc1[i - 1], enc2[j - 1]])
+                diagonal = score_matrix[i - 1, j - 1] + match_score
+                up = score_matrix[i - 1, j] + gap_penalty
+                left = score_matrix[i, j - 1] + gap_penalty
+                score_matrix[i, j] = max(0, diagonal, up, left)
+                if score_matrix[i, j] == 0:
+                    traceback_matrix[i, j] = 3
+                elif score_matrix[i, j] == diagonal:
+                    traceback_matrix[i, j] = 0
+                elif score_matrix[i, j] == up:
+                    traceback_matrix[i, j] = 1
+                else:
+                    traceback_matrix[i, j] = 2
+                if score_matrix[i, j] > max_score:
+                    max_score = score_matrix[i, j]
+                    max_pos = (i, j)
 
     aligned_seq1, aligned_seq2 = _traceback(seq1, seq2, traceback_matrix, max_pos[0], max_pos[1], "sw")
     stats = alignment_statistics(aligned_seq1, aligned_seq2)
