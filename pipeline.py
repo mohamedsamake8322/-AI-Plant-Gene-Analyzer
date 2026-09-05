@@ -124,9 +124,11 @@ def analyze_sequence_record(
     similarity_candidate_count = None
     similarity_prefiltered_count = 0
     similarity_search_mode = "Balanced"
+    similarity_skipped_reason = None
     if not enable_length_prefilter:
         similarity_search_mode = "Deep search"
     if len(sequence) > config.MAX_ALIGNMENT_SEQUENCE_LENGTH:
+        similarity_skipped_reason = "sequence_too_long"
         pipeline_warnings.append(
             f"Sequence ({len(sequence):,} {'aa' if seq_type == 'protein' else 'bp'}) exceeds the "
             f"{config.MAX_ALIGNMENT_SEQUENCE_LENGTH:,} alignment threshold. Database similarity search "
@@ -248,6 +250,7 @@ def analyze_sequence_record(
         "similarity_search_source": similarity_search_source,
         "similarity_candidate_count": similarity_candidate_count,
         "similarity_prefiltered_count": similarity_prefiltered_count,
+        "similarity_skipped_reason": similarity_skipped_reason,
         "similarity_search_mode": similarity_search_mode,
     }
 

@@ -1254,8 +1254,14 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 "similarity matches involving these regions may not reflect true homology."
             )
 
-        if not similarity_results:
-            st.warning("No similarity results available.")
+        skipped_reason = result.get("similarity_skipped_reason")
+        if skipped_reason == "sequence_too_long":
+            st.warning(
+                "Similarity search was not run because the sequence exceeds the alignment length threshold. "
+                "This is not the same as no matches being found."
+            )
+        elif not similarity_results:
+            st.warning("Similarity search completed but found no matches.")
         else:
             st.plotly_chart(
                 viz.plot_similarity_scores(similarity_results),
