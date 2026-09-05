@@ -20,6 +20,7 @@ from pathlib import Path
 
 # ── Local modules ──────────────────────────────────────────────────────────────
 import bioinformatics as bio
+from organism_reference import get_organism_reference
 import similarityengine as sim
 import visualization as viz
 import export_utils as export_util
@@ -52,6 +53,8 @@ try:
         count_gene_metadata_matches,
         get_gc_content_stats_for_organism,
         get_codon_usage_for_organism,
+        get_codon_reference_for_organism,
+        get_length_stats_for_organism,
     )
 except ImportError:
     load_gene_database_from_postgres = None
@@ -61,6 +64,8 @@ except ImportError:
     count_gene_metadata_matches = None
     get_gc_content_stats_for_organism = None
     get_codon_usage_for_organism = None
+    get_codon_reference_for_organism = None
+    get_length_stats_for_organism = None
 
 # ─── Configure logging ─────────────────────────────────────────────────────────
 logger = config.get_logger(__name__)
@@ -257,6 +262,60 @@ def get_codon_usage_cached(organism: str) -> dict[str, float]:
     if get_codon_usage_for_organism is None:
         return {}
     return get_codon_usage_for_organism(organism)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_codon_reference_cached(organism: str) -> dict:
+    if get_codon_reference_for_organism is None:
+        return {"value": {}, "n": 0}
+    return get_codon_reference_for_organism(organism)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_length_stats_cached(organism: str) -> dict:
+    if get_length_stats_for_organism is None:
+        return {"mean_length": 0.0, "stdev_length": 0.0, "n_sequences": 0}
+    return get_length_stats_for_organism(organism)
+
+
+def build_methods_paragraph(result: dict, references: dict[str, dict]) -> str:
+    """Format available computed metrics as a publication-ready sentence."""
+    stats = result.get("stats", {})
+    length = stats.get("length")
+    unit = "aa" if result.get("sequence_type") == "protein" else "bp"
+    parts = [f"The {length:,} {unit} sequence"] if length else ["The sequence"]
+    if result.get("sequence_type") == "protein":
+        props = result.get("protein_stats") or {}
+        if props.get("isoelectric_point") is not None:
+            parts.append(f"had an estimated pI of {props['isoelectric_point']:.2f}")
+        if props.get("gravy") is not None:
+            parts.append(f"and a GRAVY score of {props['gravy']:.2f}")
+    else:
+        if stats.get("gc_content") is not None:
+            sentence = f"exhibited a GC content of {stats['gc_content']:.2f}%"
+            gc_ref = references.get("gc", {})
+            if gc_ref.get("available"):
+                sentence += f" (species average: {gc_ref['value']:.2f}%, n={gc_ref['n']})"
+            parts.append(sentence)
+        length_ref = references.get("length", {})
+        if length and length_ref.get("available"):
+            parts.append(
+                f"with a length {length - float(length_ref['value']):+.0f} bp from the species mean"
+                f" ({float(length_ref['value']):.0f} bp, n={length_ref['n']})"
+            )
+        methylation = result.get("methylation_context") or {}
+        if methylation.get("cg") and methylation.get("chg") and methylation.get("chh"):
+            parts.append(
+                "and methylation-context proportions of "
+                f"CG {methylation['cg']['pct']:.2f}%, "
+                f"CHG {methylation['chg']['pct']:.2f}%, and "
+                f"CHH {methylation['chh']['pct']:.2f}%"
+            )
+        if stats.get("has_complete_orf"):
+            parts.append("consistent with a complete open reading frame (start-to-stop, same frame)")
+        else:
+            parts.append("without a complete start-to-stop open reading frame")
+    return " ".join(parts) + "."
 
 
 load_css()
@@ -751,8 +810,16 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
     interpretation = result["interpretation"]
     sequence_type = result.get("sequence_type", "dna")
     organism = result.get("organism") or result.get("header_metadata", {}).get("organism")
-    gc_reference = get_gc_content_stats_cached(organism) if organism else {"n_sequences": 0}
-    organism_codon_usage = get_codon_usage_cached(organism) if organism else {}
+    gc_reference = get_organism_reference(
+        organism, "gc", fetcher=get_gc_content_stats_cached if organism else None
+    )
+    codon_reference = get_organism_reference(
+        organism, "codon usage", fetcher=get_codon_reference_cached if organism else None
+    )
+    length_reference = get_organism_reference(
+        organism, "length", fetcher=get_length_stats_cached if organism else None
+    )
+    organism_codon_usage = codon_reference.get("value") or {}
     low_complexity = result.get("low_complexity", {"regions": [], "coverage_pct": 0.0})
 
     if batch_mode:
@@ -797,7 +864,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
     # ── Export Options ─────────────────────────────────────────────────────────
     st.markdown("---")
     st.markdown("### 📥 Export Results")
-    export_col1, export_col2, export_col3, export_col4 = st.columns(4)
+    export_col1, export_col2, export_col3, export_col4, export_col5 = st.columns(5)
     
     with export_col1:
         if st.button("📄 Download JSON"):
@@ -865,6 +932,17 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             except Exception as e:
                 logger.error(f"XLSX export failed: {e}")
                 st.error(f"Export failed: {e}")
+    with export_col5:
+        methods_paragraph = build_methods_paragraph(
+            result, {"gc": gc_reference, "codon": codon_reference, "length": length_reference}
+        )
+        st.download_button(
+            "Copy methods paragraph",
+            methods_paragraph,
+            file_name="methods_paragraph.txt",
+            mime="text/plain",
+            help="Copy the generated methods sentence from the downloaded text.",
+        )
 
     st.markdown("---")
 
@@ -948,6 +1026,9 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 st.markdown(f"**Unique residues:** {stats.get('unique_residues', 'N/A')}")
                 st.markdown(f"**Residue diversity:** {len([v for v in dist['counts'].values() if v > 0])} / {len(dist['counts'])}")
                 st.markdown(f"**Most abundant residue:** {max(dist['counts'], key=dist['counts'].get)}")
+                st.markdown(f"**GRAVY:** {protein_stats.get('gravy', 'N/A')}")
+                st.markdown(f"**Instability index:** {protein_stats.get('instability_index', 'N/A')}")
+                st.markdown(f"**Aliphatic index:** {protein_stats.get('aliphatic_index', 'N/A')}")
 
             if motifs:
                 st.markdown("#### Motifs Found")
@@ -969,19 +1050,19 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             with col2:
                 st.plotly_chart(viz.plot_nucleotide_bar(dist), width='stretch')
             with col3:
-                if gc_reference.get("n_sequences", 0) >= 10:
+                if gc_reference.get("available"):
                     st.plotly_chart(
                         viz.plot_gc_gauge(
                             stats["gc_content"],
-                            reference_low=max(0.0, gc_reference["mean_gc"] - gc_reference["stdev_gc"]),
-                            reference_high=min(100.0, gc_reference["mean_gc"] + gc_reference["stdev_gc"]),
+                            reference_low=max(0.0, gc_reference["value"] - get_gc_content_stats_cached(organism).get("stdev_gc", 0.0)),
+                            reference_high=min(100.0, gc_reference["value"] + get_gc_content_stats_cached(organism).get("stdev_gc", 0.0)),
                         ),
                         width='stretch',
                     )
-                    st.caption(f"Based on {gc_reference['n_sequences']:,} sequences of {organism} in database")
+                    st.caption(f"Based on {gc_reference['n']:,} sequences of {organism} in database")
                 else:
                     st.plotly_chart(viz.plot_gc_gauge(stats["gc_content"]), width='stretch')
-                    st.caption("Generic reference bands: insufficient organism-specific sequences")
+                    st.info(gc_reference["fallback_reason"])
 
             st.plotly_chart(
                 viz.plot_gc_sliding_window(sequence, window=window_size),
@@ -1021,12 +1102,23 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 divergent = []
                 for codon, count in query_usage.items():
                     query_pct = count / query_total
-                    species_pct = organism_codon_usage.get(codon, 0.0)
-                    divergent.append({"Codon": codon, "Sequence %": round(query_pct * 100, 2), "Species %": round(species_pct * 100, 2), "Delta %": round((query_pct - species_pct) * 100, 2)})
-                divergent.sort(key=lambda row: abs(row["Delta %"]), reverse=True)
+                    row = {"Codon": codon, "Sequence %": round(query_pct * 100, 2)}
+                    if codon_reference.get("available"):
+                        species_pct = organism_codon_usage.get(codon, 0.0)
+                        row.update({"Species %": round(species_pct * 100, 2), "Delta %": round((query_pct - species_pct) * 100, 2)})
+                    divergent.append(row)
+                if codon_reference.get("available"):
+                    divergent.sort(key=lambda row: abs(row["Delta %"]), reverse=True)
                 st.dataframe(pd.DataFrame(divergent[:10]), hide_index=True, width="stretch")
+                if not codon_reference.get("available"):
+                    st.info(codon_reference["fallback_reason"] + " Species comparison is omitted until the minimum sample size is reached.")
                 if len(sequence) % 3:
                     st.caption("The sequence was truncated to complete codons; the trailing bases were excluded.")
+
+                cai = bio.codon_adaptation_index(sequence, organism_codon_usage) if codon_reference.get("available") else None
+                if cai is not None:
+                    st.metric("Codon Adaptation Index (CAI)", f"{cai:.3f}")
+                    st.caption("Approximation based on the organism-wide codon distribution, not a highly expressed-gene reference set.")
 
             st.markdown("#### Detailed Statistics")
             stat_col1, stat_col2 = st.columns(2)
@@ -1039,6 +1131,12 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
 | AT Content | `{stats['at_content']}%` |
 | GC/AT Ratio | `{stats.get('gc_ratio', 'N/A')}` |
                 """)
+                if length_reference.get("available"):
+                    mean_length = float(length_reference["value"])
+                    delta = stats["length"] - mean_length
+                    st.markdown(f"**Length vs species:** {delta:+.0f} bp versus the species mean ({mean_length:.0f} bp, n={length_reference['n']}).")
+                else:
+                    st.info(length_reference["fallback_reason"])
             with stat_col2:
                 st.markdown(f"""
 | Property | Value |
@@ -1075,6 +1173,21 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                     )
             else:
                 st.info("No known regulatory motifs detected in this sequence.")
+
+            restriction_sites = result.get("restriction_sites", [])
+            st.markdown("#### Restriction sites")
+            if restriction_sites:
+                st.dataframe(pd.DataFrame(restriction_sites), hide_index=True, width="stretch")
+            else:
+                st.caption("No sites for the common enzymes in the panel were detected.")
+
+            primer_hints = result.get("primer_hints")
+            if primer_hints:
+                st.markdown("#### Primer design hints")
+                primer_cols = st.columns(2)
+                primer_cols[0].metric("5' primer Tm", f"{primer_hints['forward_tm']:.1f} °C", "GC clamp: yes" if primer_hints["forward_gc_clamp"] else "GC clamp: no")
+                primer_cols[1].metric("3' primer Tm", f"{primer_hints['reverse_tm']:.1f} °C", "GC clamp: yes" if primer_hints["reverse_gc_clamp"] else "GC clamp: no")
+                st.caption(f"Wallace estimate over 20 bp candidates. Forward: `{primer_hints['forward_sequence']}`; reverse: `{primer_hints['reverse_sequence']}`")
 
     # ── Tab 2: Similarity ──────────────────────────────────────────────────────
     with tabs[1]:

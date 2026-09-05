@@ -73,6 +73,8 @@ def analyze_sequence_record(
         skew_profile = []
         frames_summary = []
         quality = {"valid": True, "reason": None, "n_pct": 0.0, "threshold_pct": 5.0, "applicable": False}
+        restriction_sites = []
+        primer_hints = None
     else:
         stats = bio.sequence_statistics(sequence)
         dist = bio.nucleotide_distribution(sequence)
@@ -84,6 +86,8 @@ def analyze_sequence_record(
         skew_profile = bio.gc_skew_profile(sequence, window=config.DEFAULT_WINDOW_SIZE)
         frames_summary = bio.all_frames_summary(sequence)
         quality = stats["quality"]
+        restriction_sites = bio.find_restriction_sites(sequence)
+        primer_hints = bio.primer_design_hints(sequence)
 
     motifs = bio.find_motifs(sequence)
     similarity_results = []
@@ -235,6 +239,8 @@ def analyze_sequence_record(
         "skew_profile": skew_profile,
         "frames_summary": frames_summary,
         "quality_report": quality,
+        "restriction_sites": restriction_sites,
+        "primer_hints": primer_hints,
         "organism": organism,
         "codon_usage": bio.codon_usage(sequence) if seq_type == "dna" else {},
         "header_metadata": header_metadata,

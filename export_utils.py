@@ -43,6 +43,9 @@ def export_results_json(
         "distribution": result.get("dist", {}),
         "translation": result.get("translation", {}),
         "motifs": result.get("motifs", {}),
+        "restriction_sites": result.get("restriction_sites", []),
+        "primer_hints": result.get("primer_hints"),
+        "protein_properties": result.get("protein_stats"),
         "similarity_results": result.get("similarity_results", []),
         "best_match": result.get("best_match"),
         "mutation_report": result.get("mutation_report"),
@@ -96,6 +99,16 @@ def export_results_csv(
             writer.writerow({"Metric": "GC Content (%)", "Value": stats.get("gc_content", "N/A")})
             writer.writerow({"Metric": "AT Content (%)", "Value": stats.get("at_content", "N/A")})
             writer.writerow({"Metric": "GC/AT Ratio", "Value": stats.get("gc_ratio", "N/A")})
+            for site in result.get("restriction_sites", []):
+                writer.writerow({"Metric": f"Restriction site: {site['name']} at {site['start']}", "Value": site.get("match", site.get("motif", ""))})
+            primer_hints = result.get("primer_hints") or {}
+            if primer_hints:
+                writer.writerow({"Metric": "Forward primer Tm (C)", "Value": primer_hints.get("forward_tm")})
+                writer.writerow({"Metric": "Reverse primer Tm (C)", "Value": primer_hints.get("reverse_tm")})
+        else:
+            protein_stats = result.get("protein_stats") or {}
+            for key in ("gravy", "instability_index", "aliphatic_index"):
+                writer.writerow({"Metric": key.replace("_", " ").title(), "Value": protein_stats.get(key, "N/A")})
 
         # Composition counts
         counts = dist.get("counts", {})

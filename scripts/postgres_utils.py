@@ -956,6 +956,57 @@ def get_codon_usage_for_organism(organism: str) -> dict[str, float]:
             return {codon: float(frequency) for codon, frequency in cur.fetchall()}
 
 
+def get_length_stats_for_organism(organism: str) -> dict[str, float | int]:
+    """Return mean and standard deviation of sequence lengths by organism."""
+    if not organism:
+        return {"mean_length": 0.0, "stdev_length": 0.0, "n_sequences": 0}
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT AVG(length), STDDEV_SAMP(length), COUNT(*)
+                FROM genes
+                WHERE organism = %s AND sequence IS NOT NULL AND sequence <> '' AND length IS NOT NULL;
+                """,
+                (organism,),
+            )
+            mean_length, stdev_length, n_sequences = cur.fetchone()
+    return {
+        "mean_length": round(float(mean_length or 0.0), 2),
+        "stdev_length": round(float(stdev_length or 0.0), 2),
+        "n_sequences": int(n_sequences or 0),
+    }
+
+
+def get_codon_reference_for_organism(organism: str) -> dict[str, object]:
+    """Return codon frequencies plus the number of organism sequences."""
+    if not organism:
+        return {"value": {}, "n": 0}
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                WITH source_sequences AS (
+                    SELECT sequence
+                    FROM genes
+                    WHERE organism = %s AND sequence IS NOT NULL AND sequence <> ''
+                ), codons AS (
+                    SELECT SUBSTRING(sequence FROM pos FOR 3) AS codon
+                    FROM source_sequences, generate_series(1, LENGTH(sequence) - 2, 3) AS pos
+                ), counts AS (
+                    SELECT codon, COUNT(*)::float AS count
+                    FROM codons WHERE codon ~ '^[ATGC]{3}$' GROUP BY codon
+                )
+                SELECT
+                    COALESCE((SELECT jsonb_object_agg(codon, count / NULLIF(SUM(count) OVER (), 0)) FROM counts), '{}'::jsonb),
+                    (SELECT COUNT(*) FROM source_sequences);
+                """,
+                (organism,),
+            )
+            usage, n_sequences = cur.fetchone()
+    return {"value": {codon: float(frequency) for codon, frequency in (usage or {}).items()}, "n": int(n_sequences or 0)}
+
+
 def search_gene_metadata(query: str | None, limit: int = 20, offset: int = 0) -> list[dict]:
     """Server-side metadata search: only `limit` rows are ever pulled into
     the app, regardless of how large the genes table is. Runs ILIKE across

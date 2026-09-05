@@ -364,16 +364,35 @@ PKA_TERMINI = {
 
 def protein_properties(sequence: str) -> dict[str, float]:
     """Compute protein biochemical metrics."""
+    valid_sequence = "".join(residue for residue in sequence.upper() if residue in KYTE_DOOLITTLE_SCALE and residue != "X")
     length = len(sequence)
-    molecular_weight = calculate_molecular_weight(sequence)
-    hydrophobicity = calculate_hydrophobicity(sequence)
-    isoelectric_point = estimate_isoelectric_point(sequence)
+    molecular_weight = calculate_molecular_weight(valid_sequence)
+    hydrophobicity = calculate_hydrophobicity(valid_sequence)
+    isoelectric_point = estimate_isoelectric_point(valid_sequence)
     return {
         "length": length,
         "molecular_weight": round(molecular_weight, 2),
         "hydrophobicity": round(hydrophobicity, 2),
         "isoelectric_point": round(isoelectric_point, 2),
+        "gravy": round(hydrophobicity, 2),
+        "instability_index": round(calculate_instability_index(valid_sequence), 2),
+        "aliphatic_index": round(calculate_aliphatic_index(valid_sequence), 2),
     }
+
+
+def calculate_instability_index(sequence: str) -> float:
+    """Approximate instability from mean adjacent-residue hydrophobicity change."""
+    if len(sequence) < 2:
+        return 0.0
+    values = [abs(KYTE_DOOLITTLE_SCALE[a] - KYTE_DOOLITTLE_SCALE[b]) for a, b in zip(sequence, sequence[1:])]
+    return sum(values) / len(values) * 10
+
+
+def calculate_aliphatic_index(sequence: str) -> float:
+    """Estimate aliphatic index from Ala, Val, Ile and Leu fractions."""
+    if not sequence:
+        return 0.0
+    return 100 * (sequence.count("A") + 2.9 * sequence.count("V") + 3.9 * (sequence.count("I") + sequence.count("L"))) / len(sequence)
 
 
 # Mass of one water molecule (Da). NOTE: the values in RESIDUE_MONOISOTOPIC_MASS
@@ -538,6 +557,65 @@ def codon_usage(sequence: str, frame: int = 0) -> dict[str, int]:
         if len(codon) == 3 and codon in CODON_TABLE:
             usage[codon] = usage.get(codon, 0) + 1
     return usage
+
+
+def codon_adaptation_index(sequence: str, reference_usage: dict[str, float]) -> float | None:
+    """Calculate CAI as the geometric mean of relative synonymous usage."""
+    import math
+
+    codons = [sequence[i:i + 3] for i in range(0, len(sequence) - 2, 3)]
+    codons = [codon for codon in codons if codon in CODON_TABLE and CODON_TABLE[codon] != "*"]
+    if not codons or not reference_usage:
+        return None
+    families: dict[str, list[str]] = {}
+    for codon, amino_acid in CODON_TABLE.items():
+        if amino_acid != "*":
+            families.setdefault(amino_acid, []).append(codon)
+    weights = []
+    for codon in codons:
+        family_max = max((reference_usage.get(member, 0.0) for member in families[CODON_TABLE[codon]]), default=0.0)
+        frequency = reference_usage.get(codon, 0.0)
+        if family_max <= 0 or frequency <= 0:
+            return 0.0
+        weights.append(frequency / family_max)
+    return round(math.exp(sum(math.log(weight) for weight in weights) / len(weights)), 4)
+
+
+RESTRICTION_ENZYMES = {
+    "EcoRI": "GAATTC", "BamHI": "GGATCC", "HindIII": "AAGCTT",
+    "NdeI": "CATATG", "XhoI": "CTCGAG", "KpnI": "GGTACC",
+    "NotI": "GCGGCCGC", "SmaI": "CCCGGG", "PstI": "CTGCAG",
+}
+
+
+def scan_sequence_patterns(sequence: str, patterns: dict[str, str]) -> list[dict[str, object]]:
+    """Scan overlapping literal patterns using one shared lookahead mechanism."""
+    hits = []
+    for name, motif in patterns.items():
+        for match in re.finditer(f"(?={re.escape(motif)})", sequence.upper()):
+            start = match.start()
+            hits.append({"name": name, "motif": motif, "start": start + 1, "end": start + len(motif), "match": sequence[start:start + len(motif)]})
+    return sorted(hits, key=lambda item: (int(item["start"]), str(item["name"])))
+
+
+def find_restriction_sites(sequence: str) -> list[dict[str, object]]:
+    """Find overlapping common restriction-enzyme recognition sites."""
+    return scan_sequence_patterns(sequence, RESTRICTION_ENZYMES)
+
+
+def estimate_primer_tm(subsequence: str) -> float:
+    """Estimate Tm with the Wallace rule: 2C per A/T and 4C per G/C."""
+    seq = subsequence.upper()
+    return round(2 * (seq.count("A") + seq.count("T")) + 4 * (seq.count("G") + seq.count("C")), 2)
+
+
+def primer_design_hints(sequence: str, window: int = 20) -> dict[str, object] | None:
+    """Return natural 5' and 3' primer hints, or None below 25 bp."""
+    if len(sequence) < 25:
+        return None
+    forward = sequence[:window]
+    reverse = reverse_complement(sequence[-window:])
+    return {"forward_sequence": forward, "reverse_sequence": reverse, "forward_tm": estimate_primer_tm(forward), "reverse_tm": estimate_primer_tm(reverse), "forward_gc_clamp": forward[-1] in "GC", "reverse_gc_clamp": reverse[-1] in "GC"}
 
 
 def all_frames_summary(sequence: str) -> list[dict[str, object]]:
