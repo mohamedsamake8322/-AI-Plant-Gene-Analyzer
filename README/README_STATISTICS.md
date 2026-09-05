@@ -117,6 +117,17 @@ Dans l'implémentation actuelle, la référence est une distribution globale par
 
 ### Statistiques détaillées et ORF
 
+Le résumé des six cadres de lecture, affiché avant l'analyse puis réutilisable
+dans les résultats, distingue explicitement :
+
+- **Complete ORFs** : ORF `ATG -> codon stop` trouvé dans le même cadre ;
+- **Truncated ORFs** : ORF `ATG -> fin de séquence` lorsqu'aucun codon stop
+  n'est rencontré avant la fin.
+
+La colonne **Longest ORF (bp, stop codon included)** inclut le codon stop dans
+la longueur lorsqu'il est présent. Cette convention explique un écart de trois
+bases avec un outil qui mesure uniquement jusqu'au dernier codon avant l'arrêt.
+
 La zone détaillée indique notamment :
 
 - si la longueur est divisible par trois ;

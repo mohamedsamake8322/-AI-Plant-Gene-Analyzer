@@ -562,10 +562,14 @@ if raw_sequence and sequence_input_type != "Protein":
         with st.expander("Reading-frame preview"):
             st.caption("Six-frame summary to guide the reading-frame choice before analysis.")
             st.dataframe(
-                pd.DataFrame(bio.all_frames_summary(preview_dna)).rename(columns={
+                pd.DataFrame(bio.all_frames_summary(preview_dna))
+                .drop(columns=["frame"])
+                .rename(columns={
                     "label": "Frame", "strand": "Strand", "has_start_codon": "Start",
-                    "has_stop_codon": "Stop", "longest_orf_length": "Longest ORF (bp)",
-                    "orf_count": "ORFs",
+                    "has_stop_codon": "Stop",
+                    "longest_orf_length": "Longest ORF (bp, stop codon included)",
+                    "orfs_complete": "Complete ORFs",
+                    "orfs_truncated": "Truncated ORFs",
                 }),
                 hide_index=True,
                 width="stretch",

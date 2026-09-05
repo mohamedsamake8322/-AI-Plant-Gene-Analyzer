@@ -619,7 +619,12 @@ def primer_design_hints(sequence: str, window: int = 20) -> dict[str, object] | 
 
 
 def all_frames_summary(sequence: str) -> list[dict[str, object]]:
-    """Summarize starts, stops and ORFs for all three forward/reverse frames."""
+    """Summarize starts, stops and ORFs for all six reading frames.
+
+    ORF lengths include the terminal stop codon when an ORF is complete. The
+    summary separates complete ``ATG -> stop`` ORFs from truncated
+    ``ATG -> sequence end`` ORFs so the UI never presents them as one count.
+    """
     summaries = []
     for strand, strand_sequence in (("+", sequence), ("-", reverse_complement(sequence))):
         strand_orfs = find_orfs(strand_sequence, min_length=3, include_reverse=False)
@@ -627,6 +632,8 @@ def all_frames_summary(sequence: str) -> list[dict[str, object]]:
             frame_sequence = strand_sequence[frame:]
             codons = [frame_sequence[i:i + 3] for i in range(0, len(frame_sequence) - 2, 3)]
             frame_orfs = [orf for orf in strand_orfs if str(orf["frame"]) == f"+{frame + 1}"]
+            complete_orfs = [orf for orf in frame_orfs if orf["complete"]]
+            truncated_orfs = [orf for orf in frame_orfs if not orf["complete"]]
             summaries.append({
                 "frame": frame + 1,
                 "strand": strand,
@@ -634,6 +641,8 @@ def all_frames_summary(sequence: str) -> list[dict[str, object]]:
                 "has_start_codon": "ATG" in codons,
                 "has_stop_codon": any(codon in STOP_CODONS for codon in codons),
                 "longest_orf_length": max((int(orf["length"]) for orf in frame_orfs), default=0),
+                "orfs_complete": len(complete_orfs),
+                "orfs_truncated": len(truncated_orfs),
                 "orf_count": len(frame_orfs),
             })
     return summaries

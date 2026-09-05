@@ -250,5 +250,18 @@ class TestMotifSearch:
         assert motifs == []
 
 
+class TestReadingFrameSummary:
+    """Test explicit complete/truncated ORF reporting."""
+
+    def test_separates_complete_and_truncated_orfs(self):
+        rows = bio.all_frames_summary("ATGAAATAGATG")
+        frame = next(row for row in rows if row["label"] == "+1")
+
+        assert frame["orfs_complete"] == 1
+        assert frame["orfs_truncated"] == 1
+        assert frame["orf_count"] == 2
+        assert frame["longest_orf_length"] == 9
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
