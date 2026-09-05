@@ -864,7 +864,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
     # ── Export Options ─────────────────────────────────────────────────────────
     st.markdown("---")
     st.markdown("### 📥 Export Results")
-    export_col1, export_col2, export_col3, export_col4, export_col5 = st.columns(5)
+    export_col1, export_col2, export_col3, export_col4, export_col5, export_col6, export_col7 = st.columns(7)
     
     with export_col1:
         if st.button("📄 Download JSON"):
@@ -932,7 +932,44 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             except Exception as e:
                 logger.error(f"XLSX export failed: {e}")
                 st.error(f"Export failed: {e}")
+
     with export_col5:
+        if st.button("🧬 Download FASTA"):
+            try:
+                fasta_path = export_util.export_results_fasta(result)
+                with open(fasta_path, "r", encoding="utf-8") as f:
+                    st.download_button(
+                        "📥 FASTA sequence",
+                        f.read(),
+                        file_name=f"analysis_{stats['length']}{'aa' if sequence_type == 'protein' else 'bp'}.fasta",
+                        mime="text/plain",
+                    )
+                logger.info(f"FASTA export created: {fasta_path}")
+                st.success("✅ FASTA exported successfully")
+            except Exception as e:
+                logger.error(f"FASTA export failed: {e}")
+                st.error(f"Export failed: {e}")
+
+    with export_col6:
+        if sequence_type == "protein":
+            st.caption("GFF3 is available for DNA features only.")
+        elif st.button("🧭 Download GFF3"):
+            try:
+                gff3_path = export_util.export_results_gff3(result)
+                with open(gff3_path, "r", encoding="utf-8") as f:
+                    st.download_button(
+                        "📥 GFF3 annotations",
+                        f.read(),
+                        file_name=f"analysis_{stats['length']}bp.gff3",
+                        mime="text/plain",
+                    )
+                logger.info(f"GFF3 export created: {gff3_path}")
+                st.success("✅ GFF3 exported successfully")
+            except Exception as e:
+                logger.error(f"GFF3 export failed: {e}")
+                st.error(f"Export failed: {e}")
+
+    with export_col7:
         methods_paragraph = build_methods_paragraph(
             result, {"gc": gc_reference, "codon": codon_reference, "length": length_reference}
         )

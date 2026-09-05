@@ -8,10 +8,87 @@ Supports JSON, CSV, and HTML export.
 import json
 import csv
 import pandas as pd
+import re
 from pathlib import Path
 from typing import Optional
 from datetime import datetime
 import config
+
+
+def _export_sequence_id(result: dict) -> str:
+    """Return a stable, GFF3/FASTA-safe identifier for one analysis."""
+    metadata = result.get("header_metadata") or {}
+    raw_id = metadata.get("gene_id") or metadata.get("accession") or result.get("header") or "sequence"
+    return re.sub(r"[^A-Za-z0-9_.:-]+", "_", str(raw_id)).strip("_") or "sequence"
+
+
+def export_results_fasta(result: dict, filename: Optional[str] = None) -> str:
+    """Export the analyzed sequence as a domain-standard FASTA file."""
+    if filename is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"analysis_{timestamp}.fasta"
+
+    filepath = config.RESULTS_DIR / filename
+    sequence = str(result.get("sequence", "")).upper()
+    stats = result.get("stats") or {}
+    sequence_id = _export_sequence_id(result)
+    length = stats.get("length", len(sequence))
+    gc = stats.get("gc_content")
+    gc_text = f"{float(gc):.2f}" if gc is not None else "NA"
+    header = f">{sequence_id} length={length} gc={gc_text}%"
+    lines = [header, *(sequence[index:index + 80] for index in range(0, len(sequence), 80))]
+    filepath.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return str(filepath)
+
+
+def _gff3_attribute(value: object) -> str:
+    """Escape one GFF3 attribute value."""
+    return str(value).replace("%", "%25").replace(";", "%3B").replace("=", "%3D").replace("&", "%26").replace(",", "%2C")
+
+
+def export_results_gff3(result: dict, filename: Optional[str] = None) -> str:
+    """Export detected DNA features as a GFF3 annotation file.
+
+    Coordinates are 1-based and inclusive, as required by GFF3. Motifs and
+    restriction sites use strand ``.`` because the current scanners report
+    forward-sequence hits without strand attribution.
+    """
+    if filename is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"analysis_{timestamp}.gff3"
+
+    filepath = config.RESULTS_DIR / filename
+    sequence = str(result.get("sequence", "")).upper()
+    sequence_id = _export_sequence_id(result)
+    lines = ["##gff-version 3", f"##sequence-region {sequence_id} 1 {len(sequence)}"]
+    feature_index = 0
+
+    def add_feature(start: object, end: object, feature_type: str, strand: str = ".", **attributes: object) -> None:
+        nonlocal feature_index
+        try:
+            start_int, end_int = int(start), int(end)
+        except (TypeError, ValueError):
+            return
+        if start_int < 1 or end_int < start_int:
+            return
+        feature_index += 1
+        attrs = {"ID": f"{sequence_id}.{feature_type}.{feature_index}", **attributes}
+        attribute_text = ";".join(f"{key}={_gff3_attribute(value)}" for key, value in attrs.items())
+        lines.append(f"{sequence_id}\tAI-Plant-Gene-Analyzer\t{feature_type}\t{start_int}\t{end_int}\t.\t{strand}\t.\t{attribute_text}")
+
+    for index, orf in enumerate(result.get("orfs") or [], start=1):
+        frame = str(orf.get("frame", "."))
+        strand = "+" if frame.startswith("+") else "-" if frame.startswith("-") else "."
+        add_feature(orf.get("start"), orf.get("end"), "ORF", strand, Name=f"ORF_{index}", frame=frame, complete=orf.get("complete", False))
+
+    for motif in result.get("motifs") or []:
+        add_feature(motif.get("start"), motif.get("end"), "regulatory_motif", ".", Name=motif.get("name", "motif"), motif=motif.get("motif", ""), sequence=motif.get("match", ""))
+
+    for site in result.get("restriction_sites") or []:
+        add_feature(site.get("start"), site.get("end"), "restriction_site", ".", Name=site.get("name", "enzyme"), motif=site.get("motif", ""), sequence=site.get("match", ""))
+
+    filepath.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return str(filepath)
 
 
 def export_results_json(
@@ -324,6 +401,9 @@ def create_export_package(result: dict) -> dict[str, str]:
         "csv": export_results_csv(result, f"{base_filename}.csv"),
         "html": export_results_html(result, f"{base_filename}.html"),
         "xlsx": export_results_xlsx(result, f"{base_filename}.xlsx"),
+        "fasta": export_results_fasta(result, f"{base_filename}.fasta"),
     }
+    if result.get("sequence_type", "dna") != "protein":
+        exports["gff3"] = export_results_gff3(result, f"{base_filename}.gff3")
     
     return exports
