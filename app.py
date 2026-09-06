@@ -196,12 +196,22 @@ def load_gene_database_cached(db_path: str = str(config.DATABASE_PATH)) -> dict:
                 # Continue to JSON fallback instead of returning empty
                 pass
 
-        # JSON fallback
-        if not os.path.exists(db_path):
-            logger.warning(f"Database not found at {db_path}")
-            return {}
+        # JSON fallback. The large generated dataset is intentionally ignored
+        # by Git, so deployed environments may only have the small tracked
+        # fallback database available when PostgreSQL is unavailable.
+        fallback_path = Path(db_path)
+        if not fallback_path.exists():
+            tracked_fallback = SCRIPT_ROOT / "genes_database.json"
+            if tracked_fallback.exists():
+                logger.warning(
+                    f"Configured database not found at {db_path}; using tracked fallback {tracked_fallback}"
+                )
+                fallback_path = tracked_fallback
+            else:
+                logger.warning(f"Database not found at {db_path}")
+                return {}
 
-        db = sim.load_gene_database(db_path)
+        db = sim.load_gene_database(str(fallback_path))
         logger.info(f"Loaded {len(db)} genes from database")
         try:
             # Build a k-mer index once per cached load to accelerate
@@ -436,13 +446,16 @@ with st.sidebar:
 
     if db is not None:
         if not db:
-            st.error("❌ No genes available in database")
+            st.error(
+                "❌ No genes available: PostgreSQL could not be loaded and the tracked fallback database is missing."
+            )
         elif isinstance(db, dict) and db:
-            st.success(f"✅ {len(db)} genes loaded")
+            fallback_note = " (local fallback; PostgreSQL unavailable)" if not metadata_available else ""
+            st.success(f"✅ {len(db)} genes loaded{fallback_note}")
     elif metadata_available:
         st.info("✅ Lightweight gene metadata available. Full database will load on analysis.")
     else:
-        st.error("❌ No genes available in database")
+        st.error("❌ No genes available: configure the PostgreSQL connection or add the fallback database.")
 
 
 # ─── Main header ───────────────────────────────────────────────────────────────
