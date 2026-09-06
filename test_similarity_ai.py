@@ -7,6 +7,78 @@ Unit tests for similarity and AI interpretation modules.
 import similarityengine as sim
 import aiinterpreter as ai
 import bioinformatics as bio
+import scripts.postgres_utils as pg
+
+
+def test_populate_kmer_index_writes_rows(monkeypatch):
+    class FakeCursor:
+        def __init__(self, conn, rows=None):
+            self.conn = conn
+            self.rows = rows or []
+            self.result = []
+            self.executed = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def __iter__(self):
+            return iter(self.rows)
+
+        def execute(self, sql, params=None):
+            self.executed.append((sql, params))
+            upper = sql.upper()
+            if "SELECT COALESCE(GENE_ID, SYMBOL) AS GENE_KEY" in upper:
+                self.result = [("G1", "ATGCATGCATGC", "dna"), ("G2", "GGGGTTTTCCCCAAAA", "dna")]
+                self.rows = list(self.result)
+            elif "INSERT INTO GENE_KMERS" in upper:
+                self.result = [(1,)]
+            elif "UPDATE GENES SET KMER_INDEXED = TRUE" in upper:
+                self.result = [(1,)]
+            elif "DELETE FROM gene_kmers" in upper:
+                self.result = [(1,)]
+
+        def executemany(self, sql, params_seq):
+            self.executed.append((sql, params_seq))
+
+        def fetchall(self):
+            return list(self.result)
+
+        def fetchone(self):
+            if self.result:
+                return self.result[0]
+            return (0,)
+
+    class FakeConnection:
+        def __init__(self):
+            self.cursors = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self, *args, **kwargs):
+            cur = FakeCursor(self)
+            self.cursors.append(cur)
+            return cur
+
+        def commit(self):
+            pass
+
+        def rollback(self):
+            pass
+
+    fake_conn = FakeConnection()
+    monkeypatch.setattr(pg, "get_connection", lambda: fake_conn)
+
+    count = pg.populate_kmer_index(rebuild=True)
+
+    assert count == 2
+    assert count > 0
 
 
 def test_load_gene_database_json():

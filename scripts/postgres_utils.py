@@ -1081,16 +1081,13 @@ def populate_kmer_index(
     flush_every: int = 200_000,
     rebuild: bool = False,
 ) -> int:
-    """Populate a compact, storage-safe candidate index for the Neon-backed app.
+    """Populate the actual k-mer inverted index used for candidate search.
 
-    The previous implementation wrote one row per k-mer into `gene_kmers` for
-    every gene, which can exceed Neon's storage quota for a 55k+ gene catalog.
-    To keep the app functional within those limits, this function now performs
-    a lightweight marking pass: it only updates the `kmer_indexed` flag on the
-    genes table and leaves the actual candidate selection to the trigram-based
-    lookup implemented in find_candidate_genes_by_kmer().
-
-    Returns the number of genes marked as indexed in this run.
+    Each valid DNA/protein sequence contributes one row per k-mer to the
+    `gene_kmers` table. This is the mechanism that makes the prefilter
+    discriminate by shared k-mers instead of the weak pg_trgm similarity on
+    long nucleotide strings. The `kmer_indexed` flag is still kept as a fast
+    guard for incremental re-indexing, but the real index is the table rows.
     """
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -1103,15 +1100,23 @@ def populate_kmer_index(
 
     indexed_genes = 0
     pending_keys: list[str] = []
+    pending_kmers: list[tuple[int, str]] = []
     progress_every = max(1_000, min(10_000, batch_size * 5))
 
     def _flush(write_cur) -> None:
+        nonlocal pending_kmers
+        if pending_kmers:
+            write_cur.executemany(
+                "INSERT INTO gene_kmers (kmer, gene_key) VALUES (%s, %s) ON CONFLICT (kmer, gene_key) DO NOTHING;",
+                pending_kmers,
+            )
+            pending_kmers = []
         if pending_keys:
             write_cur.execute(
                 "UPDATE genes SET kmer_indexed = TRUE WHERE COALESCE(gene_id, symbol) = ANY(%s);",
                 (pending_keys,),
             )
-        pending_keys.clear()
+            pending_keys.clear()
 
     with get_connection() as conn:
         conn.autocommit = False
@@ -1120,17 +1125,24 @@ def populate_kmer_index(
                 read_cur.itersize = batch_size
                 read_cur.execute(
                     """
-                    SELECT COALESCE(gene_id, symbol) AS gene_key
+                    SELECT COALESCE(gene_id, symbol) AS gene_key, sequence, sequence_type
                     FROM genes
                     WHERE (kmer_indexed IS NOT TRUE) AND sequence IS NOT NULL AND sequence <> '';
                     """
                 )
-                for (gene_key,) in read_cur:
+                for gene_key, sequence, seq_type in read_cur:
+                    if not gene_key or not sequence:
+                        continue
+                    gene_key = str(gene_key)
+                    seq_type = seq_type or ("protein" if set(sequence.upper()) <= set("ACDEFGHIKLMNPQRSTVWY") else "dna")
+                    hashes = _kmer_hashes(sequence, k=k, seq_type=seq_type)
+                    for h in hashes:
+                        pending_kmers.append((int(h), gene_key))
                     pending_keys.append(gene_key)
                     indexed_genes += 1
                     if indexed_genes % progress_every == 0:
-                        print(f"Marked {indexed_genes} gene(s) as indexed (compact trigram prefilter active)...")
-                    if len(pending_keys) >= flush_every:
+                        print(f"Indexed {indexed_genes} gene(s) into the k-mer table...")
+                    if len(pending_kmers) >= flush_every:
                         _flush(write_cur)
                         conn.commit()
                 _flush(write_cur)
@@ -1139,7 +1151,7 @@ def populate_kmer_index(
             conn.rollback()
             raise
 
-    print("Compact trigram-based candidate prefilter is active; no full k-mer row table was populated.")
+    print(f"k-mer index populated for {indexed_genes} gene(s) using k={k}.")
     return indexed_genes
 
 
@@ -1150,68 +1162,70 @@ def find_candidate_genes_by_kmer(
 ) -> list[tuple[str, float]]:
     """Return up to `limit` candidate genes for a query sequence.
 
-    The preferred path uses a compact trigram similarity search on the
-    `genes.sequence` column (backed by a GIN trigram index) rather than the
-    storage-heavy `gene_kmers` table. This keeps candidate selection working
-    on Neon without hitting the storage quota while still avoiding a full
-    O(n*m) scan over every gene sequence.
-
-    length_ratio: same length-ratio prefilter concept as
-    similarityengine.compare_with_database's max_length_ratio -- candidates
-    outside [query_len/length_ratio, query_len*length_ratio] are excluded
-    server-side before scoring. Kept as a plain parameter (default 3.0)
-    rather than importing config.py directly, so this module stays runnable
-    standalone (`python scripts/postgres_utils.py ...`) without depending on
-    the project root being on sys.path. Callers that already have config in
-    scope should pass config.LENGTH_RATIO_PREFILTER explicitly to keep this
-    in sync with similarityengine's own prefilter.
-
-    A legacy list of k-mer hashes is still accepted for backward
-    compatibility; in that case it falls back to the old `gene_kmers` table
-    if present, otherwise returns an empty list.
-    
-    Includes exponential backoff retry logic for SSL connection timeouts
-    caused by Neon's pooler closing idle connections.
+    This is the real k-mer prefilter: the database is indexed with one row per
+    k-mer and the query is hashed the same way. That makes the fast path
+    insensitive to the 64 trigram categories that saturate long DNA strings,
+    while still staying fast enough for a Postgres-backed deployment.
     """
     if isinstance(query, str):
         sequence = query.upper().replace(" ", "")
         if not sequence:
             return []
-        query_len = len(sequence)
-        min_len = max(1, int(query_len / length_ratio))
-        max_len = int(query_len * length_ratio)
-        
-        # Retry logic for Neon pooler SSL disconnects
+        query_type = "protein" if set(sequence) <= set("ACDEFGHIKLMNPQRSTVWY") else "dna"
+        query_hashes = _kmer_hashes(sequence, k=KMER_K, seq_type=query_type)
+        if not query_hashes:
+            return []
+        kmer_list = sorted(query_hashes)
         max_retries = 3
         for attempt in range(max_retries):
             try:
                 with get_connection() as conn:
                     with conn.cursor() as cur:
+                        cur.execute("SELECT COUNT(*) FROM gene_kmers;")
+                        if cur.fetchone()[0] == 0:
+                            # Fallback only if the k-mer table has never been built.
+                            query_len = len(sequence)
+                            min_len = max(1, int(query_len / length_ratio))
+                            max_len = int(query_len * length_ratio)
+                            cur.execute(
+                                """
+                                SELECT COALESCE(gene_id, symbol) AS gene_key,
+                                       similarity(sequence, %(query)s) AS score
+                                FROM genes
+                                WHERE sequence IS NOT NULL
+                                  AND sequence <> ''
+                                  AND sequence %% %(query)s
+                                  AND length BETWEEN %(min_len)s AND %(max_len)s
+                                ORDER BY score DESC
+                                LIMIT %(limit)s;
+                                """,
+                                {"query": sequence, "min_len": min_len, "max_len": max_len, "limit": limit},
+                            )
+                            return [(row[0], float(row[1])) for row in cur.fetchall()]
                         cur.execute(
                             """
-                            SELECT COALESCE(gene_id, symbol) AS gene_key,
-                                   similarity(sequence, %(query)s) AS score
-                            FROM genes
-                            WHERE sequence IS NOT NULL
-                              AND sequence <> ''
-                              AND sequence %% %(query)s
-                              AND length BETWEEN %(min_len)s AND %(max_len)s
-                            ORDER BY score DESC
-                            LIMIT %(limit)s;
+                            SELECT gene_key, COUNT(*) AS shared
+                            FROM (
+                                SELECT DISTINCT gene_key, kmer
+                                FROM gene_kmers
+                                WHERE kmer = ANY(%s)
+                            ) AS hits
+                            GROUP BY gene_key
+                            ORDER BY shared DESC, gene_key
+                            LIMIT %s;
                             """,
-                            {"query": sequence, "min_len": min_len, "max_len": max_len, "limit": limit},
+                            (kmer_list, limit),
                         )
                         return [(row[0], float(row[1])) for row in cur.fetchall()]
             except (psycopg.errors.OperationalError, OSError) as e:
-                # SSL connection closed, connection reset, etc.
                 if attempt < max_retries - 1:
-                    wait_time = 0.5 * (2 ** attempt)  # 0.5s, 1s, 2s
+                    wait_time = 0.5 * (2 ** attempt)
                     logging.getLogger(__name__).warning(
                         f"find_candidate_genes_by_kmer: connection lost ({type(e).__name__}); "
                         f"retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})"
                     )
                     time.sleep(wait_time)
-                    close_pool()  # Force reconnect on next get_connection()
+                    close_pool()
                 else:
                     raise
 
@@ -1226,10 +1240,13 @@ def find_candidate_genes_by_kmer(
             cur.execute(
                 """
                 SELECT gene_key, COUNT(*) AS shared
-                FROM gene_kmers
-                WHERE kmer = ANY(%s)
+                FROM (
+                    SELECT DISTINCT gene_key, kmer
+                    FROM gene_kmers
+                    WHERE kmer = ANY(%s)
+                ) AS hits
                 GROUP BY gene_key
-                ORDER BY shared DESC
+                ORDER BY shared DESC, gene_key
                 LIMIT %s;
                 """,
                 (kmer_list, limit),
