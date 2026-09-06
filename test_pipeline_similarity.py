@@ -1,5 +1,6 @@
 import config
 import pipeline
+import similarityengine
 
 
 def test_similarity_skip_reason_for_overlong_sequence():
@@ -38,3 +39,10 @@ def test_similarity_skip_reason_for_candidate_cost(monkeypatch):
 
     assert result["similarity_skipped_reason"] == "alignment_cost_too_high"
     assert result["similarity_results"] == []
+
+
+def test_long_query_candidate_pool_respects_alignment_budget(monkeypatch):
+    monkeypatch.setattr(config, "MAX_ALIGNMENT_CELL_BUDGET", 300)
+
+    assert similarityengine._budgeted_candidate_pool_size(10, 45) == 3
+    assert similarityengine._budgeted_candidate_pool_size(100, 45) == 1

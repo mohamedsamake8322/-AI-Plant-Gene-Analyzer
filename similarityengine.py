@@ -38,6 +38,25 @@ DEFAULT_CANDIDATE_POOL_MULTIPLIER = 15
 DEFAULT_KMER_PREFILTER_MIN_CANDIDATES = 150
 
 
+def _budgeted_candidate_pool_size(query_length: int, requested_size: int) -> int:
+    """Cap long-query candidates so alignment stays within the DP budget.
+
+    Candidate ranking happens before alignment, so retaining the highest
+    k-mer-scoring candidates gives long queries a useful search instead of
+    letting the pipeline reject the entire pool after it has been fetched.
+    The estimate uses query_length squared as a conservative same-length
+    approximation; the pipeline keeps the final exact per-candidate guard.
+    """
+    if query_length <= 0:
+        return 1
+    cells_per_candidate = query_length * query_length
+    budget = getattr(config, "MAX_ALIGNMENT_CELL_BUDGET", 0)
+    if budget <= 0:
+        return requested_size
+    safe_size = max(1, budget // cells_per_candidate)
+    return max(1, min(requested_size, safe_size))
+
+
 def _postgres_utils():
     """Lazy import of scripts.postgres_utils, mirroring the pattern already
     used by load_gene_database() below — keeps this module importable
@@ -609,7 +628,8 @@ def find_similar_genes(
         return SimilarityCandidates(source="unavailable")
 
     query_type = bio.detect_sequence_type(query)
-    pool_size = max(1, top_n) * candidate_pool_multiplier
+    requested_pool_size = max(1, top_n) * candidate_pool_multiplier
+    pool_size = _budgeted_candidate_pool_size(len(query), requested_pool_size)
 
     try:
         ranked = pg.find_candidate_genes_by_kmer(query, limit=pool_size, length_ratio=max_length_ratio)
