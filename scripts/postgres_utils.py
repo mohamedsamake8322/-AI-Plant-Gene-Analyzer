@@ -135,7 +135,9 @@ _CONNECT_KWARGS = {
     "keepalives_idle": 5,  # Match Neon pooler timeout (~5-8s); was 20s
     "keepalives_interval": 2,  # More frequent heartbeats; was 10s
     "keepalives_count": 5,  # More aggressive probing; was 3
-    "options": "-c statement_timeout=30000",  # 30s query timeout to prevent holding connections
+    # Neon pooler rejects libpq startup options like "-c statement_timeout=...".
+    # Keep the timeout as a session setting instead, applied per cursor/transaction,
+    # so the connection is accepted and query stalling is still bounded.
 }
 
 
