@@ -16,6 +16,7 @@ import base64
 import hashlib
 import logging
 import sys
+import time
 from pathlib import Path
 
 # ── Local modules ──────────────────────────────────────────────────────────────
@@ -702,6 +703,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                     logger.info(
                         f"Starting analysis for record {idx + 1}/{len(analysis_targets)}: {record.get('header', 'Sequence')}"
                     )
+                    similarity_started_at = time.perf_counter()
 
                     if db is not None:
                         # JSON-file deployment (no Postgres configured) —
@@ -742,8 +744,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                     else:
                         target_db = {}
 
-                    analyzed_results.append(
-                        _cached_analyze(
+                    analyzed_result = _cached_analyze(
                             json.dumps(record, sort_keys=True),
                             sequence_input_type,
                             reading_frame,
@@ -751,7 +752,11 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                             similarity_deep_search,
                             _db=target_db,
                         )
+                    analyzed_result["similarity_elapsed_seconds"] = round(
+                        time.perf_counter() - similarity_started_at, 3
                     )
+                    analyzed_result["similarity_candidate_pool_count"] = len(target_db or {})
+                    analyzed_results.append(analyzed_result)
 
             st.session_state["last_results"] = analyzed_results
             st.session_state["last_result"] = analyzed_results[0] if analyzed_results else None
@@ -1236,6 +1241,8 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
 
         similarity_source = result.get("similarity_search_source", "local_database")
         similarity_candidate_count = result.get("similarity_candidate_count")
+        similarity_candidate_pool_count = result.get("similarity_candidate_pool_count")
+        similarity_elapsed_seconds = result.get("similarity_elapsed_seconds")
         similarity_prefiltered_count = result.get("similarity_prefiltered_count", 0)
         similarity_search_mode = result.get("similarity_search_mode", "Balanced")
         info_lines = [f"**Search mode:** `{similarity_search_mode}`"]
@@ -1243,6 +1250,10 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             info_lines.append(f"**Source:** `{similarity_source}`")
         if similarity_candidate_count is not None:
             info_lines.append(f"**Candidates evaluated:** `{similarity_candidate_count}`")
+        if similarity_candidate_pool_count is not None:
+            info_lines.append(f"**Candidate pool:** `{similarity_candidate_pool_count}`")
+        if similarity_elapsed_seconds is not None:
+            info_lines.append(f"**Similarity workflow time:** `{similarity_elapsed_seconds:.3f} s`")
         if similarity_prefiltered_count:
             info_lines.append(f"**Skipped by prefilter:** `{similarity_prefiltered_count}`")
         if info_lines:
