@@ -13,7 +13,6 @@ import json
 import os
 import io
 import base64
-import hashlib
 import logging
 import sys
 import time
@@ -33,17 +32,6 @@ import trait_research as tr
 
 SCRIPT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_ROOT / "scripts"))
-
-
-def get_source_fingerprint(path: Path) -> str:
-    """Return a short fingerprint of the deployed source file."""
-    try:
-        return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
-    except OSError:
-        return "unavailable"
-
-
-BIOINFORMATICS_FINGERPRINT = get_source_fingerprint(SCRIPT_ROOT / "bioinformatics.py")
 
 try:
     from scripts.postgres_utils import (
@@ -593,102 +581,11 @@ analyze_btn = st.button("🔬 Analyze Sequence", type="primary")
 
 st.markdown("---")
 
-
-def render_independent_tools() -> None:
-    """Render tools that do not require the primary sequence analysis."""
-
-    tool_tabs = st.tabs(["Alignments", "Distance Matrix", "Phylogeny", "Protein Analysis", "Recherche par thème"])
-
-    with tool_tabs[0]:
-        st.markdown("#### Multiple and pairwise alignment")
-        msa_input = st.text_area("Paste multiple FASTA sequences or one per line:", height=160, key="independent_msa_input")
-        if st.button("Run MSA", key="independent_msa_run") and msa_input:
-            from core_engines.alignment_engine import star_alignment
-            from sequence_loader import parse_fasta
-            records = parse_fasta(msa_input)
-            sequences = [record["sequence"] for record in records]
-            if len(sequences) < 2:
-                st.warning("Provide at least 2 sequences for MSA.")
-            else:
-                result = star_alignment(sequences, seq_type="dna")
-                st.success(f"MSA complete — {result.get('num_sequences')} sequences")
-                labels = [record.get("header", f"Seq{i + 1}") for i, record in enumerate(records)]
-                st.plotly_chart(viz.plot_msa_table(result.get("aligned_sequences", []), labels=labels), width="stretch")
-
-        pairwise_left, pairwise_right = st.columns(2)
-        with pairwise_left:
-            pairwise_seq1 = st.text_area("Sequence 1", height=80, key="independent_pw1")
-        with pairwise_right:
-            pairwise_seq2 = st.text_area("Sequence 2", height=80, key="independent_pw2")
-        if st.button("Align pairwise", key="independent_pw_align"):
-            if not pairwise_seq1 or not pairwise_seq2:
-                st.warning("Provide two sequences for pairwise alignment.")
-            else:
-                from core_engines.alignment_engine import needleman_wunsch, smith_waterman
-                global_result = needleman_wunsch(pairwise_seq1.strip(), pairwise_seq2.strip())
-                local_result = smith_waterman(pairwise_seq1.strip(), pairwise_seq2.strip())
-                st.markdown("**Needleman-Wunsch (global)**")
-                st.code(global_result["seq1_aligned"] + "\n" + global_result["seq2_aligned"])
-                st.write(f"Score: {global_result['alignment_score']} — Matches: {global_result['match_count']} — Gaps: {global_result['gap_count']}")
-                st.markdown("**Smith-Waterman (local)**")
-                st.code(local_result["seq1_aligned"] + "\n" + local_result["seq2_aligned"])
-
-    with tool_tabs[1]:
-        st.markdown("#### Compute Pairwise Distance Matrix")
-        distance_input = st.text_area("Paste FASTA or one sequence per line:", height=160, key="independent_distance_input")
-        distance_method = st.selectbox("Method", ["hamming", "jukes_cantor", "kimura", "pam"], index=2, key="independent_distance_method")
-        if st.button("Compute Distance Matrix", key="independent_dm_compute"):
-            from sequence_loader import parse_fasta
-            from core_engines.distance_engine import distance_matrix
-            import pandas as pd
-            records = parse_fasta(distance_input)
-            sequences = [{"name": record.get("header", f"Seq{i + 1}"), "sequence": record["sequence"]} for i, record in enumerate(records)]
-            if len(sequences) < 2:
-                st.warning("Provide at least 2 sequences to build distance matrix.")
-            else:
-                result = distance_matrix(sequences, method=distance_method)
-                names = result["sequence_names"]
-                frame = pd.DataFrame(result["distance_matrix"], index=names, columns=names)
-                st.dataframe(frame)
-                st.download_button("Download CSV", frame.to_csv().encode("utf-8"), file_name="distance_matrix.csv", key="independent_dm_download")
-
-    with tool_tabs[2]:
-        st.markdown("#### Build Phylogenetic Tree")
-        phylogeny_input = st.text_area("Paste sequences for phylogeny (FASTA or lines):", height=160, key="independent_phylogeny_input")
-        phylogeny_method = st.selectbox("Tree algorithm", ["upgma", "neighbor_joining"], key="independent_phylogeny_method")
-        if st.button("Build Tree", key="independent_build_tree"):
-            from sequence_loader import parse_fasta
-            from core_engines.distance_engine import distance_matrix
-            from core_engines.phylogeny_engine import upgma, neighbor_joining
-            import numpy as np
-            records = parse_fasta(phylogeny_input)
-            sequences = [{"name": record.get("header", f"Seq{i + 1}"), "sequence": record["sequence"]} for i, record in enumerate(records)]
-            if len(sequences) < 2:
-                st.warning("Provide at least 2 sequences for a simple tree.")
-            else:
-                distances = distance_matrix(sequences, method="kimura")
-                builder = upgma if phylogeny_method == "upgma" else neighbor_joining
-                tree = builder(np.array(distances["distance_matrix"]), distances["sequence_names"])
-                st.write("**Tree metadata**", {"algorithm": tree.get("algorithm")})
-                if tree.get("newick"):
-                    st.code(tree["newick"])
-                    st.download_button("Download Newick", tree["newick"], file_name="phylogeny_tree.nwk", mime="text/plain", key="independent_newick_download")
-
-    with tool_tabs[3]:
-        st.markdown("#### Protein biochemical analysis")
-        protein_input = st.text_area("Paste protein sequence:", height=120, key="independent_protein_input")
-        if st.button("Analyze protein", key="independent_protein_analyze"):
-            cleaned = bio.clean_sequence(protein_input.strip(), sequence_type="protein")
-            valid, message = bio.validate_sequence(cleaned, sequence_type="protein")
-            if not valid:
-                st.error(message)
-            else:
-                result = bio.generate_protein_statistics(cleaned)
-                st.write({"length_aa": result["length"], "molecular_weight": result["molecular_weight"], "isoelectric_point": result["isoelectric_point"], "hydrophobicity": result["hydrophobicity"]})
-                st.plotly_chart(viz.plot_amino_acid_bar(result["amino_acid_distribution"]), width="stretch")
-
-    with tool_tabs[4]:
-        tr.render_trait_research_tab("Data/clean/species")
+st.info(
+    "🧪 Looking for alignments, distance matrices, phylogeny, or standalone "
+    "protein analysis? They now live on their own page — see **Outils "
+    "indépendants** in the sidebar navigation, always available."
+)
 
 
 # ─── Analysis pipeline ─────────────────────────────────────────────────────────
@@ -1061,14 +958,6 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
         "Translation",
         "AI Interpretation",
         "Raw Sequence",
-    ])
-
-    st.markdown('<div class="section-heading section-heading-secondary"><span class="section-index">02</span><span>Advanced tools</span><small>Run independent analyses</small></div>', unsafe_allow_html=True)
-    tool_tabs = st.tabs([
-        "Alignments",
-        "Distance Matrix",
-        "Phylogeny",
-        "Protein Analysis",
     ])
 
     # ── Tab 1: Statistics ──────────────────────────────────────────────────────
@@ -1656,165 +1545,6 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 logger.error(f"Annotation failed: {e}")
                 st.error(f"Annotation failed: {e}")
 
-    # ── Tab 7: Alignments (MSA + pairwise) ─────────────────────────────────
-    with tool_tabs[0]:
-        st.markdown("#### Multiple Sequence Alignment")
-        seqs_input = st.text_area("Paste multiple FASTA sequences or one per line:", height=160)
-        msa_btn = st.button("Run MSA", key="msa_run")
-        if msa_btn and seqs_input:
-            from core_engines.alignment_engine import star_alignment, needleman_wunsch
-
-            # parse simple input (one sequence per line or FASTA)
-            from sequence_loader import parse_fasta
-            records_msa = parse_fasta(seqs_input)
-            sequences = [r['sequence'] for r in records_msa]
-            if len(sequences) < 2:
-                st.warning("Provide at least 2 sequences for MSA.")
-            else:
-                with st.spinner("Running star MSA (reference-guided)..."):
-                    msa_result = star_alignment(sequences, seq_type="dna")
-                st.success(
-                    f"MSA complete — {msa_result.get('num_sequences')} sequences, "
-                    f"conservation {msa_result.get('conservation_score', 0)}%"
-                )
-                aligned = msa_result.get('aligned_sequences', [])
-                labels = [r.get('header', f"Seq{i+1}") for i, r in enumerate(records_msa)]
-                try:
-                    fig_msa = viz.plot_msa_table(aligned, labels=labels)
-                    st.plotly_chart(fig_msa, width='stretch')
-                except Exception:
-                    for aseq in aligned:
-                        st.code(aseq, language=None)
-
-        st.markdown("#### Pairwise Alignment")
-        col_a, col_b = st.columns(2)
-        with col_a:
-            p_seq1 = st.text_area("Sequence 1", height=80, key="pw1")
-        with col_b:
-            p_seq2 = st.text_area("Sequence 2", height=80, key="pw2")
-        if st.button("Align pairwise", key="pw_align"):
-            from core_engines.alignment_engine import needleman_wunsch, smith_waterman
-            if not p_seq1 or not p_seq2:
-                st.warning("Provide two sequences for pairwise alignment.")
-            else:
-                nw = needleman_wunsch(p_seq1.strip(), p_seq2.strip())
-                sw = smith_waterman(p_seq1.strip(), p_seq2.strip())
-                st.markdown("**Needleman-Wunsch (global)**")
-                # Show aligned text and interactive alignment map
-                st.code(nw['seq1_aligned'] + "\n" + nw['seq2_aligned'])
-                # Build match line
-                match_line_nw = ''.join(['|' if a==b and a!='-' else ' ' for a,b in zip(nw['seq1_aligned'], nw['seq2_aligned'])])
-                try:
-                    st.plotly_chart(viz.plot_alignment({'query': nw['seq1_aligned'], 'reference': nw['seq2_aligned'], 'match_line': match_line_nw}), width='stretch')
-                except Exception:
-                    pass
-                st.markdown(f"Score: {nw['alignment_score']} — Matches: {nw['match_count']} — Gaps: {nw['gap_count']}")
-                st.markdown("**Smith-Waterman (local)**")
-                st.code(sw['seq1_aligned'] + "\n" + sw['seq2_aligned'])
-                match_line_sw = ''.join(['|' if a==b and a!='-' else ' ' for a,b in zip(sw['seq1_aligned'], sw['seq2_aligned'])])
-                try:
-                    st.plotly_chart(viz.plot_alignment({'query': sw['seq1_aligned'], 'reference': sw['seq2_aligned'], 'match_line': match_line_sw}), width='stretch')
-                except Exception:
-                    pass
-
-    # ── Tab 8: Distance Matrix ───────────────────────────────────────────────
-    with tool_tabs[1]:
-        st.markdown("#### Compute Pairwise Distance Matrix")
-        dm_input = st.text_area("Paste FASTA or one sequence per line:", height=160)
-        dm_method = st.selectbox("Method", options=["hamming", "jukes_cantor", "kimura", "pam"], index=2)
-        st.caption("Sequences are star-aligned before distance calculation.")
-        if st.button("Compute Distance Matrix", key="dm_compute"):
-            from sequence_loader import parse_fasta
-            from core_engines.distance_engine import distance_matrix
-            records_dm = parse_fasta(dm_input)
-            sequences = [{"name": r.get('header', f"Seq{i+1}"), "sequence": r['sequence']} for i, r in enumerate(records_dm)]
-            if len(sequences) < 2:
-                st.warning("Provide at least 2 sequences to build distance matrix.")
-            else:
-                with st.spinner("Calculating distances..."):
-                    dm_res = distance_matrix(sequences, method=dm_method)
-                st.write("**Alignment:**", dm_res.get("alignment_method", "Star MSA"))
-                st.write("**Sequence names**", dm_res['sequence_names'])
-                import pandas as pd
-                df = pd.DataFrame(dm_res['distance_matrix'], index=dm_res['sequence_names'], columns=dm_res['sequence_names'])
-                st.dataframe(df)
-                if dm_res.get("aligned_sequences"):
-                    with st.expander("Aligned sequences used for distances"):
-                        for name, aln_seq in zip(dm_res["sequence_names"], dm_res["aligned_sequences"]):
-                            st.code(f">{name}\n{aln_seq}", language=None)
-                st.download_button("Download CSV", df.to_csv().encode('utf-8'), file_name="distance_matrix.csv")
-
-    # ── Tab 9: Phylogeny ─────────────────────────────────────────────────────
-    with tool_tabs[2]:
-        st.markdown("#### Build Phylogenetic Tree")
-        ph_input = st.text_area("Paste sequences for phylogeny (FASTA or lines):", height=160)
-        ph_method = st.selectbox("Tree algorithm", options=["upgma", "neighbor_joining"], index=0)
-        if st.button("Build Tree", key="build_tree"):
-            from sequence_loader import parse_fasta
-            from core_engines.distance_engine import distance_matrix
-            from core_engines.phylogeny_engine import upgma, neighbor_joining, phylo_to_newick, newick_to_plotly_tree
-            records_ph = parse_fasta(ph_input)
-            seqs = [{"name": r.get('header', f"Seq{i+1}"), "sequence": r['sequence']} for i, r in enumerate(records_ph)]
-            if len(seqs) < 2:
-                st.warning("Provide at least 2 sequences for a simple tree; 3+ sequences are recommended for more meaningful phylogeny.")
-            else:
-                with st.spinner("Aligning sequences and computing distance matrix..."):
-                    dm = distance_matrix(seqs, method="kimura")
-                mat = dm['distance_matrix']
-                import numpy as np
-                mat_np = np.array(mat)
-                with st.spinner("Building tree..."):
-                    if ph_method == "upgma":
-                        tree = upgma(mat_np, dm['sequence_names'])
-                    else:
-                        tree = neighbor_joining(mat_np, dm['sequence_names'])
-                st.write("**Tree metadata**", {"algorithm": tree.get('algorithm'), "tree_type": tree.get('tree_type')})
-                # If dendrogram data available, plot interactive dendrogram
-                try:
-                    if tree.get('dendrogram_data'):
-                        fig = viz.plot_dendrogram(tree['dendrogram_data'], labels=tree.get('sequence_names'))
-                        st.plotly_chart(fig, width='stretch')
-                    else:
-                        st.info('Dendrogram data not available for this method; showing edge list instead.')
-                        if tree.get('edges'):
-                            st.table(tree['edges'])
-                except Exception as e:
-                    logger.warning(f"Failed to render dendrogram: {e}")
-
-                st.markdown("#### Newick format")
-                st.code(tree.get("newick") or "Newick not available")
-                if tree.get("newick"):
-                    st.download_button(
-                        "Download Newick",
-                        tree["newick"],
-                        file_name="phylogeny_tree.nwk",
-                        mime="text/plain",
-                    )
-
-    # ── Tab 10: Protein Analysis ─────────────────────────────────────────────
-    with tool_tabs[3]:
-        st.markdown("#### Protein biochemical analysis")
-        prot_seq = st.text_area("Paste protein sequence:", height=120, value=sequence if sequence_type == "protein" else "")
-        if st.button("Analyze protein", key="prot_analyze"):
-            if not prot_seq:
-                st.warning("Paste a protein sequence to analyze.")
-            else:
-                cleaned = bio.clean_sequence(prot_seq.strip(), sequence_type="protein")
-                is_valid, msg = bio.validate_sequence(cleaned, sequence_type="protein")
-                if not is_valid:
-                    st.error(msg)
-                else:
-                    stats = bio.generate_protein_statistics(cleaned)
-                    props = bio.protein_properties(cleaned)
-                    dist = stats["amino_acid_distribution"]
-                    pcol1, pcol2, pcol3, pcol4 = st.columns(4)
-                    pcol1.metric("Length (aa)", stats["length"])
-                    pcol2.metric("Molecular weight (Da)", props["molecular_weight"])
-                    pcol3.metric("Isoelectric point", props["isoelectric_point"])
-                    pcol4.metric("Avg hydrophobicity", props["hydrophobicity"])
-                    st.plotly_chart(viz.plot_amino_acid_bar(dist), width='stretch')
-                    st.json(stats)
-
 else:
     # ── Welcome screen ──────────────────────────────────────────────────────────
     st.markdown(
@@ -1859,10 +1589,7 @@ else:
             """
         )
 
-    render_independent_tools()
-
-
-st.markdown(
-    f"<div class=\"app-fingerprint\">bioinformatics.py · source {BIOINFORMATICS_FINGERPRINT}</div>",
-    unsafe_allow_html=True,
-)
+    st.info(
+        "🧪 Looking for alignments, distance matrices, phylogeny, or standalone "
+        "protein analysis? See **Outils indépendants** in the sidebar navigation."
+    )
