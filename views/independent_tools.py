@@ -1,9 +1,10 @@
 """
-pages/1_Outils_independants.py
--------------------------------
+views/independent_tools.py
+---------------------------
 Independent analysis tools — usable without running the main sequence
-pipeline on the home page. Always reachable from the sidebar navigation,
-regardless of whether a main analysis is in progress.
+pipeline on the home page. Registered as its own page via st.navigation
+in app.py, so it's always reachable regardless of whether a main
+analysis is in progress.
 """
 
 import os
@@ -13,14 +14,6 @@ import bioinformatics as bio
 import visualization as viz
 import trait_research as tr
 import config
-
-# ─── Page configuration (each Streamlit page sets this independently) ──────────
-st.set_page_config(
-    page_title=f"{config.PAGE_TITLE} · Independent Tools",
-    page_icon=config.PAGE_ICON,
-    layout=config.DEFAULT_LAYOUT,
-    initial_sidebar_state=config.DEFAULT_SIDEBAR_STATE,
-)
 
 
 # ─── Load custom CSS (same stylesheet as the main page) ────────────────────────
