@@ -18,17 +18,17 @@ st.set_page_config(
 
 home_page = st.Page(
     "views/home.py",
-    title="Analyse de séquence",
+    title="Sequence Analysis",
     icon="🧬",
-    url_path="analyse",
+    url_path="analyze",
     default=True,
 )
 
 independent_tools_page = st.Page(
     "views/independent_tools.py",
-    title="Outils indépendants",
+    title="Independent Tools",
     icon="🧪",
-    url_path="outils-independants",
+    url_path="independent-tools",
 )
 
 pg = st.navigation([home_page, independent_tools_page])

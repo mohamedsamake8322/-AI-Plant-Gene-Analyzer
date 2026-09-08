@@ -48,7 +48,7 @@ st.markdown(
 st.markdown("---")
 
 
-tool_tabs = st.tabs(["Alignments", "Distance Matrix", "Phylogeny", "Protein Analysis", "Recherche par thème"])
+tool_tabs = st.tabs(["Alignments", "Distance Matrix", "Phylogeny", "Protein Analysis", "Trait Search"])
 
 with tool_tabs[0]:
     st.markdown("#### Multiple and pairwise alignment")

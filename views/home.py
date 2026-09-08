@@ -574,8 +574,8 @@ st.markdown("---")
 
 st.info(
     "🧪 Looking for alignments, distance matrices, phylogeny, or standalone "
-    "protein analysis? They now live on their own page — see **Outils "
-    "indépendants** in the sidebar navigation, always available."
+    "protein analysis? They now live on their own page — see **Independent "
+    "Tools** in the sidebar navigation, always available."
 )
 
 
@@ -1582,6 +1582,5 @@ else:
 
     st.info(
         "🧪 Looking for alignments, distance matrices, phylogeny, or standalone "
-        "protein analysis? See **Outils indépendants** in the sidebar navigation."
+        "protein analysis? See **Independent Tools** in the sidebar navigation."
     )
-

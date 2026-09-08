@@ -617,7 +617,7 @@ def find_similar_genes(
     Returns a SimilarityCandidates (dict subclass) of {gene_key: gene_record}
     — typically tens to a couple hundred entries, not tens of thousands —
     ready to hand to compare_with_database as db_source. `.source` is one
-    of "trigram_prefilter", "length_prefilter_metadata", "length_prefilter_sql",
+    of "kmer_prefilter", "length_prefilter_metadata", "length_prefilter_sql",
     or "unavailable"; `.candidate_count` is len(result).
     """
     try:
@@ -632,26 +632,36 @@ def find_similar_genes(
     pool_size = _budgeted_candidate_pool_size(len(query), requested_pool_size)
 
     try:
-        ranked = pg.find_candidate_genes_by_kmer(query, limit=pool_size, length_ratio=max_length_ratio)
+        query_hashes = pg._kmer_hashes(query, pg.KMER_K, query_type)
+        query_len = len(query)
+        min_len = max(1, int(query_len / max_length_ratio)) if query_len else None
+        max_len = int(query_len * max_length_ratio) if query_len else None
+        ranked = pg.find_kmer_candidates(
+            query_hashes,
+            min_shared=1,
+            limit=pool_size,
+            min_length=min_len,
+            max_length=max_len,
+            sequence_type=query_type,
+        )
     except Exception as e:
         # e.g. pg_trgm extension not available on this Postgres instance
         # (see create_tables()'s try/except around CREATE EXTENSION) --
         # degrade to the length-range fallback below rather than crash.
         if logger:
-            logger.warning(f"find_similar_genes: trigram candidate search failed ({e}); falling back")
+            logger.warning(f"find_similar_genes: k-mer candidate search failed ({e}); falling back")
         ranked = []
 
     if ranked:
         keys = [key for key, _score in ranked]
         candidates = pg.load_gene_sequences_by_keys(keys)
         if logger:
-            logger.info(f"find_similar_genes: trigram prefilter returned {len(candidates)} candidates for top_n={top_n}")
-        return SimilarityCandidates(candidates, source="trigram_prefilter")
+            logger.info(f"find_similar_genes: k-mer prefilter returned {len(candidates)} candidates for top_n={top_n}")
+        return SimilarityCandidates(candidates, source="kmer_prefilter")
 
     if logger:
         logger.info(
-            "find_similar_genes: trigram prefilter returned no candidates (pg_trgm not available, "
-            "or a cross-type query) — falling back to a length-range lookup"
+            "find_similar_genes: k-mer prefilter returned no candidates — falling back to a length-range lookup"
         )
     if metadata:
         # Caller already has a metadata dict in hand (e.g. JSON-file mode
@@ -689,19 +699,17 @@ def find_similar_genes_deep(
     """
     **Deep Search: Exhaustive 1-stage candidate screening (Phase 3 enhancement)**
     
-    Scans ALL 56,000 genes using pg_trgm similarity WITHOUT length prefilter,
-    then returns the top candidates as a SimilarityCandidates dict ready for
-    precise Needleman-Wunsch alignment in the pipeline.
+    Searches the full indexed k-mer signature set WITHOUT a length prefilter,
+    then returns the top candidates ready for precise alignment.
     
     **Flow:**
-    1. Query Postgres for trigram similarity across ALL genes (no length filter)
+    1. Query Postgres for shared k-mer signatures across ALL genes
     2. Return top ~500 candidates sorted by trigram score
     3. Pipeline's compare_with_database() applies Needleman-Wunsch to these
     4. Results ranked by alignment identity%
     
     This eliminates the length-ratio prefilter that can hide valid short/long
-    matches, while keeping runtime ~30-60s (trigram is fast, alignment only
-    on promising candidates).
+    matches without scanning full sequences in Python.
     
     Contrast with find_similar_genes():
     - find_similar_genes: length-filtered candidates (3x ratio) + alignment
@@ -721,16 +729,17 @@ def find_similar_genes_deep(
     
     query_type = bio.detect_sequence_type(query)
     
-    # **Tier 1: Exhaustive trigram scan (no length filter)**
+    # **Tier 1: Indexed k-mer scan (no length filter)**
     try:
         if logger:
-            logger.info("Deep Search: scanning trigram similarity across all genes (no length filter)...")
-        
-        ranked = pg.find_candidate_genes_by_kmer_exhaustive(query, limit=alignment_limit)
+            logger.info("Deep Search: scanning indexed k-mer signatures across all genes...")
+
+        query_hashes = pg._kmer_hashes(query, pg.KMER_K, query_type)
+        ranked = pg.find_kmer_candidates(query_hashes, min_shared=1, limit=alignment_limit)
         
         if not ranked:
             if logger:
-                logger.info("Deep Search: no trigram candidates found")
+                logger.info("Deep Search: no k-mer candidates found")
             return SimilarityCandidates(source="deep_search_exhaustive")
         
         if logger:

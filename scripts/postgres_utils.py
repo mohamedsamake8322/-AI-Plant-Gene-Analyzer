@@ -27,8 +27,8 @@ except ImportError:  # pragma: no cover
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
 
-# k-mer size for the Postgres-side inverted index (see gene_kmers table /
-# populate_kmer_index / find_candidate_genes_by_kmer below). 12 is a
+# k-mer size for the per-gene PostgreSQL signature used by
+# find_kmer_candidates(). 12 is a
 # reasonable default for DNA: 4^12 ≈ 16.7M possible k-mers, long enough
 # that unrelated sequences rarely share many by chance, short enough that
 # a real homolog still shares plenty. Protein sequences use the same k
@@ -261,6 +261,13 @@ def create_tables() -> None:
             # columns instead of requiring a fresh table.
             cur.execute("ALTER TABLE genes ADD COLUMN IF NOT EXISTS origin TEXT DEFAULT 'sequence_backed';")
             cur.execute("ALTER TABLE genes ADD COLUMN IF NOT EXISTS relations JSONB DEFAULT '{}'::jsonb;")
+            # BIGINT keeps the same representation safe for protein k-mers
+            # too; DNA k=12 values still fit comfortably within 32 bits.
+            cur.execute("ALTER TABLE genes ADD COLUMN IF NOT EXISTS kmer_hashes BIGINT[];")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_genes_kmer_hashes "
+                "ON genes USING GIN (kmer_hashes);"
+            )
             cur.execute("CREATE INDEX IF NOT EXISTS genes_origin_idx ON genes (origin);")
             # NULL != NULL in Postgres, so a plain UNIQUE(gene_id) does not
             # prevent duplicates for records identified only by `symbol`
@@ -307,30 +314,8 @@ def create_tables() -> None:
                 cur.execute("CREATE INDEX IF NOT EXISTS genes_symbol_trgm_idx ON genes USING GIN (symbol gin_trgm_ops);")
                 cur.execute("CREATE INDEX IF NOT EXISTS genes_gene_id_trgm_idx ON genes USING GIN (gene_id gin_trgm_ops);")
                 cur.execute("CREATE INDEX IF NOT EXISTS genes_description_trgm_idx ON genes USING GIN (description gin_trgm_ops);")
-                cur.execute("CREATE INDEX IF NOT EXISTS genes_sequence_trgm_idx ON genes USING GIN (sequence gin_trgm_ops);")
             except Exception as e:
                 logging.getLogger("postgres_utils").warning(f"pg_trgm indexes not created (missing privilege?): {e}")
-
-            # Inverted k-mer index: (kmer -> gene_key), populated separately
-            # by populate_kmer_index() since hashing every sequence is a
-            # one-time-ish batch job, not something to redo on every table
-            # creation. This is the table that lets similarity search find
-            # candidates with a single indexed query instead of ever
-            # comparing a submitted sequence against all rows in `genes`.
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS gene_kmers (
-                    kmer BIGINT NOT NULL,
-                    gene_key TEXT NOT NULL
-                );
-                """
-            )
-            cur.execute("CREATE INDEX IF NOT EXISTS gene_kmers_kmer_idx ON gene_kmers (kmer);")
-            cur.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS gene_kmers_unique_idx ON gene_kmers (kmer, gene_key);"
-            )
-            cur.execute("ALTER TABLE genes ADD COLUMN IF NOT EXISTS kmer_indexed BOOLEAN DEFAULT FALSE;")
-
 
 _UPSERT_SQL = sql.SQL(
     """
@@ -339,13 +324,13 @@ _UPSERT_SQL = sql.SQL(
         description, source, source_url, external_links,
         expression_profiles, pathways, publications,
         annotations, traits, length, date_added, sequence_hash,
-        origin, relations
+        origin, relations, kmer_hashes
     ) VALUES (
         %(gene_id)s, %(symbol)s, %(organism)s, %(sequence)s, %(sequence_type)s,
         %(description)s, %(source)s, %(source_url)s, %(external_links)s,
         %(expression_profiles)s, %(pathways)s, %(publications)s,
         %(annotations)s, %(traits)s, %(length)s, %(date_added)s, %(sequence_hash)s,
-        %(origin)s, %(relations)s
+        %(origin)s, %(relations)s, %(kmer_hashes)s
     )
     ON CONFLICT (COALESCE(gene_id, symbol))
     DO UPDATE SET
@@ -397,6 +382,7 @@ _UPSERT_SQL = sql.SQL(
         length = COALESCE(NULLIF(EXCLUDED.length, 0), genes.length),
         date_added = EXCLUDED.date_added,
         sequence_hash = COALESCE(NULLIF(EXCLUDED.sequence_hash, ''), genes.sequence_hash),
+        kmer_hashes = COALESCE(EXCLUDED.kmer_hashes, genes.kmer_hashes),
         -- Never downgrade a gene's origin when a later pass touches the
         -- same key (shouldn't normally happen given how plaza_only keys
         -- are prefixed, but defensive). Priority order, best to worst:
@@ -608,6 +594,10 @@ def _record_to_params(record: dict) -> dict:
         "length": record.get("length") or (len(sequence) if sequence else None),
         "date_added": record.get("date_added"),
         "sequence_hash": record.get("sequence_hash") or sequence_hash(sequence),
+        "kmer_hashes": (
+            sorted(_kmer_hashes(sequence, KMER_K, sequence_type or "dna"))
+            if sequence else None
+        ),
     }
 
 
@@ -896,6 +886,64 @@ def load_gene_sequences_by_keys(keys: list[str]) -> dict:
     return records
 
 
+def find_kmer_candidates(
+    query_kmer_hashes: set[int] | list[int],
+    min_shared: int = 1,
+    limit: int = 200,
+    min_length: int | None = None,
+    max_length: int | None = None,
+    sequence_type: str | None = None,
+) -> list[tuple[str, float]]:
+    """Rank genes by overlap with the indexed per-gene k-mer signatures.
+
+    This query returns only canonical keys and overlap counts. Full sequences
+    are fetched separately by ``load_gene_sequences_by_keys``.
+    """
+    hashes = sorted({int(value) for value in query_kmer_hashes})
+    if not hashes or limit < 1:
+        return []
+
+    filters = [
+        "g.kmer_hashes IS NOT NULL",
+        "g.kmer_hashes && %s::bigint[]",
+        "shared.shared_count >= %s",
+    ]
+    params: list[object] = [hashes, min_shared]
+    if min_length is not None:
+        filters.append("g.length >= %s")
+        params.append(min_length)
+    if max_length is not None:
+        filters.append("g.length <= %s")
+        params.append(max_length)
+    if sequence_type:
+        filters.append("g.sequence_type = %s")
+        params.append(sequence_type)
+    params.append(limit)
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT COALESCE(g.gene_id, g.symbol) AS gene_key,
+                       shared.shared_count
+                FROM genes AS g
+                CROSS JOIN LATERAL (
+                    SELECT COUNT(*)::float AS shared_count
+                    FROM (
+                        SELECT DISTINCT value
+                        FROM unnest(g.kmer_hashes) AS kmer(value)
+                        WHERE kmer.value = ANY(%s::bigint[])
+                    ) AS overlap
+                ) AS shared
+                WHERE {' AND '.join(filters)}
+                ORDER BY shared.shared_count DESC, gene_key
+                LIMIT %s;
+                """,
+                [hashes, *params],
+            )
+            return [(row[0], float(row[1])) for row in cur.fetchall() if row[0]]
+
+
 def get_gene_count() -> int:
     """Cheap COUNT(*) for the sidebar header — never materializes rows."""
     with get_connection() as conn:
@@ -1171,6 +1219,18 @@ def find_candidate_genes_by_kmer(
         sequence = query.upper().replace(" ", "")
         if not sequence:
             return []
+        seq_type = "protein" if set(sequence) <= set(_PROTEIN_CODE) and not set(sequence) <= set(_DNA_CODE) else "dna"
+        hashes = _kmer_hashes(sequence, KMER_K, seq_type)
+    else:
+        hashes = set(query)
+    return find_kmer_candidates(hashes, limit=limit)
+
+    # Kept below for source compatibility with older deployments; the return
+    # above makes sure no caller can use the removed gene_kmers table path.
+    if isinstance(query, str):
+        sequence = query.upper().replace(" ", "")
+        if not sequence:
+            return []
         query_type = "protein" if set(sequence) <= set("ACDEFGHIKLMNPQRSTVWY") else "dna"
         query_hashes = _kmer_hashes(sequence, k=KMER_K, seq_type=query_type)
         if not query_hashes:
@@ -1401,7 +1461,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "command",
-        choices=["create-tables", "populate-kmer-index", "backfill-sequence-hashes"],
+        choices=["create-tables", "backfill-sequence-hashes"],
     )
     parser.add_argument("--k", type=int, default=KMER_K, help=f"k-mer length (default {KMER_K})")
     parser.add_argument(
@@ -1421,14 +1481,6 @@ if __name__ == "__main__":
     if args.command == "create-tables":
         create_tables()
         print("Tables and indexes ensured.")
-    elif args.command == "populate-kmer-index":
-        n = populate_kmer_index(
-            k=args.k,
-            batch_size=args.batch_size,
-            flush_every=args.flush_every,
-            rebuild=args.rebuild,
-        )
-        print(f"Indexed {n} gene(s) with k={args.k}.")
     elif args.command == "backfill-sequence-hashes":
         n = backfill_sequence_hashes()
         print(f"Backfilled sequence_hash for {n} existing gene(s).")

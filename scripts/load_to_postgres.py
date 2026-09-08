@@ -14,6 +14,10 @@ from pathlib import Path
 import psycopg
 import json
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from postgres_utils import (
     create_tables,
     dedupe_by_sequence,
@@ -24,7 +28,6 @@ from postgres_utils import (
     load_json_records,
 )
 
-ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = ROOT / "genes_database.json"
 
 # Errors that mean "the database is unreachable" (paused project, network
@@ -145,21 +148,6 @@ def main(argv: list[str] | None = None) -> None:
             # ({"dna":..., "rna":..., "protein":...}) and the old flat
             # string format transparently.
             seq, seq_type = extract_primary_sequence(record)
-
-            def _compute_kmer_set(sequence: str, k: int = 5) -> list:
-                if not sequence:
-                    return []
-                s = sequence.upper().replace(" ", "")
-                if len(s) < k:
-                    return []
-                # use a deterministic sorted list for stable DB storage
-                return sorted(set(s[i : i + k] for i in range(len(s) - k + 1)))
-
-            if "kmer_signature" not in record:
-                try:
-                    record["kmer_signature"] = _compute_kmer_set(seq, k=5)
-                except Exception:
-                    record["kmer_signature"] = []
 
             # Quality gate: reject before it ever reaches the table (too
             # short, too many ambiguous bases, invalid characters for the
