@@ -29,6 +29,7 @@ import sequence_loader as loader
 import config
 import pipeline
 import trait_research as tr
+from i18n import translate, language_selector, current_lang, translate_input_type
 
 SCRIPT_ROOT = Path(__file__).resolve().parent.parent  # project root (this file now lives in views/)
 sys.path.insert(0, str(SCRIPT_ROOT / "scripts"))
@@ -319,57 +320,52 @@ DEMO_SEQUENCES: dict[str, dict] = config.DEMO_SEQUENCES
 
 # ─── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## 🧬 AI Plant Gene Analyzer")
+    language_selector(key="app_language_selector")
+    st.markdown(f"## 🧬 {translate('ui.app_title')}")
     st.markdown("---")
 
-    st.markdown("### About")
+    st.markdown(f"### {translate('ui.about')}")
     st.markdown(
-        "Analyze plant DNA sequences for:\n"
-        "- GC content & nucleotide stats\n"
-        "- Gene database similarity\n"
-        "- Mutation detection\n"
-        "- AI biological interpretation\n"
-        "- Agricultural recommendations"
+        translate('ui.build_about') + "\n" + "\n".join(f"- {item}" for item in translate('ui.about_items', default=[]))
     )
     st.markdown("---")
 
-    st.markdown("### Settings")
+    st.markdown(f"### {translate('ui.settings')}")
     top_n_matches = st.slider(
-        "Top database matches to show",
+        translate('ui.top_matches'),
         min_value=1,
         max_value=8,
         value=3,
-        help="Number of best-matching genes to display",
+        help=translate('ui.top_matches_help', default="Number of best-matching genes to display."),
     )
     similarity_deep_search = st.checkbox(
-        "Enable deep similarity search",
+        translate('ui.deep_search'),
         value=False,
-        help=(
-            "Disable the alignment length prefilter and evaluate more candidates. "
-            "This is slower, but increases sensitivity for short or divergent queries."
-        ),
+        help=translate('ui.deep_search_help', default="Disable the alignment length prefilter and evaluate more candidates. This is slower, but increases sensitivity for short or divergent queries."),
     )
     window_size = st.slider(
-        "Sliding window (GC profile)",
+        translate('ui.window_size'),
         min_value=5,
         max_value=60,
         value=20,
         step=5,
-        help="Window size (bp) for the GC content profile chart",
+        help=translate('ui.window_size_help', default="Window size (bp) for the GC content profile chart."),
     )
     reading_frame = st.selectbox(
-        "Reading frame for translation",
+        translate('ui.reading_frame'),
         options=[0, 1, 2],
         format_func=lambda x: f"+{x + 1}",
     )
+    input_type_options = ["Auto detect", "DNA", "Protein"]
     sequence_input_type = st.selectbox(
-        "Input type",
-        options=config.SUPPORTED_INPUT_TYPES,
-        help="Choose the sequence type or let the app detect it automatically.",
+        translate('ui.input_type'),
+        options=input_type_options,
+        format_func=lambda value: translate_input_type(value, lang=current_lang()),
+        help=translate('ui.input_type_help', default="Choose the sequence type or let the app detect it automatically."),
     )
     st.markdown("---")
 
-    st.markdown("### Database")
+    st.markdown(f"### {translate('ui.database')}")
 
     db = None
     metadata = None
@@ -382,16 +378,13 @@ with st.sidebar:
             # interaction elsewhere on the page doesn't re-issue it.
             total_genes = get_gene_count_cached()
             metadata_available = total_genes > 0
-            st.success(f"✅ {total_genes} gene metadata records available")
-            st.markdown(
-                "The app loads lightweight gene metadata first for search and filtering. "
-                "Full sequence data is loaded only when an analysis is run."
-            )
+            st.success(f"✅ {total_genes} {translate('results.gene_records_available')}")
+            st.markdown(translate('ui.metadata_load_help'))
 
             gene_search = st.text_input(
-                "Search gene ID, symbol, or trait",
+                translate('ui.search_gene'),
                 value="",
-                help="Filter the loaded gene database by gene_id, symbol, or trait.",
+                help=translate('ui.metadata_filter_help'),
             )
             if gene_search:
                 query = gene_search.strip()
@@ -401,12 +394,12 @@ with st.sidebar:
                 # keystroke and filtering them in a list comprehension.
                 match_count = count_gene_metadata_matches_cached(query)
                 filtered = search_gene_metadata_cached(query, limit=20)
-                st.write(f"Showing {len(filtered)} of {match_count} matching gene metadata records")
+                st.write(translate('ui.metadata_count_summary', count=len(filtered), match_count=match_count))
             else:
                 filtered = search_gene_metadata_cached("", limit=20)
-                st.info("Showing a sample of 20 gene metadata records. Use search to filter specific genes.")
+                st.info(translate('ui.showing_sample'))
 
-            with st.expander("Preview gene metadata"):
+            with st.expander(translate('ui.preview_metadata')):
                 for gene in filtered:
                     symbol = gene.get("symbol", "Unknown")
                     gene_id = gene.get("gene_id", "n/a")
@@ -414,36 +407,34 @@ with st.sidebar:
                     description = gene.get("description", "No description")
                     st.markdown(f"- **{symbol}** (`{gene_id}`) — {trait} — {description}")
 
-            st.info("Full gene database with sequences will be loaded when you start an analysis.")
+            st.info(translate('ui.full_db_load'))
 
         except Exception as e:
             logger.warning(f"Lightweight gene metadata load failed: {e}")
-            st.warning("Could not load gene metadata preview. Falling back to full database load.")
+            st.warning(translate('ui.metadata_load_error'))
             db = load_gene_database_cached(str(config.DATABASE_PATH))
     else:
         db = load_gene_database_cached(str(config.DATABASE_PATH))
 
     if db is not None:
         if not db:
-            st.error(
-                "❌ No genes available: PostgreSQL could not be loaded and the tracked fallback database is missing."
-            )
+            st.error(f"❌ {translate('ui.no_genes_available')}")
         elif isinstance(db, dict) and db:
             fallback_note = " (local fallback; PostgreSQL unavailable)" if not metadata_available else ""
             st.success(f"✅ {len(db)} genes loaded{fallback_note}")
     elif metadata_available:
-        st.info("✅ Lightweight gene metadata available. Full database will load on analysis.")
+        st.info(translate('ui.metadata_load_help'))
     else:
-        st.error("❌ No genes available: configure the PostgreSQL connection or add the fallback database.")
+        st.error(f"❌ {translate('ui.no_genes_available')}")
 
 
 # ─── Main header ───────────────────────────────────────────────────────────────
 # ─── Main header ───────────────────────────────────────────────────────────────
 st.markdown(
-    """
+    f"""
     <div class="hero-panel">
-        <h1>🧬 Plant Gene Analyzer</h1>
-        <p class="hero-subtitle">Bioinformatics · AI Interpretation · Agricultural Insights</p>
+        <h1>🧬 {translate('ui.app_title')}</h1>
+        <p class="hero-subtitle">{translate('ui.hero_subtitle')}</p>
     </div>
     """,
     unsafe_allow_html=True,
@@ -455,26 +446,23 @@ st.markdown("---")
 col_input, col_demo = st.columns([2, 1])
 
 with col_input:
-    st.markdown("### Sequence Input")
+    st.markdown(f"### {translate('ui.sequence_input')}")
 
     if sequence_input_type != "DNA":
         st.markdown(
-            f"This app will accept **{sequence_input_type}** input and adjust analysis accordingly."
+            translate('ui.input_accepts', type=translate_input_type(sequence_input_type, lang=current_lang()))
         )
 
     uploaded_file = st.file_uploader(
-        "Upload a sequence file (.fasta / .fa / .txt)",
+        translate('ui.upload_file'),
         type=["fasta", "fa", "txt"],
-        help="FASTA files starting with '>' header lines are supported.",
+        help=translate('ui.file_support_help'),
     )
 
     raw_sequence = st.text_area(
-        "Or paste your sequence here:",
+        translate('ui.paste_sequence'),
         height=140,
-        placeholder=(
-            "Paste raw DNA, protein sequence, or FASTA format here.\n"
-            "Example: ATGCGTAGCTAGCGATCGATCGAATTCG..."
-        ),
+        placeholder=translate('ui.sequence_placeholder'),
     )
 
     records: list[dict[str, str]] = []
@@ -504,7 +492,7 @@ with col_input:
                     content = None
         if content is not None:
             records = loader.parse_fasta(content)
-            st.info(f"File loaded: {uploaded_file.name}")
+            st.info(f"{translate('ui.file_loaded')} {uploaded_file.name}")
     elif raw_sequence:
         records = loader.parse_fasta(raw_sequence)
     
@@ -515,34 +503,34 @@ with col_input:
                 for idx, r in enumerate(records)
             ]
             selected_index = st.selectbox(
-                "Choose a sequence to analyze",
+                translate('ui.select_sequence'),
                 options=list(range(len(records))),
                 format_func=lambda i: record_options[i],
             )
             analyze_all = st.checkbox(
-                "Analyze all sequences in this FASTA input",
+                translate('ui.analyze_all'),
                 value=False,
                 help="If checked, all parsed FASTA records will be analyzed in batch.",
             )
             if analyze_all:
-                st.success(f"{len(records)} sequences will be analyzed as a batch.")
+                st.success(translate('ui.batch_summary_text', count=len(records)))
             else:
                 raw_sequence = records[selected_index]["sequence"]
-                st.info(f"Selected: {record_options[selected_index]}")
+                st.info(f"{translate('ui.selected_sequence')} {record_options[selected_index]}")
         elif len(records) == 1:
             raw_sequence = records[0]["sequence"]
     
 with col_demo:
-    st.markdown("### Quick Demo")
+    st.markdown(f"### {translate('ui.quick_demo')}")
     selected_demo = st.selectbox(
-        "Load a demo sequence",
+        translate('ui.choose_demo'),
         options=list(DEMO_SEQUENCES.keys()),
         label_visibility="collapsed",
     )
     if selected_demo != "Select a demo…":
         demo = DEMO_SEQUENCES[selected_demo]
         st.markdown(f"*{demo['desc']}*")
-        if st.button("Load Demo Sequence"):
+        if st.button(translate('ui.load_demo_sequence')):
             raw_sequence = demo["seq"]
             st.session_state["loaded_demo"] = demo["seq"]
 
@@ -552,8 +540,8 @@ with col_demo:
 if raw_sequence and sequence_input_type != "Protein":
     preview_dna = bio.clean_sequence(raw_sequence, sequence_type="dna")
     if preview_dna:
-        with st.expander("Reading-frame preview"):
-            st.caption("Six-frame summary to guide the reading-frame choice before analysis.")
+        with st.expander(translate('ui.reading_frame_preview')):
+            st.caption(translate('ui.reading_frame_caption'))
             st.dataframe(
                 pd.DataFrame(bio.all_frames_summary(preview_dna))
                 .drop(columns=["frame"])
@@ -568,22 +556,18 @@ if raw_sequence and sequence_input_type != "Protein":
                 width="stretch",
             )
 
-analyze_btn = st.button("🔬 Analyze Sequence", type="primary")
+analyze_btn = st.button(f"🔬 {translate('ui.analyze_button')}", type="primary")
 
 st.markdown("---")
 
-st.info(
-    "🧪 Looking for alignments, distance matrices, phylogeny, or standalone "
-    "protein analysis? They now live on their own page — see **Independent "
-    "Tools** in the sidebar navigation, always available."
-)
+st.info(translate('ui.independent_tools_notice'))
 
 
 # ─── Analysis pipeline ─────────────────────────────────────────────────────────
 if analyze_btn or (raw_sequence and "last_result" in st.session_state):
 
     if analyze_btn and not raw_sequence and not records:
-        st.warning("⚠️ Please enter or paste a DNA sequence before analyzing.")
+        st.warning(f"⚠️ {translate('errors.no_sequence')}")
         st.stop()
 
     if analyze_btn and (raw_sequence or records):
@@ -1539,20 +1523,17 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
 else:
     # ── Welcome screen ──────────────────────────────────────────────────────────
     st.markdown(
-        """
+        f"""
         <div class="welcome-panel">
             <p class="welcome-icon">🧬</p>
-            <h3 class="welcome-title">Ready to Analyze</h3>
-            <p class="welcome-text">
-                Paste a plant DNA sequence above or load a demo,<br>
-                then click <b>Analyze Sequence</b>.
-            </p>
+            <h3 class="welcome-title">{translate('ui.welcome_title')}</h3>
+            <p class="welcome-text">{translate('ui.welcome_message')}</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    with st.expander("What does this app analyze?"):
+    with st.expander(translate('ui.what_does_app_analyze')):
         st.markdown(
             """
             | Feature | Description |
@@ -1570,7 +1551,7 @@ else:
             """
         )
 
-    with st.expander("Supported input formats"):
+    with st.expander(translate('ui.supported_input_formats')):
         st.markdown(
             """
             - **Raw DNA**: paste directly (e.g., `ATGCGTAGCTAG...`)

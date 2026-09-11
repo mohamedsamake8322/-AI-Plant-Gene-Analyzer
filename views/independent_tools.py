@@ -14,6 +14,7 @@ import bioinformatics as bio
 import visualization as viz
 import trait_research as tr
 import config
+from i18n import translate, language_selector
 
 
 # ─── Load custom CSS (same stylesheet as the main page) ────────────────────────
@@ -29,18 +30,16 @@ def load_css(css_file: str = "style.css") -> None:
 load_css()
 
 with st.sidebar:
-    st.markdown("## 🧬 AI Plant Gene Analyzer")
+    language_selector(key="independent_lang_selector")
+    st.markdown(f"## 🧬 {translate('ui.app_title')}")
     st.markdown("---")
-    st.markdown(
-        "Standalone tools that work on any sequences you paste here — "
-        "no need to run the main analysis first."
-    )
+    st.markdown(translate('ui.standalone_tools_message'))
 
 st.markdown(
-    """
+    f"""
     <div class="hero-panel">
-        <h1>🧪 Independent Analysis Tools</h1>
-        <p class="hero-subtitle">Alignments · Distance Matrix · Phylogeny · Protein Analysis</p>
+        <h1>🧪 {translate('ui.independent_tools_title')}</h1>
+        <p class="hero-subtitle">{translate('ui.independent_tools_subtitle')}</p>
     </div>
     """,
     unsafe_allow_html=True,
@@ -48,18 +47,24 @@ st.markdown(
 st.markdown("---")
 
 
-tool_tabs = st.tabs(["Alignments", "Distance Matrix", "Phylogeny", "Protein Analysis", "Trait Search"])
+tool_tabs = st.tabs([
+    translate('ui.tab_alignments'),
+    translate('ui.tab_distance_matrix'),
+    translate('ui.tab_phylogeny'),
+    translate('ui.tab_protein_analysis'),
+    translate('ui.tab_trait_search'),
+])
 
 with tool_tabs[0]:
-    st.markdown("#### Multiple and pairwise alignment")
-    msa_input = st.text_area("Paste multiple FASTA sequences or one per line:", height=160, key="independent_msa_input")
-    if st.button("Run MSA", key="independent_msa_run") and msa_input:
+    st.markdown(f"#### {translate('ui.tab_alignments')}")
+    msa_input = st.text_area(translate('ui.msa_input_hint', default="Paste multiple FASTA sequences or one per line:"), height=160, key="independent_msa_input")
+    if st.button(translate('ui.run_msa', default="Run MSA"), key="independent_msa_run") and msa_input:
         from core_engines.alignment_engine import star_alignment
         from sequence_loader import parse_fasta
         records = parse_fasta(msa_input)
         sequences = [record["sequence"] for record in records]
         if len(sequences) < 2:
-            st.warning("Provide at least 2 sequences for MSA.")
+            st.warning(translate('ui.pairwise_missing', default="Provide at least 2 sequences for MSA."))
         else:
             result = star_alignment(sequences, seq_type="dna")
             st.success(f"MSA complete — {result.get('num_sequences')} sequences")
@@ -68,12 +73,12 @@ with tool_tabs[0]:
 
     pairwise_left, pairwise_right = st.columns(2)
     with pairwise_left:
-        pairwise_seq1 = st.text_area("Sequence 1", height=80, key="independent_pw1")
+        pairwise_seq1 = st.text_area(translate('ui.sequence_1', default="Sequence 1"), height=80, key="independent_pw1")
     with pairwise_right:
-        pairwise_seq2 = st.text_area("Sequence 2", height=80, key="independent_pw2")
-    if st.button("Align pairwise", key="independent_pw_align"):
+        pairwise_seq2 = st.text_area(translate('ui.sequence_2', default="Sequence 2"), height=80, key="independent_pw2")
+    if st.button(translate('ui.align_pairwise', default="Align pairwise"), key="independent_pw_align"):
         if not pairwise_seq1 or not pairwise_seq2:
-            st.warning("Provide two sequences for pairwise alignment.")
+            st.warning(translate('ui.pairwise_missing', default="Provide two sequences for pairwise alignment."))
         else:
             from core_engines.alignment_engine import needleman_wunsch, smith_waterman
             global_result = needleman_wunsch(pairwise_seq1.strip(), pairwise_seq2.strip())
@@ -85,17 +90,17 @@ with tool_tabs[0]:
             st.code(local_result["seq1_aligned"] + "\n" + local_result["seq2_aligned"])
 
 with tool_tabs[1]:
-    st.markdown("#### Compute Pairwise Distance Matrix")
-    distance_input = st.text_area("Paste FASTA or one sequence per line:", height=160, key="independent_distance_input")
-    distance_method = st.selectbox("Method", ["hamming", "jukes_cantor", "kimura", "pam"], index=2, key="independent_distance_method")
-    if st.button("Compute Distance Matrix", key="independent_dm_compute"):
+    st.markdown(f"#### {translate('ui.distance_matrix_title', default='Compute Pairwise Distance Matrix')}")
+    distance_input = st.text_area(translate('ui.distance_input_hint', default="Paste FASTA or one sequence per line:"), height=160, key="independent_distance_input")
+    distance_method = st.selectbox(translate('ui.method', default="Method"), ["hamming", "jukes_cantor", "kimura", "pam"], index=2, key="independent_distance_method")
+    if st.button(translate('ui.compute_distance_matrix', default="Compute Distance Matrix"), key="independent_dm_compute"):
         from sequence_loader import parse_fasta
         from core_engines.distance_engine import distance_matrix
         import pandas as pd
         records = parse_fasta(distance_input)
         sequences = [{"name": record.get("header", f"Seq{i + 1}"), "sequence": record["sequence"]} for i, record in enumerate(records)]
         if len(sequences) < 2:
-            st.warning("Provide at least 2 sequences to build distance matrix.")
+            st.warning(translate('ui.pairwise_missing', default="Provide at least 2 sequences to build distance matrix."))
         else:
             result = distance_matrix(sequences, method=distance_method)
             names = result["sequence_names"]
@@ -104,10 +109,10 @@ with tool_tabs[1]:
             st.download_button("Download CSV", frame.to_csv().encode("utf-8"), file_name="distance_matrix.csv", key="independent_dm_download")
 
 with tool_tabs[2]:
-    st.markdown("#### Build Phylogenetic Tree")
-    phylogeny_input = st.text_area("Paste sequences for phylogeny (FASTA or lines):", height=160, key="independent_phylogeny_input")
-    phylogeny_method = st.selectbox("Tree algorithm", ["upgma", "neighbor_joining"], key="independent_phylogeny_method")
-    if st.button("Build Tree", key="independent_build_tree"):
+    st.markdown(f"#### {translate('ui.phylogeny_title', default='Build Phylogenetic Tree')}")
+    phylogeny_input = st.text_area(translate('ui.phylogeny_input_hint', default="Paste sequences for phylogeny (FASTA or lines):"), height=160, key="independent_phylogeny_input")
+    phylogeny_method = st.selectbox(translate('ui.tree_algorithm', default="Tree algorithm"), ["upgma", "neighbor_joining"], key="independent_phylogeny_method")
+    if st.button(translate('ui.build_tree', default="Build Tree"), key="independent_build_tree"):
         from sequence_loader import parse_fasta
         from core_engines.distance_engine import distance_matrix
         from core_engines.phylogeny_engine import upgma, neighbor_joining
@@ -115,7 +120,7 @@ with tool_tabs[2]:
         records = parse_fasta(phylogeny_input)
         sequences = [{"name": record.get("header", f"Seq{i + 1}"), "sequence": record["sequence"]} for i, record in enumerate(records)]
         if len(sequences) < 2:
-            st.warning("Provide at least 2 sequences for a simple tree.")
+            st.warning(translate('ui.pairwise_missing', default="Provide at least 2 sequences for a simple tree."))
         else:
             distances = distance_matrix(sequences, method="kimura")
             builder = upgma if phylogeny_method == "upgma" else neighbor_joining
@@ -126,9 +131,9 @@ with tool_tabs[2]:
                 st.download_button("Download Newick", tree["newick"], file_name="phylogeny_tree.nwk", mime="text/plain", key="independent_newick_download")
 
 with tool_tabs[3]:
-    st.markdown("#### Protein biochemical analysis")
-    protein_input = st.text_area("Paste protein sequence:", height=120, key="independent_protein_input")
-    if st.button("Analyze protein", key="independent_protein_analyze"):
+    st.markdown(f"#### {translate('ui.protein_biochemical_analysis', default='Protein biochemical analysis')}")
+    protein_input = st.text_area(translate('ui.paste_protein_sequence', default="Paste protein sequence:"), height=120, key="independent_protein_input")
+    if st.button(translate('ui.analyze_protein', default="Analyze protein"), key="independent_protein_analyze"):
         cleaned = bio.clean_sequence(protein_input.strip(), sequence_type="protein")
         valid, message = bio.validate_sequence(cleaned, sequence_type="protein")
         if not valid:
