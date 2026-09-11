@@ -76,6 +76,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--dbpath", default=str(DEFAULT_DB), help="Path to local genes_database.json")
     parser.add_argument("--batch-size", type=int, default=50, help="Number of records to process before pause (default: 50)")
     parser.add_argument("--batch-pause", type=int, default=2, help="Seconds to pause between batches (default: 2)")
+    parser.add_argument("--limit", type=int, default=0, help="Maximum records to process (0 = all)")
+    parser.add_argument("--offset", type=int, default=0, help="Number of source records to skip before processing")
     parser.add_argument(
         "--skip-existing", action="store_true",
         help="Skip records whose gene_id/symbol already exists in the database entirely "
@@ -100,6 +102,13 @@ def main(argv: list[str] | None = None) -> None:
         raise FileNotFoundError(f"Input file not found: {path}")
 
     records = load_json_records(path)
+    if args.offset < 0:
+        parser.error("--offset must be non-negative")
+    if args.limit < 0:
+        parser.error("--limit must be non-negative")
+    records = records[args.offset :]
+    if args.limit > 0:
+        records = records[:args.limit]
     print(f"Loading {len(records)} gene record(s) from {path}")
     print(f"Batch size: {args.batch_size}, pause between batches: {args.batch_pause}s\n")
 

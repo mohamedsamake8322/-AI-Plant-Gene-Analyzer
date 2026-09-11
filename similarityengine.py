@@ -632,7 +632,7 @@ def find_similar_genes(
     pool_size = _budgeted_candidate_pool_size(len(query), requested_pool_size)
 
     try:
-        query_hashes = pg._kmer_hashes(query, pg.KMER_K, query_type)
+        query_hashes = pg._kmer_signature(query, pg.KMER_K, query_type)
         query_len = len(query)
         min_len = max(1, int(query_len / max_length_ratio)) if query_len else None
         max_len = int(query_len * max_length_ratio) if query_len else None
@@ -734,7 +734,7 @@ def find_similar_genes_deep(
         if logger:
             logger.info("Deep Search: scanning indexed k-mer signatures across all genes...")
 
-        query_hashes = pg._kmer_hashes(query, pg.KMER_K, query_type)
+        query_hashes = pg._kmer_signature(query, pg.KMER_K, query_type)
         ranked = pg.find_kmer_candidates(query_hashes, min_shared=1, limit=alignment_limit)
         
         if not ranked:

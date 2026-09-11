@@ -16,13 +16,14 @@ def validate_sequence_quality(
     sequence_type: str | None = "dna",
     min_length: int = MIN_SEQUENCE_LENGTH,
     max_n_ratio: float = MAX_N_RATIO,
+    protein_exempt: bool = True,
 ) -> tuple[bool, str]:
     """Apply the same quality gate used before PostgreSQL ingestion."""
     if not sequence:
         return False, "empty"
     seq = sequence.upper().strip()
     seq_type = (sequence_type or "dna").lower()
-    if seq_type == "protein":
+    if seq_type == "protein" and protein_exempt:
         return True, "not_applicable_protein"
     if len(seq) < min_length:
         return False, f"too_short(<{min_length})"

@@ -34,6 +34,7 @@ load_dotenv(ROOT / ".env")
 # a real homolog still shares plenty. Protein sequences use the same k
 # over a 20-letter alphabet, which is far more specific per position.
 KMER_K = 12
+KMER_SIGNATURE_SIZE = 128
 _DNA_CODE = {"A": 0, "C": 1, "G": 2, "T": 3}
 _PROTEIN_CODE = {c: i for i, c in enumerate("ACDEFGHIKLMNPQRSTVWY")}
 
@@ -41,8 +42,8 @@ _PROTEIN_CODE = {c: i for i, c in enumerate("ACDEFGHIKLMNPQRSTVWY")}
 def _kmer_hashes(sequence: str, k: int = KMER_K, seq_type: str = "dna") -> set[int]:
     """Deterministic integer encoding of every k-mer in `sequence`.
 
-    Each k-mer is encoded as a base-B number (B=4 for DNA's ACGT, B=20 for
-    the standard amino acids), so the same k-mer always hashes to the same
+    Each k-mer is encoded with a deterministic 63-bit digest, so the same
+    k-mer always hashes to the same
     integer across processes and machines. This matters because the index
     is built once (populate_kmer_index) and looked up later from a
     different process (the Streamlit app, possibly a different worker) —
@@ -72,8 +73,28 @@ def _kmer_hashes(sequence: str, k: int = KMER_K, seq_type: str = "dna") -> set[i
                 break
             value = value * base + c
         if valid:
-            hashes.add(value)
+            hashes.add(
+                int.from_bytes(
+                    hashlib.blake2b(
+                        f"{seq_type}:{value}".encode("ascii"), digest_size=8
+                    ).digest(),
+                    "big",
+                )
+                & ((1 << 63) - 1)
+            )
     return hashes
+
+
+def _kmer_signature(
+    sequence: str,
+    k: int = KMER_K,
+    seq_type: str = "dna",
+    size: int = KMER_SIGNATURE_SIZE,
+) -> list[int]:
+    """Return a bounded deterministic representative k-mer signature."""
+    if size < 1:
+        return []
+    return sorted(_kmer_hashes(sequence, k, seq_type))[:size]
 
 
 def _load_streamlit_secret(name: str) -> str | None:
@@ -595,7 +616,7 @@ def _record_to_params(record: dict) -> dict:
         "date_added": record.get("date_added"),
         "sequence_hash": record.get("sequence_hash") or sequence_hash(sequence),
         "kmer_hashes": (
-            sorted(_kmer_hashes(sequence, KMER_K, sequence_type or "dna"))
+            _kmer_signature(sequence, KMER_K, sequence_type or "dna")
             if sequence else None
         ),
     }
@@ -611,7 +632,15 @@ def is_valid_sequence(
     Returns (is_valid, reason) — reason is empty when valid, so callers can
     log/count why a record was skipped.
     """
-    return validate_sequence_quality(sequence, sequence_type, min_length, max_n_ratio)
+    # Ingestion preserves the historical database gate: protein records are
+    # checked for the same minimum length and N ratio as other sequences.
+    return validate_sequence_quality(
+        sequence,
+        sequence_type,
+        min_length,
+        max_n_ratio,
+        protein_exempt=False,
+    )
 
 
 def backfill_sequence_hashes() -> int:
