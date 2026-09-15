@@ -120,6 +120,36 @@ def load_video_background(video_path: str = "assets/images.mp4", max_mb: float =
 # reusable independently of the Streamlit UI.
 
 
+def _render_variant_table(items: list[dict], limit: int = 50) -> None:
+    """Styled replacement for the old raw-markdown pipe table used for
+    substitutions and indels. Same st.dataframe + column_config approach
+    as the Similarity top-3 table, kept as a shared helper so both tables
+    can't drift out of sync in appearance if one is tweaked later.
+    """
+    rows = [
+        {
+            "Ref pos": m["position_reference"],
+            "Query pos": m["position_query"],
+            "Reference": m["reference"],
+            "Query": m["query"],
+            "Type": m["type"].capitalize(),
+        }
+        for m in items[:limit]
+    ]
+    st.dataframe(
+        pd.DataFrame(rows),
+        hide_index=True,
+        width='stretch',
+        column_config={
+            "Ref pos": st.column_config.NumberColumn("Ref pos", width="small"),
+            "Query pos": st.column_config.NumberColumn("Query pos", width="small"),
+            "Reference": st.column_config.TextColumn("Reference", width="small"),
+            "Query": st.column_config.TextColumn("Query", width="small"),
+            "Type": st.column_config.TextColumn("Type", width="medium"),
+        },
+    )
+
+
 @st.cache_data(show_spinner=False)
 def _cached_analyze(
     record_json: str,
@@ -1378,26 +1408,14 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             indels = mutation_report.get("indels", [])
             if mutations:
                 st.markdown(f"#### {translate('ui.substitutions')}")
-                st.markdown(
-                    "| Ref pos | Query pos | Reference | Query | Type |\n"
-                    "|---|---|---|---|---|\n" +
-                    "\n".join(
-                        f"| {m['position_reference']} | {m['position_query']} | `{m['reference']}` | `{m['query']}` | {m['type'].capitalize()} |"
-                        for m in mutations[:50]
-                    )
-                )
+                _render_variant_table(mutations)
                 if len(mutations) > 50:
                     st.info(f"Showing first 50 of {len(mutations)} substitutions.")
             if indels:
                 st.markdown(f"#### {translate('ui.indels')}")
-                st.markdown(
-                    "| Ref pos | Query pos | Reference | Query | Type |\n"
-                    "|---|---|---|---|---|\n" +
-                    "\n".join(
-                        f"| {m['position_reference']} | {m['position_query']} | `{m['reference']}` | `{m['query']}` | {m['type'].capitalize()} |"
-                        for m in indels[:50]
-                    )
-                )
+                _render_variant_table(indels)
+                if len(indels) > 50:
+                    st.info(f"Showing first 50 of {len(indels)} indels.")
             if not mutations and not indels:
                 st.success("No differences after global alignment — sequences are identical.")
 
