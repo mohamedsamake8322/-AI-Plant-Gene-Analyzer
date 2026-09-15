@@ -382,7 +382,6 @@ DEMO_SEQUENCES: dict[str, dict] = config.DEMO_SEQUENCES
 
 # ─── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
-    language_selector(key="app_language_selector")
     st.markdown(f"## 🧬 {translate('ui.app_title')}")
     st.markdown("---")
 
@@ -517,7 +516,12 @@ with st.sidebar:
         st.error(f"❌ {translate('ui.no_genes_available')}")
 
 
-# ─── Main header ───────────────────────────────────────────────────────────────
+# ─── Top language control ─────────────────────────────────────────────────────
+top_spacer, top_language = st.columns([5, 1])
+with top_language:
+    language_selector(key="top_language_selector")
+
+
 # ─── Main header ───────────────────────────────────────────────────────────────
 st.markdown(
     f"""

@@ -1,6 +1,6 @@
 import streamlit as st
 
-DEFAULT_LANG = "fr"
+DEFAULT_LANG = "en"
 SUPPORTED_LANGS = ["fr", "en", "tr"]
 
 TRANSLATIONS = {

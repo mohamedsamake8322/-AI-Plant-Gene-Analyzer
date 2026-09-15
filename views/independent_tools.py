@@ -30,10 +30,15 @@ def load_css(css_file: str = "style.css") -> None:
 load_css()
 
 with st.sidebar:
-    language_selector(key="independent_lang_selector")
     st.markdown(f"## 🧬 {translate('ui.app_title')}")
     st.markdown("---")
     st.markdown(translate('ui.standalone_tools_message'))
+
+# Keep the language control beside the Streamlit header actions, rather than
+# making it part of the sidebar's scrollable content.
+top_spacer, top_language = st.columns([5, 1])
+with top_language:
+    language_selector(key="top_language_selector")
 
 st.markdown(
     f"""

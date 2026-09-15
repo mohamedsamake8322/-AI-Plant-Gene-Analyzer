@@ -205,9 +205,6 @@ h2, h3, h4, h5, h6 {
 }
 
 [data-testid="metric-container"]:hover {
-    border-color: rgba(122, 139, 92, 0.5);
-    background: rgba(27, 31, 20, 0.85);
-}
 
 [data-testid="stMetricValue"] {
     color: #B8873B !important;
@@ -312,6 +309,11 @@ textarea::placeholder {
 [data-testid="stSidebar"] span {
     font-size: 1rem !important;
     line-height: 1.4 !important;
+}
+
+/* The language selector lives in the top-right app content area. */
+[data-testid="stHorizontalBlock"]:has([data-testid="stSelectbox"]) {
+    justify-content: flex-end;
 }
 
 /* Keep the sidebar from becoming a second competing reading surface. */
