@@ -59,6 +59,37 @@ TRANSLATIONS = {
             "batch_complete": "L’analyse par lot est terminée",
             "batch_summary": "Résumé du lot",
             "select_sequence_inspect": "Sélectionner une séquence à inspecter dans ce lot :",
+            "analysis_results": "Résultats de l’analyse",
+            "statistics": "Statistiques",
+            "similarity": "Similarité",
+            "mutations_tab": "Mutations",
+            "translation_tab": "Traduction",
+            "ai_interpretation": "Interprétation IA",
+            "raw_sequence": "Séquence brute",
+            "top_matches_summary": "Résumé des meilleurs résultats",
+            "alignment_map": "Carte d’alignement",
+            "alignment_metrics": "Métriques d’alignement",
+            "gene_context": "Contexte génétique",
+            "substitutions": "Substitutions",
+            "indels": "Insertions/délétions",
+            "compared_positions": "Positions comparées (sans gaps)",
+            "sequence_overview": "Aperçu de la séquence",
+            "export_results": "Exporter les résultats",
+            "download_json": "Télécharger le JSON",
+            "download_csv": "Télécharger le CSV",
+            "download_html": "Télécharger le HTML",
+            "download_xlsx": "Télécharger le XLSX",
+            "download_fasta": "Télécharger le FASTA",
+            "download_gff3": "Télécharger le GFF3",
+            "copy_methods_paragraph": "Copier le paragraphe de méthodes",
+            "protein_analysis_title": "Analyse des protéines",
+            "mutation_analysis": "Analyse des mutations",
+            "database_similarity_search": "Recherche de similarité dans la base",
+            "ai_biological_interpretation": "Interprétation biologique par IA",
+            "cleaned_sequence": "Séquence nettoyée",
+            "download_report": "Télécharger le rapport",
+            "run_annotation": "Lancer l’annotation",
+            "annotation_complete": "Annotation terminée",
             "independent_tools_title": "Outils d’analyse indépendante",
             "independent_tools_subtitle": "Alignements · Matrice de distance · Phylogénie · Analyse protéique",
             "tab_alignments": "Alignements",
@@ -193,6 +224,37 @@ TRANSLATIONS = {
             "batch_complete": "Batch analysis complete",
             "batch_summary": "Batch summary",
             "select_sequence_inspect": "Select a sequence to inspect in this batch:",
+            "analysis_results": "Analysis results",
+            "statistics": "Statistics",
+            "similarity": "Similarity",
+            "mutations_tab": "Mutations",
+            "translation_tab": "Translation",
+            "ai_interpretation": "AI Interpretation",
+            "raw_sequence": "Raw Sequence",
+            "top_matches_summary": "Top Matches Summary",
+            "alignment_map": "Alignment Map",
+            "alignment_metrics": "Alignment Metrics",
+            "gene_context": "Gene Context",
+            "substitutions": "Substitutions",
+            "indels": "Indels",
+            "compared_positions": "Compared positions (no gaps)",
+            "sequence_overview": "Sequence Overview",
+            "export_results": "Export Results",
+            "download_json": "Download JSON",
+            "download_csv": "Download CSV",
+            "download_html": "Download HTML",
+            "download_xlsx": "Download XLSX",
+            "download_fasta": "Download FASTA",
+            "download_gff3": "Download GFF3",
+            "copy_methods_paragraph": "Copy methods paragraph",
+            "protein_analysis_title": "Protein Analysis",
+            "mutation_analysis": "Mutation Analysis",
+            "database_similarity_search": "Database Similarity Search",
+            "ai_biological_interpretation": "AI Biological Interpretation",
+            "cleaned_sequence": "Cleaned Sequence",
+            "download_report": "Download Analysis Report",
+            "run_annotation": "Run annotation",
+            "annotation_complete": "Annotation complete",
             "independent_tools_title": "Independent Analysis Tools",
             "independent_tools_subtitle": "Alignments · Distance Matrix · Phylogeny · Protein Analysis",
             "tab_alignments": "Alignments",
@@ -327,6 +389,37 @@ TRANSLATIONS = {
             "batch_complete": "Toplu analiz tamamlandı",
             "batch_summary": "Toplu özet",
             "select_sequence_inspect": "Bu topluluktaki bir diziyi incelemek için seçin:",
+            "analysis_results": "Analiz sonuçları",
+            "statistics": "İstatistikler",
+            "similarity": "Benzerlik",
+            "mutations_tab": "Mutasyonlar",
+            "translation_tab": "Çeviri",
+            "ai_interpretation": "Yapay Zeka Yorumu",
+            "raw_sequence": "Ham dizi",
+            "top_matches_summary": "En iyi eşleşmeler özeti",
+            "alignment_map": "Hizalama haritası",
+            "alignment_metrics": "Hizalama ölçümleri",
+            "gene_context": "Gen bağlamı",
+            "substitutions": "Nükleotit değişimleri",
+            "indels": "Indel'ler",
+            "compared_positions": "Karşılaştırılan konumlar (boşluklar hariç)",
+            "sequence_overview": "Dizi Özeti",
+            "export_results": "Sonuçları Dışa Aktar",
+            "download_json": "JSON İndir",
+            "download_csv": "CSV İndir",
+            "download_html": "HTML İndir",
+            "download_xlsx": "XLSX İndir",
+            "download_fasta": "FASTA İndir",
+            "download_gff3": "GFF3 İndir",
+            "copy_methods_paragraph": "Yöntem paragrafını kopyala",
+            "protein_analysis_title": "Protein Analizi",
+            "mutation_analysis": "Mutasyon Analizi",
+            "database_similarity_search": "Veritabanı Benzerlik Araması",
+            "ai_biological_interpretation": "Yapay Zeka Biyolojik Yorumlama",
+            "cleaned_sequence": "Temizlenmiş Dizi",
+            "download_report": "Analiz Raporunu İndir",
+            "run_annotation": "Annotasyonu çalıştır",
+            "annotation_complete": "Annotasyon tamamlandı",
             "independent_tools_title": "Bağımsız Analiz Araçları",
             "independent_tools_subtitle": "Hizalamalar · Uzaklık Matrisi · Filogenetik · Protein Analizi",
             "tab_alignments": "Hizalamalar",
@@ -449,13 +542,22 @@ def translate(key, lang=None, default=None, **kwargs):
             break
 
     if value is None:
-        value = default or key
+        value = default if default is not None else key
+
+    if isinstance(value, list):
+        return [item.format(**kwargs) if isinstance(item, str) else item for item in value]
+
+    if isinstance(value, tuple):
+        return tuple(item.format(**kwargs) if isinstance(item, str) else item for item in value)
 
     if isinstance(value, str):
         try:
             return value.format(**kwargs) if kwargs else value
         except Exception:
             return value
+
+    if isinstance(value, dict):
+        return {k: v.format(**kwargs) if isinstance(v, str) else v for k, v in value.items()}
 
     return str(value)
 

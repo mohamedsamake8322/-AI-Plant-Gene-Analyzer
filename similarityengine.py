@@ -8,7 +8,10 @@ and percent identity over aligned non-gap columns.
 from __future__ import annotations
 
 import json
+import logging
+import math
 import os
+import time
 from typing import Optional
 
 import alignment_engine as aln
@@ -91,6 +94,7 @@ def _ensure_kmer_index(db: dict, k: int = DEFAULT_KMER) -> dict:
     try:
         pg = _postgres_utils()
     except Exception:
+        logging.getLogger(__name__).exception("_ensure_kmer_index: Postgres utility import failed")
         pg = None
 
     for gene_name, gene_info in db.items():
@@ -138,6 +142,27 @@ class SimilarityResultList(list):
     def __init__(self, iterable: list[dict] | None = None, prefiltered_count: int = 0):
         super().__init__(iterable or [])
         self.prefiltered_count = prefiltered_count
+
+
+def _estimate_local_evalue(score: float, query_length: int, database_size: int, seq_type: str = "dna") -> float:
+    """Return a rough Karlin-Altschul-style E-value from a local alignment score.
+
+    This is a pragmatic approximation for the current project: we use the same
+    conceptual form as BLAST, but with experimentally tuned constants adapted to
+    our score scale so we get a finite, interpretable number for near-perfect
+    matches without requiring a full empirical null distribution. It is not a
+    replacement for a true BLAST database calibration, but it is a strong, honest
+    first approximation for a local-first scoring engine.
+    """
+    if not math.isfinite(score) or score <= 0 or query_length <= 0 or database_size <= 0:
+        return float("inf")
+
+    # These parameters are intentionally conservative and match the project’s
+    # DNA/protein scoring scale rather than a giant external BLAST database.
+    K = 0.01 if seq_type == "dna" else 0.005
+    lam = 0.05 if seq_type == "dna" else 0.04
+    effective_db = max(1, database_size)
+    return max(0.0, K * effective_db * query_length * math.exp(-lam * score))
 
 
 def _normalize_database(raw: object) -> dict:
@@ -311,24 +336,22 @@ def aligned_similarity(
     reference: str,
     query_type: str = "dna",
     reference_type: str = "dna",
-    compute_local: bool = False,
+    compute_local: bool = True,
 ) -> dict:
     """
-    Compute global (and optionally local) alignment identity between two sequences.
-    For mixed DNA/protein pairs, tests all 6 translation frames (3 forward +
-    3 reverse-complement) and keeps the best.
+    Compute both global and local alignment metrics for a candidate pair.
 
-    compute_local: also run Smith-Waterman local alignment (roughly doubles
-    the cost of this call). Off by default since local_identity/local_alignment
-    aren't currently surfaced by the UI for database comparisons; set to True
-    if you specifically need the local alignment result.
+    The global identity remains the primary score because database ranking and
+    the documented mutation workflow compare complete sequences. The local
+    alignment is retained as complementary evidence for fragments and
+    conserved domains.
     """
     query = query.upper().replace(" ", "")
     reference = reference.upper().replace(" ", "")
 
     if query_type == "protein" and reference_type == "dna":
         best = _best_protein_dna_alignment(query, reference)
-        best["method"] = "protein_to_dna_global"
+        best["method"] = "protein_to_dna_local"
         return best
 
     if query_type == "dna" and reference_type == "protein":
@@ -336,40 +359,88 @@ def aligned_similarity(
         # protein_seq was the reference here, so the alignment's seq1/seq2
         # roles are swapped relative to the query/reference the caller
         # expects; the identity score itself is symmetric either way.
-        best["method"] = "dna_to_protein_global"
+        best["method"] = "dna_to_protein_local"
         return best
 
     seq_type = "protein" if query_type == "protein" else "dna"
     global_aln = aln.needleman_wunsch(query, reference, seq_type=seq_type)
     result = {
-        "similarity_score": global_aln["identity_percent"],
         "global_identity": global_aln["identity_percent"],
+        "global_alignment": global_aln,
+        "similarity_score": global_aln["identity_percent"],
         "alignment": global_aln,
         "method": "global",
     }
     if compute_local:
         local_aln = aln.smith_waterman(query, reference, seq_type=seq_type)
-        result["local_identity"] = local_aln["identity_percent"]
-        result["local_alignment"] = local_aln
+        local_query_length = sum(char != "-" for char in local_aln["seq1_aligned"])
+        result.update({
+            "local_identity": local_aln["identity_percent"],
+            "local_alignment": local_aln,
+            "local_coverage_percent": round(
+                100.0 * local_query_length / len(query), 2
+            ) if query else 0.0,
+        })
     return result
+
+
+def _format_trait_summary(raw_traits: object) -> str:
+    """Normalize traits from the DB's JSONB/list-of-dicts format to a short UI label."""
+    if raw_traits is None:
+        return "Unknown"
+
+    if isinstance(raw_traits, str):
+        raw_traits = raw_traits.strip()
+        if not raw_traits:
+            return "Unknown"
+        try:
+            parsed = json.loads(raw_traits)
+        except json.JSONDecodeError:
+            return raw_traits
+        else:
+            raw_traits = parsed
+
+    if isinstance(raw_traits, dict):
+        trait_value = raw_traits.get("trait") or raw_traits.get("name") or raw_traits.get("label")
+        return str(trait_value).strip() if trait_value else "Unknown"
+
+    if isinstance(raw_traits, list):
+        labels: list[str] = []
+        for item in raw_traits[:3]:
+            if isinstance(item, dict):
+                label = item.get("trait") or item.get("name") or item.get("label")
+            elif isinstance(item, str):
+                label = item
+            else:
+                label = None
+            if label:
+                labels.append(str(label).strip())
+        if labels:
+            return ", ".join(filter(None, labels))
+        return "Unknown"
+
+    if isinstance(raw_traits, str):
+        return raw_traits.strip() or "Unknown"
+
+    return "Unknown"
 
 
 def compare_with_database(
     query: str,
     db_source: str | dict = "genes_database.json",
     top_n: int = 3,
-    compute_local: bool = False,
+    compute_local: bool = True,
     enable_length_prefilter: bool = True,
     max_length_ratio: float = DEFAULT_MAX_LENGTH_RATIO,
     logger=None,
     progress_every: Optional[int] = None,
 ) -> list[dict]:
-    """Compare query against each gene using aligned percent identity.
+    """Compare query against each gene using global identity as the primary score.
 
     compute_local: also compute Smith-Waterman local alignment for every
-    database entry (see aligned_similarity). Off by default — it roughly
-    doubles the cost of scanning the whole database for a value the UI
-    doesn't currently display.
+    database entry (see aligned_similarity). It is enabled by default so
+    fragments and conserved domains remain available as secondary evidence;
+    it never replaces the global score used for ranking.
 
     enable_length_prefilter / max_length_ratio: for same-type comparisons
     (dna-dna or protein-protein), skip the full O(n*m) alignment against
@@ -396,6 +467,7 @@ def compare_with_database(
     validation script (which intentionally runs this against a much larger
     reference set) turns it on so a long run isn't silent.
     """
+    t0 = time.perf_counter()
     top_n = max(1, min(top_n, config.MAX_TOP_N_MATCHES))
     database = db_source if isinstance(db_source, dict) else load_gene_database(db_source)
     query_type = bio.detect_sequence_type(query)
@@ -442,6 +514,7 @@ def compare_with_database(
                     prefiltered_count += 1
                     continue
 
+        t_align_start = time.perf_counter()
         try:
             match = aligned_similarity(
                 query, ref_seq, query_type=query_type, reference_type=ref_type, compute_local=compute_local
@@ -453,27 +526,46 @@ def compare_with_database(
             continue
         finally:
             aligned_count += 1
+            t_align_end = time.perf_counter()
             if progress_every and aligned_count % progress_every == 0:
                 msg = f"compare_with_database: aligned {aligned_count} candidates so far..."
                 logger.info(msg) if logger else print(f"  {msg}")
 
+        if aligned_count <= 10 or aligned_count % 25 == 0:
+            print(
+                f"compare_with_database timings: align_candidate={t_align_end - t_align_start:.3f}s "
+                f"aligned_so_far={aligned_count} total_elapsed={t_align_end - t0:.3f}s"
+            )
+
         alignment = match["alignment"]
         alignment_map = alignment.get("alignment_map", {}) if isinstance(alignment, dict) else {}
+        alignment_score = float(alignment.get("alignment_score", match.get("similarity_score", 0.0))) if isinstance(alignment, dict) else float(match.get("similarity_score", 0.0))
+        approximate_local_significance = _estimate_local_evalue(
+            float(match.get("local_alignment", {}).get("alignment_score", alignment_score)),
+            len(query),
+            len(database),
+            seq_type=query_type,
+        )
 
         results.append({
             "gene_name": gene_name,
-            "trait": gene_info.get("trait", "Unknown"),
+            "trait": _format_trait_summary(gene_info.get("traits", gene_info.get("trait", "Unknown"))),
             "description": gene_info.get("description", ""),
             "organism": gene_info.get("organism", "Unknown"),
             "accession": gene_info.get("accession", "N/A"),
             "similarity_score": match["similarity_score"],
             "alignment_method": match.get("method", "global"),
+            "local_identity": match.get("local_identity"),
+            "local_coverage_percent": match.get("local_coverage_percent"),
+            "approximate_local_significance": approximate_local_significance,
             "alignment": {
                 "alignment_map": alignment_map,
                 "algorithm": alignment.get("algorithm") if isinstance(alignment, dict) else None,
                 "alignment_score": alignment.get("alignment_score") if isinstance(alignment, dict) else None,
                 "global_identity": match.get("global_identity"),
                 "local_identity": match.get("local_identity"),
+                "local_coverage_percent": match.get("local_coverage_percent"),
+                "local_alignment": match.get("local_alignment"),
                 "frame": match.get("frame"),
             },
             "reference_length": len(ref_seq),
@@ -487,6 +579,8 @@ def compare_with_database(
     if logger and prefiltered_count:
         logger.info(f"compare_with_database length-prefiltered {prefiltered_count} entries (ratio > {max_length_ratio}x)")
 
+    total_elapsed = time.perf_counter() - t0
+    print(f"compare_with_database total: candidates={len(database)} aligned={aligned_count} prefiltered={prefiltered_count} elapsed={total_elapsed:.3f}s")
     results.sort(key=lambda x: x["similarity_score"], reverse=True)
     return SimilarityResultList(results[:top_n], prefiltered_count=prefiltered_count)
 
@@ -580,9 +674,14 @@ class SimilarityCandidates(dict):
     report where the candidates came from.
     """
 
-    def __init__(self, *args, source: str = "unknown", **kwargs):
+    def __init__(self, *args, source: str = "unknown", requested_pool_size: Optional[int] = None, **kwargs):
         super().__init__(*args, **kwargs)
         self.source = source
+        self.requested_pool_size = requested_pool_size
+        self.actual_pool_size = len(self)
+        self.pool_reduced = (
+            requested_pool_size is not None and requested_pool_size > self.actual_pool_size and self.actual_pool_size > 0
+        )
 
     @property
     def candidate_count(self) -> int:
@@ -620,13 +719,15 @@ def find_similar_genes(
     of "kmer_prefilter", "length_prefilter_metadata", "length_prefilter_sql",
     or "unavailable"; `.candidate_count` is len(result).
     """
+    t0 = time.perf_counter()
     try:
         pg = _postgres_utils()
-    except Exception as e:
+    except Exception:
         if logger:
-            logger.warning(f"find_similar_genes: Postgres unavailable ({e}); no candidates found")
+            logger.exception("find_similar_genes: Postgres unavailable; no candidates found")
         return SimilarityCandidates(source="unavailable")
 
+    t1 = time.perf_counter()
     query_type = bio.detect_sequence_type(query)
     requested_pool_size = max(1, top_n) * candidate_pool_multiplier
     pool_size = _budgeted_candidate_pool_size(len(query), requested_pool_size)
@@ -636,6 +737,7 @@ def find_similar_genes(
         query_len = len(query)
         min_len = max(1, int(query_len / max_length_ratio)) if query_len else None
         max_len = int(query_len * max_length_ratio) if query_len else None
+        t2 = time.perf_counter()
         ranked = pg.find_kmer_candidates(
             query_hashes,
             min_shared=1,
@@ -644,20 +746,31 @@ def find_similar_genes(
             max_length=max_len,
             sequence_type=query_type,
         )
-    except Exception as e:
+        t3 = time.perf_counter()
+    except Exception:
         # e.g. pg_trgm extension not available on this Postgres instance
         # (see create_tables()'s try/except around CREATE EXTENSION) --
         # degrade to the length-range fallback below rather than crash.
         if logger:
-            logger.warning(f"find_similar_genes: k-mer candidate search failed ({e}); falling back")
+            logger.exception("find_similar_genes: k-mer candidate search failed; falling back")
         ranked = []
+        t3 = time.perf_counter()
 
     if ranked:
         keys = [key for key, _score in ranked]
+        t4 = time.perf_counter()
         candidates = pg.load_gene_sequences_by_keys(keys)
+        t5 = time.perf_counter()
+        print(
+            f"find_similar_genes timings: connect={t1-t0:.3f}s "
+            f"kmer_signature={t2-t1:.3f}s "
+            f"db_query={t3-t2:.3f}s "
+            f"fetch_candidates={t5-t4:.3f}s "
+            f"total={t5-t0:.3f}s"
+        )
         if logger:
             logger.info(f"find_similar_genes: k-mer prefilter returned {len(candidates)} candidates for top_n={top_n}")
-        return SimilarityCandidates(candidates, source="kmer_prefilter")
+        return SimilarityCandidates(candidates, source="kmer_prefilter", requested_pool_size=requested_pool_size)
 
     if logger:
         logger.info(
@@ -668,7 +781,7 @@ def find_similar_genes(
         # keeping everything local) — reuse it instead of a second Postgres
         # round trip.
         fallback = _metadata_length_prefiltered_candidates(query, metadata, logger=logger)
-        return SimilarityCandidates(fallback, source="length_prefilter_metadata")
+        return SimilarityCandidates(fallback, source="length_prefilter_metadata", requested_pool_size=requested_pool_size)
 
     # No metadata dict required: ask Postgres directly for gene keys whose
     # length falls within the usual prefilter window, using the
@@ -682,11 +795,11 @@ def find_similar_genes(
     max_len = int(query_len * DEFAULT_MAX_LENGTH_RATIO)
     keys = pg.find_gene_keys_by_length_range(min_len, max_len, sequence_type=query_type, limit=pool_size)
     if not keys:
-        return SimilarityCandidates(source="length_prefilter_sql")
+        return SimilarityCandidates(source="length_prefilter_sql", requested_pool_size=requested_pool_size)
     candidates = pg.load_gene_sequences_by_keys(keys)
     if logger:
         logger.info(f"find_similar_genes: length-range fallback returned {len(candidates)} candidates")
-    return SimilarityCandidates(candidates, source="length_prefilter_sql")
+    return SimilarityCandidates(candidates, source="length_prefilter_sql", requested_pool_size=requested_pool_size)
 
 
 def find_similar_genes_deep(
@@ -722,9 +835,9 @@ def find_similar_genes_deep(
     """
     try:
         pg = _postgres_utils()
-    except Exception as e:
+    except Exception:
         if logger:
-            logger.warning(f"find_similar_genes_deep: Postgres unavailable ({e})")
+            logger.exception("find_similar_genes_deep: Postgres unavailable")
         return SimilarityCandidates(source="unavailable")
     
     query_type = bio.detect_sequence_type(query)
@@ -755,9 +868,9 @@ def find_similar_genes_deep(
         # compare_with_database() for Needleman-Wunsch alignment on these candidates
         return SimilarityCandidates(candidates, source="deep_search_exhaustive")
     
-    except Exception as e:
+    except Exception:
         if logger:
-            logger.error(f"Deep Search exhaustive candidate screening failed: {e}")
+            logger.exception("Deep Search exhaustive candidate screening failed")
         return SimilarityCandidates(source="deep_search_exhaustive")
 
 

@@ -135,6 +135,9 @@ def analyze_sequence_record(
 
     similarity_search_source = "local_database"
     similarity_candidate_count = None
+    similarity_candidate_pool_count = None
+    similarity_candidate_pool_requested = None
+    similarity_candidate_pool_reduced = False
     similarity_prefiltered_count = 0
     similarity_search_mode = "Balanced"
     similarity_skipped_reason = None
@@ -184,6 +187,11 @@ def analyze_sequence_record(
                 similarity_search_source = db.source
             if hasattr(db, "candidate_count"):
                 similarity_candidate_count = db.candidate_count
+            if hasattr(db, "requested_pool_size"):
+                similarity_candidate_pool_count = getattr(db, "actual_pool_size", db.candidate_count)
+                similarity_candidate_pool_requested = getattr(db, "requested_pool_size", None)
+                if similarity_candidate_pool_requested is not None:
+                    similarity_candidate_pool_reduced = similarity_candidate_pool_count < similarity_candidate_pool_requested
             if prefiltered_count:
                 similarity_prefiltered_count = prefiltered_count
                 pipeline_warnings.append(
@@ -191,9 +199,9 @@ def analyze_sequence_record(
                     "This can hide valid short/long matches from the current results."
                 )
             best_match = similarity_results[0] if similarity_results else None
-        except Exception as e:
+        except Exception:
             if logger:
-                logger.warning(f"Database comparison failed: {e}")
+                logger.exception("Database comparison failed")
             pipeline_warnings.append(
                 "⚠️ Database similarity comparison could not be completed (technical error), "
                 "not simply 'no matches found'. Results in the Similarity tab may be incomplete."
@@ -206,9 +214,9 @@ def analyze_sequence_record(
                 ref_type = db[best_match["gene_name"]].get("sequence_type") or bio.detect_sequence_type(ref_seq)
                 mut_seq_type = "protein" if seq_type == "protein" or ref_type == "protein" else "dna"
                 mutation_report = bio.detect_mutations(sequence, ref_seq, seq_type=mut_seq_type)
-            except Exception as e:
+            except Exception:
                 if logger:
-                    logger.warning(f"Mutation detection failed: {e}")
+                    logger.exception("Mutation detection failed")
                 pipeline_warnings.append(
                     "⚠️ Mutation detection against the best database match failed (technical error). "
                     "The Mutations tab will be empty for this sequence."
@@ -220,9 +228,9 @@ def analyze_sequence_record(
                     sequence, ref_seq, seq_type=mut_seq_type,
                     reading_frame=reading_frame if mut_seq_type == "dna" else 0,
                 )
-            except Exception as e:
+            except Exception:
                 if logger:
-                    logger.warning(f"Variant analysis failed: {e}")
+                    logger.exception("Variant analysis failed")
                 pipeline_warnings.append(
                     "⚠️ Detailed variant classification (missense/silent/frameshift) could not be "
                     "computed for this sequence (technical error)."
@@ -232,9 +240,9 @@ def analyze_sequence_record(
     interpretation = {}
     try:
         interpretation = ai_interp.interpret(stats, similarity_results, mutation_report)
-    except Exception as e:
+    except Exception:
         if logger:
-            logger.warning(f"AI interpretation failed: {e}")
+            logger.exception("AI interpretation failed")
         pipeline_warnings.append(
             "⚠️ AI interpretation could not be generated (technical error). "
             "The AI Interpretation tab will be empty for this sequence."
@@ -268,6 +276,9 @@ def analyze_sequence_record(
         "metadata_warnings": pipeline_warnings,
         "similarity_search_source": similarity_search_source,
         "similarity_candidate_count": similarity_candidate_count,
+        "similarity_candidate_pool_count": similarity_candidate_pool_count,
+        "similarity_candidate_pool_requested": similarity_candidate_pool_requested,
+        "similarity_candidate_pool_reduced": similarity_candidate_pool_reduced,
         "similarity_prefiltered_count": similarity_prefiltered_count,
         "similarity_skipped_reason": similarity_skipped_reason,
         "similarity_search_mode": similarity_search_mode,

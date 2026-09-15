@@ -38,7 +38,13 @@ DEFAULT_DB = ROOT / "genes_database.json"
 CONNECTION_ERRORS = (psycopg.OperationalError,)
 
 
-def insert_with_retry(record: dict, conn: psycopg.Connection, max_retries: int = 3, backoff_secs: int = 5) -> bool:
+def emit(message: str, quiet: bool = False) -> None:
+    """Print without triggering CP1252/Unicode issues on Windows terminals."""
+    if not quiet:
+        print(message.encode("utf-8", errors="replace").decode("utf-8", errors="replace"))
+
+
+def insert_with_retry(record: dict, conn: psycopg.Connection, max_retries: int = 3, backoff_secs: int = 5, quiet: bool = False) -> bool:
     """Insert a single record with exponential backoff retry logic.
 
     Retries are for transient, per-record issues only (e.g. a momentary
@@ -50,7 +56,7 @@ def insert_with_retry(record: dict, conn: psycopg.Connection, max_retries: int =
         try:
             insert_gene_record(record, conn=conn)
             gene_id = record.get('gene_id') or record.get('symbol')
-            print(f"✓ Inserted/updated gene: {gene_id}")
+            emit(f"OK Inserted/updated gene: {gene_id}", quiet=quiet)
             return True
         except CONNECTION_ERRORS:
             # Not a per-record problem — let the caller decide (fail fast).
@@ -59,11 +65,11 @@ def insert_with_retry(record: dict, conn: psycopg.Connection, max_retries: int =
             gene_id = record.get('gene_id') or record.get('symbol')
             if attempt < max_retries:
                 wait_time = backoff_secs * (2 ** (attempt - 1))
-                print(f"⚠ Failed to insert {gene_id} (attempt {attempt}/{max_retries}): {type(e).__name__}")
-                print(f"  Retrying in {wait_time}s...")
+                emit(f"WARN Failed to insert {gene_id} (attempt {attempt}/{max_retries}): {type(e).__name__}", quiet=quiet)
+                emit(f"  Retrying in {wait_time}s...", quiet=quiet)
                 time.sleep(wait_time)
             else:
-                print(f"✗ Failed to insert {gene_id} after {max_retries} attempts: {e}")
+                emit(f"FAIL Failed to insert {gene_id} after {max_retries} attempts: {e}", quiet=quiet)
                 return False
     return False
 
@@ -84,11 +90,16 @@ def main(argv: list[str] | None = None) -> None:
              "-- no update attempt, no sequence re-sent over the network. Useful for "
              "incremental loads and to conserve network transfer quota (e.g. Neon free tier).",
     )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Reduce per-record console noise; still writes the final summary.",
+    )
     args = parser.parse_args(argv)
 
     if args.create_tables:
         create_tables()
-        print("PostgreSQL tables created or already exist.")
+        emit("PostgreSQL tables created or already exist.", quiet=args.quiet)
 
     if not args.json_file and not args.from_db:
         parser.error("Provide --json-file or --from-db to import data")
@@ -109,8 +120,8 @@ def main(argv: list[str] | None = None) -> None:
     records = records[args.offset :]
     if args.limit > 0:
         records = records[:args.limit]
-    print(f"Loading {len(records)} gene record(s) from {path}")
-    print(f"Batch size: {args.batch_size}, pause between batches: {args.batch_pause}s\n")
+    emit(f"Loading {len(records)} gene record(s) from {path}", quiet=args.quiet)
+    emit(f"Batch size: {args.batch_size}, pause between batches: {args.batch_pause}s\n", quiet=args.quiet)
 
     # Open one connection up front. This both avoids reconnecting for every
     # single record and fails fast with a clear message if the database is
@@ -126,14 +137,14 @@ def main(argv: list[str] | None = None) -> None:
 
     existing_keys: set[str] = set()
     if args.skip_existing:
-        print("Récupération des identifiants déjà présents en base (léger, pas de séquences)...")
+        emit("Récupération des identifiants déjà présents en base (léger, pas de séquences)...", quiet=args.quiet)
         try:
             with conn.cursor() as cur:
                 cur.execute("SELECT COALESCE(gene_id, symbol) FROM genes")
                 existing_keys = {row[0] for row in cur.fetchall() if row[0]}
-            print(f"  → {len(existing_keys)} gène(s) déjà en base -- ceux-là seront ignorés.\n")
+            emit(f"  -> {len(existing_keys)} gène(s) déjà en base -- ceux-là seront ignorés.\n", quiet=args.quiet)
         except Exception as e:
-            print(f"⚠ Impossible de récupérer les identifiants existants ({e}) -- --skip-existing désactivé pour ce run.")
+            emit(f"WARN Impossible de récupérer les identifiants existants ({e}) -- --skip-existing désactivé pour ce run.", quiet=args.quiet)
             existing_keys = set()
 
     inserted = 0
@@ -178,7 +189,7 @@ def main(argv: list[str] | None = None) -> None:
                 valid, reason = is_valid_sequence(seq, seq_type)
                 if not valid:
                     gid = record.get("gene_id") or record.get("symbol")
-                    print(f"⊘ Skipped {gid} (quality: {reason})")
+                    emit(f"SKIP {gid} (quality: {reason})", quiet=args.quiet)
                     skipped_quality += 1
                     skipped_reasons[reason] = skipped_reasons.get(reason, 0) + 1
                     continue
@@ -191,13 +202,13 @@ def main(argv: list[str] | None = None) -> None:
             record = dedupe_by_sequence(record, conn=conn)
             if record.get("gene_id") != original_key:
                 merged_by_sequence += 1
-                print(f"⇄ {original_key} merged into existing {record.get('gene_id')} (identical sequence)")
+                emit(f"MERGE {original_key} merged into existing {record.get('gene_id')} (identical sequence)", quiet=args.quiet)
 
             try:
                 success = insert_with_retry(record, conn=conn, max_retries=3, backoff_secs=5)
             except CONNECTION_ERRORS as e:
-                print(f"\n✗ Database connection lost after {inserted} inserted, {failed} failed: {e}")
-                print(f"  Stopping — {len(records) - i + 1} record(s) not attempted.")
+                emit(f"\nFAIL Database connection lost after {inserted} inserted, {failed} failed: {e}", quiet=args.quiet)
+                emit(f"  Stopping — {len(records) - i + 1} record(s) not attempted.", quiet=args.quiet)
                 sys.exit(1)
 
             if success:
@@ -207,17 +218,17 @@ def main(argv: list[str] | None = None) -> None:
 
             # Pause between batches to avoid overwhelming the connection pool
             if i % args.batch_size == 0 and i < len(records):
-                print(f"\n→ Batch complete ({i}/{len(records)}). Pausing {args.batch_pause}s...\n")
+                emit(f"\nBATCH complete ({i}/{len(records)}). Pausing {args.batch_pause}s...\n", quiet=args.quiet)
                 time.sleep(args.batch_pause)
     finally:
         conn.close()
 
-    print(f"\n✓ Import complete: {inserted} inserted, {failed} failed, "
-          f"{skipped_quality} skipped (quality), {skipped_existing} skipped (already in database), "
-          f"{merged_by_sequence} merged "
-          f"(identical sequence, different id) out of {len(records)} total.")
+    emit(f"\nOK Import complete: {inserted} inserted, {failed} failed, "
+         f"{skipped_quality} skipped (quality), {skipped_existing} skipped (already in database), "
+         f"{merged_by_sequence} merged "
+         f"(identical sequence, different id) out of {len(records)} total.", quiet=args.quiet)
     if skipped_reasons:
-        print("  Quality skip breakdown:", skipped_reasons)
+        emit(f"  Quality skip breakdown: {skipped_reasons}", quiet=args.quiet)
 
 
 if __name__ == "__main__":

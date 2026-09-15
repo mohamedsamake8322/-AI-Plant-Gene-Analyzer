@@ -186,6 +186,65 @@ if njit is not None:
         return score_matrix, traceback_matrix, max_score, max_i, max_j
 
 
+    @njit(cache=True)
+    def _smith_waterman_affine_dp_numba(enc1, enc2, score_table, gap_open, gap_extend):
+        m, n = len(enc1), len(enc2)
+        M = np.zeros((m + 1, n + 1), dtype=np.int32)
+        Ix = np.zeros((m + 1, n + 1), dtype=np.int32)
+        Iy = np.zeros((m + 1, n + 1), dtype=np.int32)
+        tb_M = np.zeros((m + 1, n + 1), dtype=np.int8)
+        tb_Ix = np.zeros((m + 1, n + 1), dtype=np.int8)
+        tb_Iy = np.zeros((m + 1, n + 1), dtype=np.int8)
+        max_score = 0
+        max_i, max_j, max_state = 0, 0, 0
+
+        for i in range(1, m + 1):
+            for j in range(1, n + 1):
+                match_score = score_table[enc1[i - 1], enc2[j - 1]]
+                diag_m = M[i - 1, j - 1] + match_score
+                diag_ix = Ix[i - 1, j - 1] + match_score
+                diag_iy = Iy[i - 1, j - 1] + match_score
+                best_m = max(0, diag_m, diag_ix, diag_iy)
+                M[i, j] = best_m
+                if best_m == 0:
+                    tb_M[i, j] = 3
+                elif best_m == diag_m:
+                    tb_M[i, j] = 0
+                elif best_m == diag_ix:
+                    tb_M[i, j] = 1
+                else:
+                    tb_M[i, j] = 2
+
+                open_ix = M[i - 1, j] + gap_open
+                extend_ix = Ix[i - 1, j] + gap_extend
+                Ix[i, j] = max(0, open_ix, extend_ix)
+                if Ix[i, j] == 0:
+                    tb_Ix[i, j] = 3
+                elif Ix[i, j] == open_ix:
+                    tb_Ix[i, j] = 0
+                else:
+                    tb_Ix[i, j] = 1
+
+                open_iy = M[i, j - 1] + gap_open
+                extend_iy = Iy[i, j - 1] + gap_extend
+                Iy[i, j] = max(0, open_iy, extend_iy)
+                if Iy[i, j] == 0:
+                    tb_Iy[i, j] = 3
+                elif Iy[i, j] == open_iy:
+                    tb_Iy[i, j] = 0
+                else:
+                    tb_Iy[i, j] = 1
+
+                if best_m > max_score:
+                    max_score, max_i, max_j, max_state = best_m, i, j, 0
+                if Ix[i, j] > max_score:
+                    max_score, max_i, max_j, max_state = Ix[i, j], i, j, 1
+                if Iy[i, j] > max_score:
+                    max_score, max_i, max_j, max_state = Iy[i, j], i, j, 2
+
+        return M, Ix, Iy, tb_M, tb_Ix, tb_Iy, max_score, max_i, max_j, max_state
+
+
 def alignment_statistics(aligned1: str, aligned2: str) -> Dict:
     """Compute identity and gap statistics from a gapped pairwise alignment."""
     matches = mismatches = gap_columns = 0
@@ -378,15 +437,25 @@ def _affine_traceback(
     return "".join(reversed(aligned1)), "".join(reversed(aligned2))
 
 
-def smith_waterman(seq1: str, seq2: str, gap_penalty: int = -2, seq_type: str = "dna") -> Dict:
-    """Local alignment (Smith-Waterman), linear gap penalty. See
-    needleman_wunsch() for the memory note on dtype and O(n*m) space — it
-    applies equally here. (Kept on a linear gap penalty rather than affine:
-    this function is off by default for database comparisons — see
-    similarityengine.aligned_similarity's compute_local flag — so the
-    added traceback complexity/risk of affine gaps isn't justified here
-    yet; revisit if local alignment becomes a primary, always-on feature.)
+def smith_waterman(
+    seq1: str,
+    seq2: str,
+    gap_penalty: int | None = None,
+    seq_type: str = "dna",
+    gap_open: int = -10,
+    gap_extend: int = -1,
+) -> Dict:
+    """Local alignment (Smith-Waterman) with affine gap penalties by default.
+
+    `gap_penalty` is retained for backward compatibility: when provided, it is
+    applied as both the opening and extension penalty, matching the historical
+    linear-gap implementation. New call sites should prefer the explicit
+    `gap_open` / `gap_extend` pair, which is both more biologically realistic and
+    consistent with the affine-gap model already used by `needleman_wunsch()`.
     """
+    if gap_penalty is not None:
+        gap_open = gap_extend = gap_penalty
+
     seq1 = seq1.upper().replace(" ", "")
     seq2 = seq2.upper().replace(" ", "")
     m, n = len(seq1), len(seq2)
@@ -405,38 +474,110 @@ def smith_waterman(seq1: str, seq2: str, gap_penalty: int = -2, seq_type: str = 
     enc2 = _encode_sequence(seq2, char_index, unknown_idx)
 
     if njit is not None:
-        score_matrix, traceback_matrix, max_score, max_i, max_j = _smith_waterman_dp_numba(
-            enc1, enc2, score_table, gap_penalty
-        )
-        max_pos = (max_i, max_j)
+        if gap_penalty is not None:
+            score_matrix, traceback_matrix, max_score, max_i, max_j = _smith_waterman_dp_numba(
+                enc1, enc2, score_table, gap_penalty
+            )
+            max_pos = (max_i, max_j)
+        else:
+            score_matrix, Ix, Iy, tb_M, tb_Ix, tb_Iy, max_score, max_i, max_j, max_state = _smith_waterman_affine_dp_numba(
+                enc1, enc2, score_table, gap_open, gap_extend
+            )
+            max_pos = (max_i, max_j)
     else:
         score_matrix = np.zeros((m + 1, n + 1), dtype=np.int32)
-        traceback_matrix = np.zeros((m + 1, n + 1), dtype=np.int8)
+        Ix = np.zeros((m + 1, n + 1), dtype=np.int32)
+        Iy = np.zeros((m + 1, n + 1), dtype=np.int32)
+        tb_M = np.zeros((m + 1, n + 1), dtype=np.int8)
+        tb_Ix = np.zeros((m + 1, n + 1), dtype=np.int8)
+        tb_Iy = np.zeros((m + 1, n + 1), dtype=np.int8)
         max_score = 0
         max_pos = (0, 0)
         for i in range(1, m + 1):
             for j in range(1, n + 1):
                 match_score = int(score_table[enc1[i - 1], enc2[j - 1]])
-                diagonal = score_matrix[i - 1, j - 1] + match_score
-                up = score_matrix[i - 1, j] + gap_penalty
-                left = score_matrix[i, j - 1] + gap_penalty
-                score_matrix[i, j] = max(0, diagonal, up, left)
+                diag_M = score_matrix[i - 1, j - 1] + match_score
+                diag_Ix = Ix[i - 1, j - 1] + match_score
+                diag_Iy = Iy[i - 1, j - 1] + match_score
+                score_matrix[i, j] = max(0, diag_M, diag_Ix, diag_Iy)
                 if score_matrix[i, j] == 0:
-                    traceback_matrix[i, j] = 3
-                elif score_matrix[i, j] == diagonal:
-                    traceback_matrix[i, j] = 0
-                elif score_matrix[i, j] == up:
-                    traceback_matrix[i, j] = 1
+                    tb_M[i, j] = 3
+                elif score_matrix[i, j] == diag_M:
+                    tb_M[i, j] = 0
+                elif score_matrix[i, j] == diag_Ix:
+                    tb_M[i, j] = 1
                 else:
-                    traceback_matrix[i, j] = 2
+                    tb_M[i, j] = 2
+
+                from_m = score_matrix[i - 1, j] + gap_open
+                from_i = Ix[i - 1, j] + gap_extend
+                Ix[i, j] = max(0, from_m, from_i)
+                tb_Ix[i, j] = 0 if Ix[i, j] == from_m else 1 if Ix[i, j] > 0 else 3
+
+                from_m = score_matrix[i, j - 1] + gap_open
+                from_i = Iy[i, j - 1] + gap_extend
+                Iy[i, j] = max(0, from_m, from_i)
+                tb_Iy[i, j] = 0 if Iy[i, j] == from_m else 1 if Iy[i, j] > 0 else 3
+
                 if score_matrix[i, j] > max_score:
                     max_score = score_matrix[i, j]
                     max_pos = (i, j)
 
-    aligned_seq1, aligned_seq2 = _traceback(seq1, seq2, traceback_matrix, max_pos[0], max_pos[1], "sw")
+        traceback_matrix = tb_M
+
+    if gap_penalty is not None:
+        aligned_seq1, aligned_seq2 = _traceback(seq1, seq2, traceback_matrix, max_pos[0], max_pos[1], "sw")
+    else:
+        i, j = max_pos[0], max_pos[1]
+        aligned_seq1: List[str] = []
+        aligned_seq2: List[str] = []
+        state = "M"
+        while i > 0 and j > 0 and score_matrix[i, j] > 0:
+            if state == "M":
+                if tb_M[i, j] == 0:
+                    aligned_seq1.append(seq1[i - 1])
+                    aligned_seq2.append(seq2[j - 1])
+                    i -= 1
+                    j -= 1
+                elif tb_M[i, j] == 1:
+                    aligned_seq1.append(seq1[i - 1])
+                    aligned_seq2.append(seq2[j - 1])
+                    i -= 1
+                    j -= 1
+                    state = "Ix"
+                else:
+                    aligned_seq1.append(seq1[i - 1])
+                    aligned_seq2.append(seq2[j - 1])
+                    i -= 1
+                    j -= 1
+                    state = "Iy"
+            elif state == "Ix":
+                if tb_Ix[i, j] == 0:
+                    aligned_seq1.append(seq1[i - 1])
+                    aligned_seq2.append("-")
+                    i -= 1
+                    state = "M"
+                else:
+                    aligned_seq1.append(seq1[i - 1])
+                    aligned_seq2.append("-")
+                    i -= 1
+            else:
+                if tb_Iy[i, j] == 0:
+                    aligned_seq1.append("-")
+                    aligned_seq2.append(seq2[j - 1])
+                    j -= 1
+                    state = "M"
+                else:
+                    aligned_seq1.append("-")
+                    aligned_seq2.append(seq2[j - 1])
+                    j -= 1
+
+        aligned_seq1 = "".join(reversed(aligned_seq1))
+        aligned_seq2 = "".join(reversed(aligned_seq2))
+
     stats = alignment_statistics(aligned_seq1, aligned_seq2)
     return {
-        "algorithm": "Smith-Waterman (Local)",
+        "algorithm": "Smith-Waterman (Local, affine gap)" if gap_penalty is None else "Smith-Waterman (Local)",
         "seq1_aligned": aligned_seq1,
         "seq2_aligned": aligned_seq2,
         "alignment_score": float(max_score),

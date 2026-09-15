@@ -58,7 +58,7 @@ def test_distance_matrix_after_alignment():
     assert len(dm["aligned_sequences"]) == 3
 
 
-def test_similarity_uses_global_alignment():
+def test_similarity_uses_global_alignment_as_primary_score():
     db = {
         "GENE1": {
             "sequence": "ATGCGATCGATCG",
@@ -70,6 +70,7 @@ def test_similarity_uses_global_alignment():
     }
     matches = sim.compare_with_database("ATGCGATCGATCA", db, top_n=1)
     assert matches
+    assert matches[0]["alignment_method"] == "global"
     assert matches[0]["similarity_score"] < 100
     assert matches[0]["alignment"]["algorithm"]
 

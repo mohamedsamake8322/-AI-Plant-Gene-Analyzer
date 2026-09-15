@@ -18,7 +18,55 @@ import logging
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = ROOT / "genes_database.json"
 PLANTS_FILTER = "plants[filter]"
-DEFAULT_MAX_LENGTH = 500_000
+# Was 500_000 -- calibrated only to catch whole chromosomes (observed up to
+# ~19.7M bp). That left a gap: NCBI Whole Genome Shotgun (WGS) assembly
+# contigs/scaffolds, typically tens of thousands of bp, sailed straight
+# through. Confirmed in production: 1,291 such records (accessions like
+# "JBMGJB010000069.1", up to 99,609 bp, zero annotation/description) ended
+# up in plant_gene_analyzer_clean's Zea mays import, each one collapsing
+# the Similarity candidate pool to a single evaluated match (see
+# _budgeted_candidate_pool_size() in similarityengine.py -- pool size
+# shrinks with query_length squared). Lowered to comfortably clear every
+# legitimate gene length observed in the current database (P99 ~29,669 bp
+# across 169k+ records) while still rejecting WGS-scale contigs. This is a
+# backstop, not the primary defense -- see WGS_ACCESSION_RE / is_wgs_record()
+# and the "NOT wgs[Filter]" clause in build_search_term() below, which stop
+# WGS records at the query/pre-filter stage regardless of their length.
+DEFAULT_MAX_LENGTH = 50_000
+
+# NCBI WGS (Whole Genome Shotgun) project accessions: 4-6 uppercase letters
+# (project code) + a zero-padded sequence number of at least 9 digits +
+# ".version" -- e.g. "JBMGJB010000069.1". This is a stable, documented NCBI
+# convention for genome-assembly fragments, distinct from individual-gene
+# accessions (RefSeq NM_/XM_/NP_/XP_/NC_-style, or short GenBank accessions
+# like "AF123456.1"). Matched against the FASTA header's first token
+# wherever a WGS record might slip past the query-level "NOT wgs[Filter]"
+# exclusion (e.g. a raw/unscoped esearch, or a future caller that builds
+# its own term without going through build_search_term()).
+WGS_ACCESSION_RE = re.compile(r"^[A-Z]{4,6}\d{9,}\.\d+$")
+
+
+def is_wgs_record(header: str) -> bool:
+    """True if a FASTA record looks like a WGS assembly contig/scaffold
+    rather than an individual annotated gene.
+
+    Checked two independent ways, since either signal alone can miss cases
+    the other catches:
+      1. Accession format (WGS_ACCESSION_RE) -- catches every WGS record
+         found in production so far, and is robust even if NCBI ever
+         rewords its FASTA header text.
+      2. Header text -- NCBI's own FASTA header for WGS-derived records
+         routinely says "whole genome shotgun sequence" or "genome
+         assembly"; catches records under an accession shape the regex
+         doesn't happen to match.
+    """
+    if not header:
+        return False
+    accession = header.split()[0]
+    if WGS_ACCESSION_RE.match(accession):
+        return True
+    lowered = header.lower()
+    return "whole genome shotgun" in lowered or "genome assembly" in lowered
 # Every direct Entrez network call below passes this explicitly. Biopython's
 # Entrez functions default to NO timeout when none is given -- a stalled
 # NCBI connection can then hang the whole pipeline indefinitely instead of
@@ -72,12 +120,27 @@ if not Entrez.email:
     print("Warning: NCBI_EMAIL not set in .env, please set it to a contact email.")
 
 
-def build_search_term(term: str, plants_only: bool = True, organism: str | None = None) -> str:
+def build_search_term(
+    term: str,
+    plants_only: bool = True,
+    organism: str | None = None,
+    exclude_wgs: bool = True,
+) -> str:
     parts = [f"({term})"]
     if plants_only:
         parts.append(PLANTS_FILTER)
     if organism:
         parts.append(f'"{organism}"[Organism]')
+    if exclude_wgs:
+        # Primary defense: stop Whole Genome Shotgun assembly records at
+        # the esearch stage itself, so they're never esummary'd, efetch'd,
+        # or scored -- instead of downloading them and filtering
+        # afterward. "wgs[Filter]" is NCBI's own documented property
+        # filter for WGS division records. See is_wgs_record() for the
+        # defense-in-depth check applied to anything that slips through
+        # regardless (e.g. a raw esearch term built without this
+        # function, or a future NCBI filter-name change).
+        parts.append("NOT wgs[Filter]")
     return " AND ".join(parts)
 
 
@@ -189,8 +252,13 @@ def _prefilter_batch_by_length(batch: list[str], db: str, max_length: int | None
     falls back to its previous (slower but working) behavior instead of
     silently dropping records.
     """
-    if max_length is None or not batch:
+    if not batch:
         return batch
+    # Run esummary whenever there's ANY check to do -- either a length cap
+    # or the WGS accession check below -- not just when max_length is set.
+    # (Previously this whole function short-circuited on max_length=None,
+    # meaning --max-length 0 / no-limit runs also silently skipped the WGS
+    # check, which is a separate, independent signal from length.)
     try:
         handle = Entrez.esummary(db=db, id=",".join(batch), timeout=NCBI_TIMEOUT)
         res = Entrez.read(handle)
@@ -205,8 +273,22 @@ def _prefilter_batch_by_length(batch: list[str], db: str, max_length: int | None
 
     kept = []
     for uid, summary in zip(batch, res):
+        # Defense-in-depth #2: catch WGS records by accession shape here,
+        # before the full efetch, even if the query-level "NOT wgs[Filter]"
+        # in build_search_term() didn't apply (e.g. this batch came from a
+        # caller that built its own esearch term) or NCBI ever renames that
+        # filter. esummary's "Caption" / "AccessionVersion" field carries
+        # the record's accession -- check both since the exact key present
+        # has varied across Biopython/Entrez versions in practice.
+        accession = summary.get("AccessionVersion") or summary.get("Caption") or ""
+        if WGS_ACCESSION_RE.match(str(accession)):
+            print(
+                f"Skipped {uid} ({accession}): WGS assembly contig/scaffold "
+                "accession, not an individual gene -- skipped before download."
+            )
+            continue
         length = summary.get("Length")
-        if length is not None and int(length) > max_length:
+        if max_length is not None and length is not None and int(length) > max_length:
             print(
                 f"Skipped {uid}: length {int(length):,} > max {max_length:,} "
                 "(likely chromosome/genome, not a gene) -- skipped before download."
@@ -361,6 +443,17 @@ def filter_records(
 ) -> list:
     kept = []
     for header, seq in records:
+        # Defense-in-depth #3, last line of defense: even if the
+        # query-level exclusion (build_search_term's "NOT wgs[Filter]") and
+        # the pre-download accession check (_prefilter_batch_by_length)
+        # both missed it, catch it here against the full downloaded header
+        # before it ever reaches make_record_from_fasta() / the database.
+        if is_wgs_record(header):
+            print(
+                f"Skipped {header.split()[0]}: WGS assembly contig/scaffold "
+                "(accession format or header text), not an individual gene."
+            )
+            continue
         if max_length is not None and len(seq) > max_length:
             print(
                 f"Skipped {header.split()[0]}: length {len(seq):,} > max {max_length:,} "

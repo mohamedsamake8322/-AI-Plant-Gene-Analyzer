@@ -71,8 +71,8 @@ def load_css(css_file: str = "style.css") -> None:
             logger.info(f"CSS loaded successfully from {css_file}")
         else:
             logger.warning(f"CSS file not found: {css_file}")
-    except Exception as e:
-        logger.error(f"Error loading CSS: {e}")
+    except Exception:
+        logger.exception("Error loading CSS")
         st.warning("⚠️ Could not load custom styling (CSS file error)")
 
 
@@ -111,8 +111,8 @@ def load_video_background(video_path: str = "assets/images.mp4", max_mb: float =
             unsafe_allow_html=True,
         )
         logger.info(f"Background video loaded from {path} ({size_mb:.1f} MB)")
-    except Exception as e:
-        logger.error(f"Error loading background video: {e}")
+    except Exception:
+        logger.exception("Error loading background video")
 
 
 # analyze_sequence_record() and get_alignment_map() now live in pipeline.py
@@ -409,8 +409,8 @@ with st.sidebar:
 
             st.info(translate('ui.full_db_load'))
 
-        except Exception as e:
-            logger.warning(f"Lightweight gene metadata load failed: {e}")
+        except Exception:
+            logger.exception("Lightweight gene metadata load failed")
             st.warning(translate('ui.metadata_load_error'))
             db = load_gene_database_cached(str(config.DATABASE_PATH))
     else:
@@ -649,7 +649,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
 
         except Exception as e:
             error_msg = str(e)
-            logger.error(f"Unexpected error during analysis: {e}")
+            logger.exception("Unexpected error during analysis")
             
             # Provide user-friendly messages for common database errors
             if "SSL connection" in error_msg and "closed" in error_msg:
@@ -757,11 +757,11 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
     
     # ── Export Options ─────────────────────────────────────────────────────────
     st.markdown("---")
-    st.markdown("### 📥 Export Results")
+    st.markdown(f"### 📥 {translate('ui.export_results')}")
     export_col1, export_col2, export_col3, export_col4, export_col5, export_col6, export_col7 = st.columns(7)
     
     with export_col1:
-        if st.button("📄 Download JSON"):
+        if st.button(f"📄 {translate('ui.download_json')}"):
             try:
                 json_path = export_util.export_results_json(result)
                 with open(json_path, "r", encoding="utf-8") as f:
@@ -778,7 +778,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 st.error(f"Export failed: {e}")
     
     with export_col2:
-        if st.button("📊 Download CSV"):
+        if st.button(f"📊 {translate('ui.download_csv')}"):
             try:
                 csv_path = export_util.export_results_csv(result)
                 with open(csv_path, "r", encoding="utf-8") as f:
@@ -795,7 +795,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 st.error(f"Export failed: {e}")
     
     with export_col3:
-        if st.button("🌐 Download HTML"):
+        if st.button(f"🌐 {translate('ui.download_html')}"):
             try:
                 html_path = export_util.export_results_html(result)
                 with open(html_path, "r", encoding="utf-8") as f:
@@ -811,7 +811,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 logger.error(f"HTML export failed: {e}")
                 st.error(f"Export failed: {e}")
     with export_col4:
-        if st.button("📑 Download XLSX"):
+        if st.button(f"📑 {translate('ui.download_xlsx')}"):
             try:
                 xlsx_path = export_util.export_results_xlsx(result)
                 with open(xlsx_path, "rb") as f:
@@ -828,7 +828,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 st.error(f"Export failed: {e}")
 
     with export_col5:
-        if st.button("🧬 Download FASTA"):
+        if st.button(f"🧬 {translate('ui.download_fasta')}"):
             try:
                 fasta_path = export_util.export_results_fasta(result)
                 with open(fasta_path, "r", encoding="utf-8") as f:
@@ -847,7 +847,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
     with export_col6:
         if sequence_type == "protein":
             st.caption("GFF3 is available for DNA features only.")
-        elif st.button("🧭 Download GFF3"):
+        elif st.button(f"🧭 {translate('ui.download_gff3')}"):
             try:
                 gff3_path = export_util.export_results_gff3(result)
                 with open(gff3_path, "r", encoding="utf-8") as f:
@@ -868,7 +868,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             result, {"gc": gc_reference, "codon": codon_reference, "length": length_reference}
         )
         st.download_button(
-            "Copy methods paragraph",
+            translate('ui.copy_methods_paragraph'),
             methods_paragraph,
             file_name="methods_paragraph.txt",
             mime="text/plain",
@@ -878,7 +878,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
     st.markdown("---")
 
     # ── KPI Metrics ────────────────────────────────────────────────────────────
-    st.markdown("### Sequence Overview")
+    st.markdown(f"### {translate('ui.sequence_overview')}")
     if sequence_type == "protein":
         m1, m2, m3, m4, m5 = st.columns(5)
         m1.metric("Length (aa)", f"{stats['length']:,}")
@@ -1119,6 +1119,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
         similarity_source = result.get("similarity_search_source", "local_database")
         similarity_candidate_count = result.get("similarity_candidate_count")
         similarity_candidate_pool_count = result.get("similarity_candidate_pool_count")
+        similarity_candidate_pool_requested = result.get("similarity_candidate_pool_requested")
         similarity_elapsed_seconds = result.get("similarity_elapsed_seconds")
         similarity_prefiltered_count = result.get("similarity_prefiltered_count", 0)
         similarity_search_mode = result.get("similarity_search_mode", "Balanced")
@@ -1128,7 +1129,12 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
         if similarity_candidate_count is not None:
             info_lines.append(f"**Candidates evaluated:** `{similarity_candidate_count}`")
         if similarity_candidate_pool_count is not None:
-            info_lines.append(f"**Candidate pool:** `{similarity_candidate_pool_count}`")
+            if similarity_candidate_pool_requested is not None and similarity_candidate_pool_requested > similarity_candidate_pool_count:
+                info_lines.append(
+                    f"**Candidate pool:** `{similarity_candidate_pool_count}` (reduced from `{similarity_candidate_pool_requested}` by length/alignment budget)"
+                )
+            else:
+                info_lines.append(f"**Candidate pool:** `{similarity_candidate_pool_count}`")
         if similarity_elapsed_seconds is not None:
             info_lines.append(f"**Similarity workflow time:** `{similarity_elapsed_seconds:.3f} s`")
         if similarity_prefiltered_count:
@@ -1171,7 +1177,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             # Enhanced similarity analysis: top 3 comparison & confidence overview
             if len(similarity_results) >= 2:
                 st.markdown("---")
-                st.markdown("##### Top Matches Summary")
+                st.markdown(f"##### {translate('ui.top_matches_summary')}")
                 top3_table = viz.build_top3_comparison_table(similarity_results, len(result.get("sequence", "")))
                 if top3_table.get("rows"):
                     st.markdown("| Rank | Gene | Similarity | Trait | Organism | Coverage | Gaps |")
@@ -1200,7 +1206,26 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                         st.markdown(f"**Organism:** {match['organism']}")
                         st.markdown(f"**Accession:** {match['accession']}")
                     with c2:
-                        st.markdown(f"**Similarity (aligned identity):** {match['similarity_score']:.1f}%")
+                        st.metric(
+                            "Similarity (global)",
+                            f"{match['similarity_score']:.2f}%",
+                            help="Global end-to-end identity across the complete query and reference sequences. Used for ranking candidates.",
+                        )
+                        local_coverage = match.get("local_coverage_percent")
+                        if local_coverage is not None:
+                            st.metric(
+                                "Local coverage",
+                                f"{local_coverage:.2f}%",
+                                help="Percentage of the query sequence represented by one Smith-Waterman local traceback. It is not the percentage of a perfect segment and may include mismatches or gaps.",
+                            )
+                            local_identity = match.get("local_identity")
+                            if local_identity is not None:
+                                st.caption(f"Best local segment identity: {local_identity:.2f}%")
+                            if local_coverage < 90.0:
+                                st.warning(
+                                    "Partial match: the best local segment covers less than 90% of the query; "
+                                    "this may represent a conserved domain rather than a complete orthologue."
+                                )
                         st.markdown(f"**Alignment:** {match.get('alignment_method', 'global')}")
                         if match.get("alignment", {}).get("algorithm"):
                             st.markdown(f"**Algorithm:** {match['alignment']['algorithm']}")
@@ -1209,7 +1234,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                         st.markdown(f"**Description:** {match['description']}")
 
                     if match.get("alignment"):
-                        st.markdown("**Alignment Map:**")
+                        st.markdown(f"**{translate('ui.alignment_map')}:**")
                         st.plotly_chart(
                             viz.plot_alignment(match["alignment"]["alignment_map"]),
                             width='stretch',
@@ -1239,7 +1264,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                                     use_container_width=True,
                                 )
                             with col_metrics:
-                                st.markdown("**Alignment Metrics (2):**")
+                                st.markdown(f"**{translate('ui.alignment_metrics')}:**")
                                 if metrics:
                                     st.markdown(
                                         f"- **Aligned Length:** {metrics.get('alignment_length', 'N/A')} bp\n"
@@ -1252,7 +1277,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
 
                         # Gene context card (1)
                         context = viz.build_match_context_card(match)
-                        st.markdown("**Gene Context (1):**")
+                        st.markdown(f"**{translate('ui.gene_context')}:**")
                         st.markdown(
                             f"- **Description:** {context.get('description', 'No description')}\n"
                             f"- **Accession:** {context.get('accession', 'N/A')}\n"
@@ -1261,14 +1286,14 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
 
     # ── Tab 3: Mutations ───────────────────────────────────────────────────────
     with tabs[2]:
-        st.markdown("#### Mutation Analysis")
+        st.markdown(f"#### {translate('ui.mutation_analysis')}")
 
         if not mutation_report:
             st.info("No mutation report — run analysis with a database match first.")
         else:
             mc1, mc2, mc3, mc4, mc5 = st.columns(5)
-            mc1.metric("Substitutions", mutation_report["total_mutations"])
-            mc2.metric("Indels", mutation_report.get("total_indels", 0))
+            mc1.metric(translate('ui.substitutions'), mutation_report["total_mutations"])
+            mc2.metric(translate('ui.indels'), mutation_report.get("total_indels", 0))
             mc3.metric(
                 "Identity (aligned bases only)",
                 f"{mutation_report.get('non_gap_identity_percent', mutation_report['identity_percent'])}%",
@@ -1282,7 +1307,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                      "(BLAST-style) — will read lower than the aligned-bases-only identity "
                      "whenever there are indels, even with zero substitutions.",
             )
-            mc5.metric("Compared positions (no gaps)", f"{mutation_report['compared_length']}")
+            mc5.metric(translate('ui.compared_positions'), f"{mutation_report['compared_length']}")
 
             st.plotly_chart(
                 viz.plot_mutation_map(mutation_report, mutation_report["compared_length"]),
@@ -1308,7 +1333,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             mutations = mutation_report.get("mutations", [])
             indels = mutation_report.get("indels", [])
             if mutations:
-                st.markdown("#### Substitutions")
+                st.markdown(f"#### {translate('ui.substitutions')}")
                 st.markdown(
                     "| Ref pos | Query pos | Reference | Query | Type |\n"
                     "|---|---|---|---|---|\n" +
@@ -1320,7 +1345,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 if len(mutations) > 50:
                     st.info(f"Showing first 50 of {len(mutations)} substitutions.")
             if indels:
-                st.markdown("#### Indels")
+                st.markdown(f"#### {translate('ui.indels')}")
                 st.markdown(
                     "| Ref pos | Query pos | Reference | Query | Type |\n"
                     "|---|---|---|---|---|\n" +
@@ -1376,7 +1401,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
 
     # ── Tab 5: AI Interpretation ───────────────────────────────────────────────
     with tabs[4]:
-        st.markdown("#### AI Biological Interpretation")
+        st.markdown(f"#### {translate('ui.ai_biological_interpretation')}")
 
         interp = interpretation
 
@@ -1445,7 +1470,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
 
     # ── Tab 6: Raw Sequence ────────────────────────────────────────────────────
     with tabs[5]:
-        st.markdown("#### Cleaned Sequence")
+        st.markdown(f"#### {translate('ui.cleaned_sequence')}")
         if sequence_type == "protein":
             st.markdown(
                 f"**Length:** {len(sequence)} aa  |  "
@@ -1459,7 +1484,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             )
         st.code(sequence, language=None)
 
-        st.markdown("#### Download")
+        st.markdown(f"#### {translate('ui.download_report')}")
         if sequence_type == "protein":
             fasta_content = f">Query_sequence | length={len(sequence)}aa\n{sequence}\n"
         else:
@@ -1510,11 +1535,11 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             mime="text/plain",
         )
         st.markdown("#### Biological Annotation")
-        if st.button("Run annotation", key="run_annotation"):
+        if st.button(translate('ui.run_annotation'), key="run_annotation"):
             from core_engines.annotation_engine import annotate_sequence
             try:
                 anns = annotate_sequence(sequence, db=db)
-                st.success("Annotation complete")
+                st.success(translate('ui.annotation_complete'))
                 st.json(anns)
             except Exception as e:
                 logger.error(f"Annotation failed: {e}")
