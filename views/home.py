@@ -151,6 +151,37 @@ def _render_variant_table(items: list[dict], limit: int = 50) -> None:
     )
 
 
+def _is_admin_view() -> bool:
+    """Gate for developer-only diagnostics (DB metadata count, gene search,
+    metadata preview) in the sidebar -- these are debugging aids, not
+    something a regular user analyzing a sequence needs to see, and having
+    them always-on clutters the sidebar for everyone.
+
+    Checked via a `?admin_key=...` URL query parameter matched against a
+    secret configured in `.streamlit/secrets.toml` (key: ADMIN_KEY) or the
+    ADMIN_KEY environment variable (fallback for hosts without Streamlit
+    secrets support). Deliberately not a real login system -- just enough
+    to keep this panel out of a regular user's way once this app is shared
+    with anyone besides its developer.
+
+    IMPORTANT: if no ADMIN_KEY is configured at all, this returns True
+    (panel visible) to match today's always-on local-dev behavior and
+    avoid silently hiding it before anyone's set a key. Set an ADMIN_KEY
+    secret BEFORE deploying this app anywhere other people can reach it --
+    otherwise this panel stays visible to every visitor.
+    """
+    configured_key = None
+    try:
+        configured_key = st.secrets.get("ADMIN_KEY")
+    except Exception:
+        pass  # no secrets.toml configured at all -- fall through to env var
+    if not configured_key:
+        configured_key = os.environ.get("ADMIN_KEY")
+    if not configured_key:
+        return True
+    return st.query_params.get("admin_key", "") == configured_key
+
+
 @st.cache_data(show_spinner=False)
 def _cached_analyze(
     record_json: str,
@@ -396,7 +427,9 @@ with st.sidebar:
     )
     st.markdown("---")
 
-    st.markdown(f"### {translate('ui.database')}")
+    admin_view = _is_admin_view()
+    if admin_view:
+        st.markdown(f"### {translate('ui.database')}")
 
     db = None
     metadata = None
@@ -407,54 +440,64 @@ with st.sidebar:
             # A cheap COUNT(*) rather than materializing all ~56k rows just
             # to call len() on them. Cached for 5 minutes so a widget
             # interaction elsewhere on the page doesn't re-issue it.
+            # Always computed regardless of admin_view -- metadata_available
+            # gates real app behavior elsewhere (e.g. line ~629), it's only
+            # the *display* of this diagnostic info that's admin-gated.
             total_genes = get_gene_count_cached()
             metadata_available = total_genes > 0
-            st.success(f"✅ {total_genes} {translate('results.gene_records_available')}")
-            st.markdown(translate('ui.metadata_load_help'))
 
-            gene_search = st.text_input(
-                translate('ui.search_gene'),
-                value="",
-                help=translate('ui.metadata_filter_help'),
-            )
-            if gene_search:
-                query = gene_search.strip()
-                # Server-side ILIKE search (see postgres_utils.search_gene_metadata)
-                # -- only the ~20 rows actually shown ever leave Postgres,
-                # instead of pulling all ~56k rows into Python on every
-                # keystroke and filtering them in a list comprehension.
-                match_count = count_gene_metadata_matches_cached(query)
-                filtered = search_gene_metadata_cached(query, limit=20)
-                st.write(translate('ui.metadata_count_summary', count=len(filtered), match_count=match_count))
-            else:
-                filtered = search_gene_metadata_cached("", limit=20)
-                st.info(translate('ui.showing_sample'))
+            if admin_view:
+                st.success(f"✅ {total_genes} {translate('results.gene_records_available')}")
+                st.markdown(translate('ui.metadata_load_help'))
 
-            with st.expander(translate('ui.preview_metadata')):
-                for gene in filtered:
-                    symbol = gene.get("symbol", "Unknown")
-                    gene_id = gene.get("gene_id", "n/a")
-                    trait = ", ".join(gene.get("traits", [])[:3]) or "No trait specified"
-                    description = gene.get("description", "No description")
-                    st.markdown(f"- **{symbol}** (`{gene_id}`) — {trait} — {description}")
+                gene_search = st.text_input(
+                    translate('ui.search_gene'),
+                    value="",
+                    help=translate('ui.metadata_filter_help'),
+                )
+                if gene_search:
+                    query = gene_search.strip()
+                    # Server-side ILIKE search (see postgres_utils.search_gene_metadata)
+                    # -- only the ~20 rows actually shown ever leave Postgres,
+                    # instead of pulling all ~56k rows into Python on every
+                    # keystroke and filtering them in a list comprehension.
+                    match_count = count_gene_metadata_matches_cached(query)
+                    filtered = search_gene_metadata_cached(query, limit=20)
+                    st.write(translate('ui.metadata_count_summary', count=len(filtered), match_count=match_count))
+                else:
+                    filtered = search_gene_metadata_cached("", limit=20)
+                    st.info(translate('ui.showing_sample'))
 
-            st.info(translate('ui.full_db_load'))
+                with st.expander(translate('ui.preview_metadata')):
+                    for gene in filtered:
+                        symbol = gene.get("symbol", "Unknown")
+                        gene_id = gene.get("gene_id", "n/a")
+                        trait = ", ".join(gene.get("traits", [])[:3]) or "No trait specified"
+                        description = gene.get("description", "No description")
+                        st.markdown(f"- **{symbol}** (`{gene_id}`) — {trait} — {description}")
+
+                st.info(translate('ui.full_db_load'))
 
         except Exception:
             logger.exception("Lightweight gene metadata load failed")
-            st.warning(translate('ui.metadata_load_error'))
+            if admin_view:
+                st.warning(translate('ui.metadata_load_error'))
             db = load_gene_database_cached(str(config.DATABASE_PATH))
     else:
         db = load_gene_database_cached(str(config.DATABASE_PATH))
 
+    # Below: real failure states stay visible to everyone (a regular user
+    # deserves to know analysis may not work), but the happy-path "X genes
+    # loaded" confirmation is admin-only diagnostic noise for a working app.
     if db is not None:
         if not db:
             st.error(f"❌ {translate('ui.no_genes_available')}")
-        elif isinstance(db, dict) and db:
+        elif isinstance(db, dict) and db and admin_view:
             fallback_note = " (local fallback; PostgreSQL unavailable)" if not metadata_available else ""
             st.success(f"✅ {len(db)} genes loaded{fallback_note}")
     elif metadata_available:
-        st.info(translate('ui.metadata_load_help'))
+        if admin_view:
+            st.info(translate('ui.metadata_load_help'))
     else:
         st.error(f"❌ {translate('ui.no_genes_available')}")
 

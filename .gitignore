@@ -10,3 +10,4 @@ full_gene_db.pkl
 scripts/.cache/
 Plaza
 .env.env
+.streamlit/secrets.toml
