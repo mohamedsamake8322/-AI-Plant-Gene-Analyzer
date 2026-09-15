@@ -730,8 +730,25 @@ def find_repeats(sequence: str, min_run_length: int = 6, min_unit_repeats: int =
 
 
 def translate_dna(sequence: str, frame: int = 0) -> dict[str, object]:
-    """Translate DNA to protein for a given reading frame."""
-    seq = sequence[frame:]
+    """Translate DNA for a signed reading frame from -3 through +3.
+
+    Positive values use the supplied strand (+1 = offset 0); negative values
+    translate the reverse complement (-1 = offset 0). Historical zero-based
+    values 0, 1, and 2 remain supported for existing callers.
+    """
+    if frame < 0:
+        strand = reverse_complement(sequence)
+        offset = abs(frame) - 1
+        frame_label = frame
+    else:
+        strand = sequence
+        offset = frame
+        frame_label = frame + 1
+
+    if offset not in (0, 1, 2):
+        raise ValueError("Reading frame must be one of 0, 1, 2, -1, -2, or -3.")
+
+    seq = strand[offset:]
     protein_parts: list[str] = []
     codons_used: list[str] = []
     stop_pos: Optional[int] = None
@@ -755,7 +772,7 @@ def translate_dna(sequence: str, frame: int = 0) -> dict[str, object]:
         "codons": codons_used,
         "stop_position": stop_pos,
         "status": status,
-        "frame": frame,
+        "frame": frame_label,
     }
 
 
@@ -766,9 +783,8 @@ def translate_all_frames(sequence: str, include_reverse: bool = True) -> dict[st
         for frame in range(3)
     }
     if include_reverse:
-        rev = reverse_complement(sequence)
         for frame in range(3):
-            frames[f"Frame -{frame + 1}"] = translate_dna(rev, frame)
+            frames[f"Frame -{frame + 1}"] = translate_dna(sequence, -(frame + 1))
     return frames
 
 

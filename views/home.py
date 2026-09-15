@@ -393,32 +393,38 @@ with st.sidebar:
     st.markdown("---")
 
     st.markdown(f"### {translate('ui.settings')}")
+    st.markdown("#### 🧬 Recherche de similarité")
     top_n_matches = st.slider(
         translate('ui.top_matches'),
         min_value=1,
-        max_value=8,
-        value=3,
+        max_value=config.MAX_TOP_N_MATCHES,
+        value=config.DEFAULT_TOP_N_MATCHES,
         help=translate('ui.top_matches_help', default="Number of best-matching genes to display."),
     )
     similarity_deep_search = st.checkbox(
-        translate('ui.deep_search'),
-        value=False,
+        translate('ui.deep_search'), value=False,
         help=translate('ui.deep_search_help', default="Disable the alignment length prefilter and evaluate more candidates. This is slower, but increases sensitivity for short or divergent queries."),
     )
+
+    st.markdown("#### 📊 Statistiques")
     window_size = st.slider(
         translate('ui.window_size'),
-        min_value=5,
-        max_value=60,
-        value=20,
+        min_value=config.MIN_WINDOW_SIZE,
+        max_value=config.MAX_WINDOW_SIZE,
+        value=config.DEFAULT_WINDOW_SIZE,
         step=5,
         help=translate('ui.window_size_help', default="Window size (bp) for the GC content profile chart."),
     )
+
+    st.markdown("#### 🔤 Traduction")
     reading_frame = st.selectbox(
         translate('ui.reading_frame'),
-        options=[0, 1, 2],
-        format_func=lambda x: f"+{x + 1}",
+        options=[1, 2, 3, -1, -2, -3],
+        format_func=lambda frame: f"{frame:+d}",
     )
-    input_type_options = ["Auto detect", "DNA", "Protein"]
+
+    st.markdown("#### 🔧 Entrée")
+    input_type_options = config.SUPPORTED_INPUT_TYPES
     sequence_input_type = st.selectbox(
         translate('ui.input_type'),
         options=input_type_options,
@@ -1558,7 +1564,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             st.markdown(f"**Unique residues:** {stats.get('unique_residues', 'N/A')}")
             st.markdown(f"**Most abundant residue:** {max(dist['counts'], key=dist['counts'].get)}")
         else:
-            st.markdown(f"#### Protein Translation (Frame +{reading_frame + 1})")
+            st.markdown(f"#### Protein Translation (Frame {reading_frame:+d})")
 
             tl = translation
             st.markdown(f"**Protein length:** {tl['length']} amino acids")

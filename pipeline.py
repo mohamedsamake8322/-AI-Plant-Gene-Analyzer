@@ -226,7 +226,7 @@ def analyze_sequence_record(
             try:
                 variant_report = variant_analysis.analyze_variants(
                     sequence, ref_seq, seq_type=mut_seq_type,
-                    reading_frame=reading_frame if mut_seq_type == "dna" else 0,
+                    reading_frame=abs(reading_frame) - 1 if mut_seq_type == "dna" else 0,
                 )
             except Exception:
                 if logger:
