@@ -496,24 +496,32 @@ def plot_mutation_map(mutation_report: dict, seq_length: int) -> go.Figure:
         )
         return fig
 
-    positions = []
-    colors = []
-    hover_texts = []
+    grouped_mutations = {
+        "transition": {"positions": [], "hover_texts": []},
+        "transversion": {"positions": [], "hover_texts": []},
+    }
     for m in mutations:
-        position = m.get("position")
-        if position is None:
-            position = m.get("position_query", m.get("position_reference"))
+        query_position = m.get("position_query")
+        reference_position = m.get("position_reference")
+        position = query_position or reference_position
         if position is None:
             continue
 
-        positions.append(position)
-        mutation_type = m.get("type", "unknown")
-        colors.append(AMBER if mutation_type == "transition" else CORAL)
-        hover_texts.append(
-            f"Pos {position}: {m.get('reference', '?')} → {m.get('query', '?')} ({mutation_type})"
+        mutation_type = str(m.get("type", "transversion")).lower()
+        group = "transition" if mutation_type == "transition" else "transversion"
+        position_label = (
+            f"Réf. {reference_position} / Requête {query_position}"
+            if reference_position is not None and query_position is not None
+            else f"Position {position}"
+        )
+        grouped_mutations[group]["positions"].append(position)
+        grouped_mutations[group]["hover_texts"].append(
+            f"<b>{position_label}</b><br>"
+            f"Changement : {m.get('reference', '?')} → {m.get('query', '?')}<br>"
+            f"Type : {group.capitalize()}"
         )
 
-    if not positions:
+    if not any(item["positions"] for item in grouped_mutations.values()):
         fig = go.Figure()
         fig.update_layout(
             **_base_layout("Mutation Map"),
@@ -531,22 +539,29 @@ def plot_mutation_map(mutation_report: dict, seq_length: int) -> go.Figure:
 
     fig = go.Figure()
 
-    fig.add_trace(
-        go.Scatter(
-            x=positions,
-            y=[1] * len(positions),
-            mode="markers",
-            marker=dict(
-                size=14,
-                color=colors,
-                symbol="diamond",
-                line=dict(color="#0d1b2a", width=1),
-            ),
-            text=hover_texts,
-            hovertemplate="%{text}<extra></extra>",
-            name="Mutations",
+    for group, color, label in (
+        ("transition", AMBER, "Transitions (jaune)"),
+        ("transversion", CORAL, "Transversions (rouge)"),
+    ):
+        positions = grouped_mutations[group]["positions"]
+        if not positions:
+            continue
+        fig.add_trace(
+            go.Scatter(
+                x=positions,
+                y=[1] * len(positions),
+                mode="markers",
+                marker=dict(
+                    size=14,
+                    color=color,
+                    symbol="diamond",
+                    line=dict(color="#0d1b2a", width=1),
+                ),
+                text=grouped_mutations[group]["hover_texts"],
+                hovertemplate="%{text}<extra></extra>",
+                name=label,
+            )
         )
-    )
 
     fig.add_trace(
         go.Scatter(
@@ -565,6 +580,12 @@ def plot_mutation_map(mutation_report: dict, seq_length: int) -> go.Figure:
     layout["xaxis"]["title"] = "Position (bp)"
     layout["yaxis"]["visible"] = False
     layout["showlegend"] = True
+    layout["legend"] = dict(
+        title="Type de substitution",
+        orientation="h",
+        y=1.18,
+        x=0,
+    )
     fig.update_layout(**layout, height=220)
     return fig
 
