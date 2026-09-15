@@ -684,6 +684,9 @@ def plot_msa_table(aligned_sequences: list, labels: list | None = None) -> go.Fi
     cell_values = list(map(list, zip(*rows)))
     cell_colors = list(map(list, zip(*fill_colors)))
 
+    header_row_height = 28
+    cell_row_height = 24
+
     fig = go.Figure(
         data=[
             go.Table(
@@ -693,6 +696,7 @@ def plot_msa_table(aligned_sequences: list, labels: list | None = None) -> go.Fi
                     align="center",
                     font=dict(color=TEAL, size=12),
                     line_color="rgba(0,217,163,0.25)",
+                    height=header_row_height,
                 ),
                 cells=dict(
                     values=[labels or [f"Seq {i+1}" for i in range(len(rows))]] + cell_values,
@@ -700,11 +704,19 @@ def plot_msa_table(aligned_sequences: list, labels: list | None = None) -> go.Fi
                     align="center",
                     font=dict(color="#061019", size=11),
                     line_color="rgba(0,217,163,0.15)",
+                    height=cell_row_height,
                 ),
             )
         ]
     )
-    fig.update_layout(paper_bgcolor=THEME["paper"], height=max(200, 40 * len(rows)))
+    # Explicit row heights above make this deterministic instead of leaving
+    # Plotly's own default table-row sizing to disagree with whatever height
+    # we set here -- with many columns (even after windowing to a
+    # reasonable width upstream), a mismatch between the two previously
+    # left the actual colored cells squeezed into a thin strip inside a
+    # much taller, mostly-blank figure.
+    total_height = 40 + header_row_height + cell_row_height * len(rows)
+    fig.update_layout(paper_bgcolor=THEME["paper"], height=max(200, total_height))
     return fig
 
 
