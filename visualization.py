@@ -304,10 +304,16 @@ def plot_similarity_scores(similarity_results: list[dict]) -> go.Figure:
     )
     layout = _base_layout("Database Similarity Scores")
     layout["xaxis"]["title"] = "Similarity (%)"
-    layout["xaxis"]["range"] = [0, 105]
+    layout["xaxis"]["range"] = [0, max(100, max(scores, default=0) + 8)]
     layout["xaxis"]["ticksuffix"] = "%"
     layout["yaxis"]["title"] = "Gene"
-    fig.update_layout(**layout, height=max(300, len(genes) * 60))
+    layout["yaxis"]["tickfont"] = dict(size=12)
+    layout["margin"] = dict(l=170, r=75, t=55, b=55)
+    fig.update_layout(
+        **layout,
+        height=max(320, len(genes) * 78),
+        bargap=0.28,
+    )
     return fig
 
 
