@@ -353,13 +353,11 @@ DEMO_SEQUENCES: dict[str, dict] = config.DEMO_SEQUENCES
 with st.sidebar:
     language_selector(key="app_language_selector")
     st.markdown(f"## 🧬 {translate('ui.app_title')}")
-    st.markdown("---")
 
-    st.markdown(f"### {translate('ui.about')}")
-    st.markdown(
-        translate('ui.build_about') + "\n" + "\n".join(f"- {item}" for item in translate('ui.about_items', default=[]))
-    )
-    st.markdown("---")
+    with st.expander(translate('ui.about'), expanded=False):
+        st.markdown(
+            translate('ui.build_about') + "\n" + "\n".join(f"- {item}" for item in translate('ui.about_items', default=[]))
+        )
 
     st.markdown(f"### {translate('ui.settings')}")
     top_n_matches = st.slider(
@@ -394,69 +392,61 @@ with st.sidebar:
         format_func=lambda value: translate_input_type(value, lang=current_lang()),
         help=translate('ui.input_type_help', default="Choose the sequence type or let the app detect it automatically."),
     )
-    st.markdown("---")
 
-    st.markdown(f"### {translate('ui.database')}")
+    st.markdown("---")
 
     db = None
     metadata = None
     metadata_available = False
 
-    if get_gene_count is not None and search_gene_metadata is not None:
-        try:
-            # A cheap COUNT(*) rather than materializing all ~56k rows just
-            # to call len() on them. Cached for 5 minutes so a widget
-            # interaction elsewhere on the page doesn't re-issue it.
-            total_genes = get_gene_count_cached()
-            metadata_available = total_genes > 0
-            st.success(f"✅ {total_genes} {translate('results.gene_records_available')}")
-            st.markdown(translate('ui.metadata_load_help'))
+    with st.expander(translate('ui.database'), expanded=False):
+        if get_gene_count is not None and search_gene_metadata is not None:
+            try:
+                total_genes = get_gene_count_cached()
+                metadata_available = total_genes > 0
+                st.success(f"✅ {total_genes} {translate('results.gene_records_available')}")
 
-            gene_search = st.text_input(
-                translate('ui.search_gene'),
-                value="",
-                help=translate('ui.metadata_filter_help'),
-            )
-            if gene_search:
-                query = gene_search.strip()
-                # Server-side ILIKE search (see postgres_utils.search_gene_metadata)
-                # -- only the ~20 rows actually shown ever leave Postgres,
-                # instead of pulling all ~56k rows into Python on every
-                # keystroke and filtering them in a list comprehension.
-                match_count = count_gene_metadata_matches_cached(query)
-                filtered = search_gene_metadata_cached(query, limit=20)
-                st.write(translate('ui.metadata_count_summary', count=len(filtered), match_count=match_count))
-            else:
-                filtered = search_gene_metadata_cached("", limit=20)
-                st.info(translate('ui.showing_sample'))
+                gene_search = st.text_input(
+                    translate('ui.search_gene'),
+                    value="",
+                    help=translate('ui.metadata_filter_help'),
+                )
+                if gene_search:
+                    query = gene_search.strip()
+                    match_count = count_gene_metadata_matches_cached(query)
+                    filtered = search_gene_metadata_cached(query, limit=20)
+                    st.write(translate('ui.metadata_count_summary', count=len(filtered), match_count=match_count))
+                else:
+                    filtered = search_gene_metadata_cached("", limit=20)
+                    st.caption(translate('ui.showing_sample'))
 
-            with st.expander(translate('ui.preview_metadata')):
-                for gene in filtered:
-                    symbol = gene.get("symbol", "Unknown")
-                    gene_id = gene.get("gene_id", "n/a")
-                    trait = ", ".join(gene.get("traits", [])[:3]) or "No trait specified"
-                    description = gene.get("description", "No description")
-                    st.markdown(f"- **{symbol}** (`{gene_id}`) — {trait} — {description}")
+                with st.expander(translate('ui.preview_metadata'), expanded=False):
+                    for gene in filtered:
+                        symbol = gene.get("symbol", "Unknown")
+                        gene_id = gene.get("gene_id", "n/a")
+                        trait = ", ".join(gene.get("traits", [])[:3]) or "No trait specified"
+                        description = gene.get("description", "No description")
+                        st.markdown(f"- **{symbol}** (`{gene_id}`) — {trait} — {description}")
 
-            st.info(translate('ui.full_db_load'))
+                st.caption(translate('ui.full_db_load'))
 
-        except Exception:
-            logger.exception("Lightweight gene metadata load failed")
-            st.warning(translate('ui.metadata_load_error'))
+            except Exception:
+                logger.exception("Lightweight gene metadata load failed")
+                st.warning(translate('ui.metadata_load_error'))
+                db = load_gene_database_cached(str(config.DATABASE_PATH))
+        else:
             db = load_gene_database_cached(str(config.DATABASE_PATH))
-    else:
-        db = load_gene_database_cached(str(config.DATABASE_PATH))
 
-    if db is not None:
-        if not db:
+        if db is not None:
+            if not db:
+                st.error(f"❌ {translate('ui.no_genes_available')}")
+            elif isinstance(db, dict) and db:
+                fallback_note = " (local fallback; PostgreSQL unavailable)" if not metadata_available else ""
+                st.success(f"✅ {len(db)} genes loaded{fallback_note}")
+        elif metadata_available:
+            st.caption(translate('ui.metadata_load_help'))
+        else:
             st.error(f"❌ {translate('ui.no_genes_available')}")
-        elif isinstance(db, dict) and db:
-            fallback_note = " (local fallback; PostgreSQL unavailable)" if not metadata_available else ""
-            st.success(f"✅ {len(db)} genes loaded{fallback_note}")
-    elif metadata_available:
-        st.info(translate('ui.metadata_load_help'))
-    else:
-        st.error(f"❌ {translate('ui.no_genes_available')}")
 
 
 # ─── Main header ───────────────────────────────────────────────────────────────
