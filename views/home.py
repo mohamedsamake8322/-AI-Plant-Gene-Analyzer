@@ -1180,13 +1180,57 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 st.markdown(f"##### {translate('ui.top_matches_summary')}")
                 top3_table = viz.build_top3_comparison_table(similarity_results, len(result.get("sequence", "")))
                 if top3_table.get("rows"):
-                    st.markdown("| Rank | Gene | Similarity | Trait | Organism | Coverage | Gaps |")
-                    st.markdown("|------|------|-----------|-------|----------|----------|------|")
-                    for row in top3_table["rows"]:
-                        st.markdown(
-                            f"| {row['rank']} | {row['gene']} | {row['similarity']} | "
-                            f"{row['trait']} | {row['organism']} | {row['coverage']} | {row['gaps']} |"
-                        )
+                    def _pct_to_float(value) -> float:
+                        # Rows from build_top3_comparison_table are pre-formatted
+                        # display strings (e.g. "99.9%") — strip everything but
+                        # the numeric part so st.dataframe can sort/bar them
+                        # instead of treating them as opaque text.
+                        try:
+                            return float(str(value).replace("%", "").strip())
+                        except (TypeError, ValueError):
+                            return 0.0
+
+                    table_rows = []
+                    for row, match in zip(top3_table["rows"], similarity_results):
+                        classification = sim.classify_similarity(match["similarity_score"])
+                        table_rows.append({
+                            "Rank": row["rank"],
+                            "Confidence": classification["emoji"],
+                            "Gene": row["gene"],
+                            "Similarity": _pct_to_float(row["similarity"]),
+                            "Trait": row["trait"],
+                            "Organism": row["organism"],
+                            "Coverage": _pct_to_float(row["coverage"]),
+                            "Gaps": _pct_to_float(row["gaps"]),
+                        })
+
+                    df_top3 = pd.DataFrame(table_rows)
+                    st.dataframe(
+                        df_top3,
+                        hide_index=True,
+                        width='stretch',
+                        column_config={
+                            "Rank": st.column_config.NumberColumn("Rank", width="small"),
+                            "Confidence": st.column_config.TextColumn("", width="small"),
+                            "Gene": st.column_config.TextColumn("Gene", width="medium"),
+                            "Similarity": st.column_config.ProgressColumn(
+                                "Similarity",
+                                help="Global end-to-end identity (Needleman-Wunsch). Used for ranking.",
+                                format="%.1f%%",
+                                min_value=0,
+                                max_value=100,
+                            ),
+                            "Trait": st.column_config.TextColumn("Trait", width="large"),
+                            "Organism": st.column_config.TextColumn("Organism", width="medium"),
+                            "Coverage": st.column_config.ProgressColumn(
+                                "Global coverage",
+                                format="%.1f%%",
+                                min_value=0,
+                                max_value=100,
+                            ),
+                            "Gaps": st.column_config.NumberColumn("Gaps", format="%.1f%%"),
+                        },
+                    )
 
             for i, match in enumerate(similarity_results):
                 classification = sim.classify_similarity(match["similarity_score"])

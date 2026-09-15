@@ -892,7 +892,7 @@ def build_top3_comparison_table(similarity_results: list[dict], query_len: int) 
     Returns a dict with 'header' and 'rows' suitable for Streamlit table display.
     """
     table_data = {
-        "header": ["Rank", "Gene", "Similarity", "Trait", "Organism", "Coverage", "Gaps"],
+        "header": ["Rank", "Gene", "Similarity", "Trait", "Organism", "Global coverage", "Gaps"],
         "rows": []
     }
     

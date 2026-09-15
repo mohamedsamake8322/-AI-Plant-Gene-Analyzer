@@ -454,3 +454,9 @@ LINE 1: SELECT COUNT(*) FROM genes;
 2026-09-14 20:13:41,664 - __main__ - INFO - CSS loaded successfully from style.css
 2026-09-14 20:13:42,119 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
 2026-09-14 20:13:42,701 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 5 candidates for top_n=3
+2026-09-15 09:50:53,442 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-15 09:51:11,639 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-15 09:51:11,951 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-15 09:51:12,316 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-09-15 09:51:13,496 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 5 candidates for top_n=3
+2026-09-15 09:51:25,008 - __main__ - INFO - Analysis session state saved
