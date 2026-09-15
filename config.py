@@ -107,12 +107,12 @@ NUCLEOTIDE_COLORS = {
     "N": "#9e9e9e",  # grey
 }
 
-# Light theme colors
-CHART_BG = "#ffffff"
-CHART_PAPER = "#ffffff"
-CHART_FONT_COLOR = "#111111"
-CHART_GRID_COLOR = "rgba(0,0,0,0.08)"
-CHART_LINE_COLOR = "#cccccc"
+# Dark chart theme colors, matching the application shell.
+CHART_BG = "#1b1f14"
+CHART_PAPER = "#14170f"
+CHART_FONT_COLOR = "#edeae0"
+CHART_GRID_COLOR = "rgba(237,234,224,0.14)"
+CHART_LINE_COLOR = "#66705a"
 CHART_TITLE_COLOR = "#00d9a3"
 
 # ─── Export Settings ──────────────────────────────────────────────────────────
