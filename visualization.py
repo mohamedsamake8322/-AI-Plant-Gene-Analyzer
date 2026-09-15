@@ -366,6 +366,102 @@ def plot_alignment(alignment_map: dict, max_chars: int = 60) -> go.Figure:
     return fig
 
 
+def plot_alignment_overview(alignment_map: dict) -> go.Figure:
+    """
+    Full-length companion to plot_alignment().
+
+    plot_alignment() only ever renders the first `max_chars` (default 60)
+    positions of the alignment -- on a multi-thousand-bp query, any
+    mismatch/gap beyond that window is invisible even though the metrics
+    below (Mismatches: N, Gaps: N) correctly count it. Confirmed in
+    practice: an 8-substitution test sequence (mutations at positions
+    861-7066) rendered as a perfect, all-green 0-60bp bar chart, silently
+    hiding every one of the 8 real differences.
+
+    This renders every mismatch/gap position as a sparse marker across the
+    FULL alignment length instead of one bar per base -- scales to any
+    sequence length (a 60,000bp alignment with 20 mismatches draws 20
+    points, not 60,000 bars), and is meant to sit alongside
+    plot_alignment()'s zoomed view, not replace it: this answers "where in
+    the whole sequence are the differences", the zoomed bar chart answers
+    "what exactly changed at this one position".
+    """
+    query = alignment_map.get("query", "")
+    ref = alignment_map.get("reference", "")
+    match_line = alignment_map.get("match_line", "")
+
+    if not match_line:
+        return go.Figure()
+
+    total_len = len(match_line)
+    mismatch_x, mismatch_hover = [], []
+    gap_x, gap_hover = [], []
+
+    for i, (m, q, r) in enumerate(zip(match_line, query, ref)):
+        pos = i + 1
+        if m == " ":  # gap column (query or reference has "-")
+            gap_x.append(pos)
+            gap_hover.append(f"Position: {pos}<br>Query: {q}<br>Reference: {r}<br>Gap")
+        elif m == "X":  # mismatch, no gap
+            mismatch_x.append(pos)
+            mismatch_hover.append(f"Position: {pos}<br>Query: {q}<br>Reference: {r}<br>Mismatch")
+
+    fig = go.Figure()
+
+    # Baseline showing the full alignment span, so an empty result (perfect
+    # match everywhere) still renders an informative "nothing to see here"
+    # line rather than a blank chart.
+    fig.add_trace(
+        go.Scatter(
+            x=[1, total_len],
+            y=[0, 0],
+            mode="lines",
+            line=dict(color=THEME["grid_color"], width=2),
+            hoverinfo="skip",
+            showlegend=False,
+        )
+    )
+    if mismatch_x:
+        fig.add_trace(
+            go.Scatter(
+                x=mismatch_x,
+                y=[0] * len(mismatch_x),
+                mode="markers",
+                marker=dict(color=CORAL, size=9, symbol="line-ns", line=dict(width=2, color=CORAL)),
+                name="Mismatch",
+                hovertext=mismatch_hover,
+                hoverinfo="text",
+            )
+        )
+    if gap_x:
+        fig.add_trace(
+            go.Scatter(
+                x=gap_x,
+                y=[0] * len(gap_x),
+                mode="markers",
+                marker=dict(color=AMBER, size=9, symbol="line-ns", line=dict(width=2, color=AMBER)),
+                name="Gap",
+                hovertext=gap_hover,
+                hoverinfo="text",
+            )
+        )
+
+    layout = _base_layout(f"Full-Length Difference Map ({total_len:,} bp/aa)")
+    layout["xaxis"]["title"] = "Position (bp)"
+    layout["xaxis"]["range"] = [0, total_len + 1]
+    layout["yaxis"]["visible"] = False
+    layout["yaxis"]["range"] = [-1, 1]
+    layout["showlegend"] = bool(mismatch_x or gap_x)
+    fig.update_layout(**layout, height=150)
+    if not mismatch_x and not gap_x:
+        fig.add_annotation(
+            text="No mismatches or gaps across the full alignment",
+            x=0.5, y=0.5, xref="paper", yref="paper",
+            showarrow=False, font=dict(color=TEAL, size=12),
+        )
+    return fig
+
+
 # ─── Mutation map ──────────────────────────────────────────────────────────────
 
 def plot_mutation_map(mutation_report: dict, seq_length: int) -> go.Figure:
@@ -824,44 +920,48 @@ def plot_alignment_coverage_heatmap(match: dict, query_len: int, window: int = 5
 
 def plot_confidence_gauge(metrics: dict) -> go.Figure:
     """
-    (5) Confidence score: composite of coverage + gaps + identity.
-    
-    Helps user assess "how much should I trust this result?"
-    - High coverage (>90%) + low gaps (<5%) = high confidence
-    - Moderate coverage (>70%) + moderate gaps (<15%) = medium
-    - Low coverage (<50%) or high gaps (>25%) = low confidence
+    Primary number is raw Identity, NOT a composite.
+
+    Previously the gauge's headline number was a weighted composite
+    (coverage*0.4 + gap_score*0.35 + identity*0.25) labeled "Match
+    Confidence", with the actual identity percent relegated to 10pt
+    caption text below the gauge. On a real 8-substitution test case
+    (coverage 100%, gaps 0%, identity 99.89%) the composite rounded to a
+    dominant "100%" -- visually indistinguishable from a truly identical
+    sequence, even though 8 real differences exist. This inverts that:
+    identity (the metric the rest of the app already treats as the
+    primary, ranking-relevant number -- see similarity_score/"Similarity
+    (global)" elsewhere) is now the number the gauge actually displays.
+    The composite is kept as a secondary, explicitly-labeled figure for
+    users who want a single "should I trust this alignment" heuristic,
+    but it can never again be mistaken for the identity score itself.
     """
     coverage = metrics.get("coverage_percent", 0)
     gap_percent = metrics.get("gap_percent", 0)
     identity = metrics.get("identity_percent", 0)
-    
-    # Weighted confidence: coverage(40%) + gaps(35%) + identity(25%)
+
     coverage_score = min(100, coverage * 1.1)
     gap_score = max(0, 100 - gap_percent * 5)
     identity_score = identity
-    
-    confidence = (coverage_score * 0.4 + gap_score * 0.35 + identity_score * 0.25)
-    confidence = min(100, max(0, confidence))
-    
-    color = TEAL if confidence >= 75 else AMBER if confidence >= 50 else CORAL
-    
+    composite = min(100, max(0, coverage_score * 0.4 + gap_score * 0.35 + identity_score * 0.25))
+
+    color = TEAL if identity >= 90 else AMBER if identity >= 70 else CORAL
+
     fig = go.Figure(
         go.Indicator(
-            mode="gauge+number+delta",
-            value=confidence,
+            mode="gauge+number",
+            value=identity,
             number=dict(suffix="%", font=dict(color=color, size=32)),
-            delta=dict(reference=50, increasing=dict(color=TEAL)),
             gauge=dict(
                 axis=dict(range=[0, 100], tickcolor=THEME["font_color"]),
                 bar=dict(color=color, thickness=0.25),
                 steps=[
-                    dict(range=[0, 50], color="rgba(255,107,107,0.1)"),
-                    dict(range=[50, 75], color="rgba(255,209,102,0.1)"),
-                    dict(range=[75, 100], color="rgba(0,217,163,0.1)"),
+                    dict(range=[0, 70], color="rgba(255,107,107,0.1)"),
+                    dict(range=[70, 90], color="rgba(255,209,102,0.1)"),
+                    dict(range=[90, 100], color="rgba(0,217,163,0.1)"),
                 ],
-                threshold=dict(line=dict(color=AMBER, width=2), thickness=0.75, value=50),
             ),
-            title=dict(text="Match Confidence", font=dict(color=color, size=14)),
+            title=dict(text="Match Identity", font=dict(color=color, size=14)),
         )
     )
     fig.update_layout(
@@ -871,12 +971,22 @@ def plot_confidence_gauge(metrics: dict) -> go.Figure:
         height=280,
         annotations=[
             dict(
-                text=f"Coverage: {coverage:.0f}% | Gaps: {gap_percent:.1f}% | Identity: {identity:.1f}%",
+                text=(
+                    f"Coverage: {coverage:.0f}% | Gaps: {gap_percent:.1f}% | "
+                    f"Composite confidence*: {composite:.0f}%"
+                ),
                 x=0.5, y=-0.2,
                 xref="paper", yref="paper",
                 showarrow=False,
                 font=dict(size=10, color=SLATE),
-            )
+            ),
+            dict(
+                text="*weighted blend of coverage, gaps and identity — not a substitute for Identity above",
+                x=0.5, y=-0.32,
+                xref="paper", yref="paper",
+                showarrow=False,
+                font=dict(size=8, color=SLATE),
+            ),
         ],
     )
     return fig

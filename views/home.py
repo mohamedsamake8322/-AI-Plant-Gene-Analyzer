@@ -20,6 +20,7 @@ from pathlib import Path
 
 # ── Local modules ──────────────────────────────────────────────────────────────
 import bioinformatics as bio
+import alignment_engine as aln
 from organism_reference import get_organism_reference
 import similarityengine as sim
 import visualization as viz
@@ -1262,6 +1263,70 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                         },
                     )
 
+                    # Conservation view across the top matches: an independent
+                    # multiple alignment (star_alignment, reference = query),
+                    # NOT the pairwise alignment gaps already computed for
+                    # ranking -- those differ per-candidate and can't be
+                    # stacked into one consistent column-by-column view.
+                    # Reuses star_alignment() (alignment_engine.py) and
+                    # plot_msa_table() (visualization.py), both already
+                    # built for the separate Phylogeny section -- nothing
+                    # new to maintain, just wired into Similarity too.
+                    conservation_candidates = similarity_results[:5]
+                    msa_sequences, msa_labels = [], []
+                    query_raw = result.get("sequence", "")
+                    if query_raw:
+                        msa_sequences.append(query_raw)
+                        msa_labels.append("Query")
+                    for match in conservation_candidates:
+                        ref_aligned = (
+                            match.get("alignment", {})
+                            .get("alignment_map", {})
+                            .get("reference", "")
+                        )
+                        ref_raw = ref_aligned.replace("-", "")
+                        if ref_raw:
+                            raw_name = match.get("gene_name", "") or ""
+                            clean_name = re.sub(r"^_[a-z]{2,20}[_-]", "", raw_name, flags=re.IGNORECASE)
+                            msa_sequences.append(ref_raw)
+                            msa_labels.append(clean_name if clean_name else raw_name)
+
+                    if len(msa_sequences) >= 2:
+                        st.markdown("---")
+                        st.markdown(f"##### Conservation across top {len(msa_sequences) - 1} matches")
+                        st.caption(
+                            "Independent multiple alignment (query + top matches, reference-guided). "
+                            "Solid columns of one color = conserved across every sequence shown; "
+                            "mixed colors = variable position. This is separate from the ranking "
+                            "alignment above and may show slightly different gap placement."
+                        )
+                        try:
+                            msa_result = aln.star_alignment(msa_sequences, seq_type=sequence_type)
+                        except Exception:
+                            logger.exception("Conservation MSA failed for top matches")
+                            msa_result = {"error": "MSA failed"}
+
+                        if msa_result.get("aligned_sequences"):
+                            aligned = msa_result["aligned_sequences"]
+                            full_width = len(aligned[0]) if aligned else 0
+                            max_cols = 150
+                            window = [seq[:max_cols] for seq in aligned]
+                            if full_width > max_cols:
+                                st.info(
+                                    f"Showing first {max_cols} of {full_width} aligned columns "
+                                    "(conserved/variable regions are usually visible well within "
+                                    "this window)."
+                                )
+                            st.plotly_chart(
+                                viz.plot_msa_table(window, labels=msa_labels),
+                                width='stretch',
+                                key="conservation_msa",
+                            )
+                            st.caption(
+                                f"Overall conservation score: {msa_result.get('conservation_score', 0):.1f}% "
+                                "of displayed columns identical across all sequences shown."
+                            )
+
             for i, match in enumerate(similarity_results):
                 classification = sim.classify_similarity(match["similarity_score"])
                 # Clean up gene name display: remove leading underscore-tag tokens
@@ -1308,11 +1373,22 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                         st.markdown(f"**Description:** {match['description']}")
 
                     if match.get("alignment"):
+                        alignment_map = match["alignment"]["alignment_map"]
                         st.markdown(f"**{translate('ui.alignment_map')}:**")
+                        st.caption(
+                            "Zoomed view of the first 60 aligned positions. Differences beyond "
+                            "this window (if any) are shown separately below, since the full "
+                            "aligned length can run into the thousands of bp."
+                        )
                         st.plotly_chart(
-                            viz.plot_alignment(match["alignment"]["alignment_map"]),
+                            viz.plot_alignment(alignment_map),
                             width='stretch',
                             key=f"alignment_{i}",
+                        )
+                        st.plotly_chart(
+                            viz.plot_alignment_overview(alignment_map),
+                            width='stretch',
+                            key=f"alignment_overview_{i}",
                         )
 
                         # Enhanced visualizations (1-5)
