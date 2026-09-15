@@ -131,6 +131,8 @@ TRANSLATIONS = {
             "menu": "Menu",
             "title_plant_gene_analyzer": "Analyseur de gènes végétaux",
             "sequence_analysis_tab": "Analyse de séquence",
+            "show_database_diagnostics": "Afficher les diagnostics de la base",
+            "show_database_diagnostics_help": "Ouvre les compteurs, la recherche et l’aperçu des métadonnées.",
         },
         "results": {
             "gene_records_available": "enregistrements de métadonnées disponibles",
@@ -396,6 +398,8 @@ TRANSLATIONS = {
             "menu": "Menu",
             "title_plant_gene_analyzer": "Plant Gene Analyzer",
             "sequence_analysis_tab": "Sequence Analysis",
+            "show_database_diagnostics": "Show database diagnostics",
+            "show_database_diagnostics_help": "Open database counts, search, and metadata preview.",
         },
         "results": {
             "gene_records_available": "gene metadata records available",
@@ -661,6 +665,8 @@ TRANSLATIONS = {
             "menu": "Menü",
             "title_plant_gene_analyzer": "Bitki Gen Analizörü",
             "sequence_analysis_tab": "Dizi Analizi",
+            "show_database_diagnostics": "Veritabanı tanılamalarını göster",
+            "show_database_diagnostics_help": "Veritabanı sayaçlarını, aramayı ve meta veri önizlemesini açar.",
         },
         "results": {
             "gene_records_available": "gen meta veri kaydı mevcut",

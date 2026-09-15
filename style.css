@@ -311,7 +311,12 @@ textarea::placeholder {
 [data-testid="stSidebar"] label,
 [data-testid="stSidebar"] span {
     font-size: 1rem !important;
-    line-height: 1.6 !important;
+    line-height: 1.4 !important;
+}
+
+/* Keep the sidebar from becoming a second competing reading surface. */
+[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
+    gap: 0.55rem;
 }
 
 /* ── Expanders ── */

@@ -386,10 +386,12 @@ with st.sidebar:
     st.markdown(f"## 🧬 {translate('ui.app_title')}")
     st.markdown("---")
 
-    st.markdown(f"### {translate('ui.about')}")
-    st.markdown(
-        translate('ui.build_about') + "\n" + "\n".join(f"- {item}" for item in translate('ui.about_items', default=[]))
-    )
+    with st.expander(translate('ui.about'), expanded=False):
+        st.markdown(
+            translate('ui.build_about') + "\n" + "\n".join(
+                f"- {item}" for item in translate('ui.about_items', default=[])
+            )
+        )
     st.markdown("---")
 
     st.markdown(f"### {translate('ui.settings')}")
@@ -433,7 +435,14 @@ with st.sidebar:
     )
     st.markdown("---")
 
-    admin_view = _is_admin_view()
+    admin_view = _is_admin_view() and st.checkbox(
+        translate('ui.show_database_diagnostics', default="Show database diagnostics"),
+        value=False,
+        help=translate(
+            'ui.show_database_diagnostics_help',
+            default="Open database counts, search, and metadata preview."
+        )
+    )
     if admin_view:
         st.markdown(f"### {translate('ui.database')}")
 
