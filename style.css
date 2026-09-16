@@ -22,12 +22,30 @@
 /* ── Base type scale ── */
 html { font-size: 17px; }
 
-/* ── Main app shell — flat, sober background (no video/aurora/animated overlays) ── */
+/* ── Fixed app background ──
+   Keep the visual surface attached to the viewport. Streamlit's content can
+   grow for a long analysis, but the background must not travel with it. */
+html,
+body {
+    min-height: 100%;
+    background: #14170F !important;
+}
+
+.stApp::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(160deg, #14170F 0%, #191D13 55%, #10130C 100%);
+}
+
 .stApp {
     position: relative;
-    overflow-x: hidden;
+    z-index: 0;
     min-height: 100vh;
-    background: linear-gradient(160deg, #14170F 0%, #191D13 55%, #10130C 100%);
+    overflow-x: hidden;
+    background: transparent !important;
     color: #EDEAE0;
 }
 
@@ -52,7 +70,7 @@ html { font-size: 17px; }
 [data-testid="stSidebar"] {
     position: relative;
     z-index: 1;
-    background: transparent;
+    background: transparent !important;
 }
 
 [data-testid="stHeader"] {
