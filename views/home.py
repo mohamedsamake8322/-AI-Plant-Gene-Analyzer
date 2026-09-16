@@ -145,7 +145,7 @@ def _render_variant_table(items: list[dict], limit: int = 50) -> None:
                 if m.get("ref_amino_acid") and m.get("query_amino_acid")
                 else "—"
             ),
-            "Impact": m.get("consequence", "Not classified").replace("_", " ").capitalize(),
+            "Impact": m.get("impact_class", m.get("consequence", "Not classified")).replace("_", " ").capitalize(),
             "BLOSUM62": m.get("blosum62_score"),
         }
         for m in items[:limit]

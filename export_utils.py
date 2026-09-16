@@ -223,17 +223,27 @@ def export_mutations_csv(result: dict, filename: Optional[str] = None) -> str:
     mutation_report = result.get("mutation_report") or {}
     variant_report = result.get("variant_report") or {}
     substitutions = variant_report.get("substitutions") or mutation_report.get("mutations", [])
+    raw_by_position = {
+        (item.get("position_reference"), item.get("position_query")): item
+        for item in mutation_report.get("mutations", [])
+    }
     indels = variant_report.get("indel_blocks") or mutation_report.get("indels", [])
     rows = []
     for item in substitutions:
+        raw_item = raw_by_position.get(
+            (item.get("position_reference"), item.get("position_query")),
+            {},
+        )
         rows.append({
             "variant_kind": "substitution",
             "reference_position": item.get("position_reference", ""),
             "query_position": item.get("position_query", ""),
             "reference": item.get("reference", ""),
             "query": item.get("query", ""),
-            "type": item.get("type", ""),
+            "type": item.get("type", raw_item.get("type", "")),
             "consequence": item.get("consequence", ""),
+            "impact_class": item.get("impact_class", ""),
+            "blosum62_score": item.get("blosum62_score"),
             "codon": f"{item.get('ref_codon', '')}>{item.get('query_codon', '')}" if item.get("ref_codon") else "",
             "amino_acid": f"{item.get('ref_amino_acid', '')}>{item.get('query_amino_acid', '')}" if item.get("ref_amino_acid") else "",
             "length": 1,
@@ -257,7 +267,7 @@ def export_mutations_csv(result: dict, filename: Optional[str] = None) -> str:
         })
     fieldnames = [
         "variant_kind", "reference_position", "query_position", "reference", "query",
-        "type", "consequence", "codon", "amino_acid", "length", "frameshift",
+        "type", "consequence", "impact_class", "blosum62_score", "codon", "amino_acid", "length", "frameshift",
     ]
     with filepath.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)

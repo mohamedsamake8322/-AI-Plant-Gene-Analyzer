@@ -1,6 +1,7 @@
 import config
 import pipeline
 import similarityengine
+import variant_analysis
 
 
 def test_similarity_skip_reason_for_overlong_sequence():
@@ -54,6 +55,16 @@ def test_explicit_reference_bypasses_similarity_threshold():
     assert result["mutation_reference_source"] == "explicit_reference"
     assert result["mutation_report"]["total_mutations"] == 1
     assert result["variant_report"]["substitutions"][0]["consequence"] == "silent"
+
+
+def test_dna_variant_report_includes_blosum_and_impact_class():
+    report = variant_analysis.analyze_variants("ATGTTG", "ATGTTT", seq_type="dna", reading_frame=0)
+
+    substitution = report["substitutions"][0]
+    assert substitution["ref_amino_acid"] == "F"
+    assert substitution["query_amino_acid"] == "L"
+    assert substitution["blosum62_score"] == 0
+    assert substitution["impact_class"] == "neutral"
 
 
 def test_similarity_skip_reason_for_candidate_cost(monkeypatch):

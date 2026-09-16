@@ -64,12 +64,28 @@ def classify_dna_substitution(ref_codon: str, query_codon: str) -> dict[str, obj
     else:
         consequence = "missense"
 
+    # BLOSUM62 is defined for standard amino-acid residues, including
+    # identical residues. Stop/unknown symbols are intentionally left
+    # unscored because they are not entries in the 20-residue matrix.
+    blosum_score = None
+    impact_class = "not_scored"
+    if ref_aa in AA_PROPERTY_GROUPS and query_aa in AA_PROPERTY_GROUPS:
+        blosum_score = aln.get_score(ref_aa, query_aa, "protein")
+        if blosum_score > 0:
+            impact_class = "conservative"
+        elif blosum_score < 0:
+            impact_class = "radical"
+        else:
+            impact_class = "neutral"
+
     return {
         "consequence": consequence,
         "ref_codon": ref_codon,
         "query_codon": query_codon,
         "ref_amino_acid": ref_aa,
         "query_amino_acid": query_aa,
+        "blosum62_score": blosum_score,
+        "impact_class": impact_class,
     }
 
 
@@ -86,6 +102,7 @@ def classify_protein_substitution(ref_aa: str, query_aa: str) -> dict[str, objec
         "ref_group": ref_group,
         "query_group": query_group,
         "blosum62_score": aln.get_score(ref_aa, query_aa, "protein"),
+        "impact_class": consequence,
     }
 
 
