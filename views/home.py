@@ -129,11 +129,24 @@ def _render_variant_table(items: list[dict], limit: int = 50) -> None:
     """
     rows = [
         {
-            "Ref pos": m["position_reference"],
-            "Query pos": m["position_query"],
-            "Reference": m["reference"],
-            "Query": m["query"],
-            "Type": m["type"].capitalize(),
+            "Ref pos": m.get("position_reference", m.get("start_position_reference", "")),
+            "Query pos": m.get("position_query", m.get("start_position_query", "")),
+            "Reference": m.get("reference", m.get("bases", "-") if m.get("type") == "deletion" else "-"),
+            "Query": m.get("query", m.get("bases", "-") if m.get("type") == "insertion" else "-"),
+            "Type": m.get("type", "variant").capitalize(),
+            "Consequence": m.get("consequence", "Not classified").replace("_", " ").capitalize(),
+            "Codon": (
+                f"{m['ref_codon']} → {m['query_codon']}"
+                if m.get("ref_codon") and m.get("query_codon")
+                else "—"
+            ),
+            "Amino acid": (
+                f"{m['ref_amino_acid']} → {m['query_amino_acid']}"
+                if m.get("ref_amino_acid") and m.get("query_amino_acid")
+                else "—"
+            ),
+            "Impact": m.get("consequence", "Not classified").replace("_", " ").capitalize(),
+            "BLOSUM62": m.get("blosum62_score"),
         }
         for m in items[:limit]
     ]
@@ -147,6 +160,11 @@ def _render_variant_table(items: list[dict], limit: int = 50) -> None:
             "Reference": st.column_config.TextColumn("Reference", width="small"),
             "Query": st.column_config.TextColumn("Query", width="small"),
             "Type": st.column_config.TextColumn("Type", width="medium"),
+            "Consequence": st.column_config.TextColumn("Consequence", width="medium"),
+            "Codon": st.column_config.TextColumn("Codon", width="medium"),
+            "Amino acid": st.column_config.TextColumn("Amino acid", width="medium"),
+            "Impact": st.column_config.TextColumn("Impact", width="medium"),
+            "BLOSUM62": st.column_config.NumberColumn("BLOSUM62", width="small"),
         },
     )
 
@@ -794,6 +812,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
     similarity_results = result["similarity_results"]
     best_match = result["best_match"]
     mutation_report = result["mutation_report"]
+    variant_report = result.get("variant_report") or {}
     interpretation = result["interpretation"]
     sequence_type = result.get("sequence_type", "dna")
     organism = result.get("organism") or result.get("header_metadata", {}).get("organism")
@@ -1510,28 +1529,157 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
         if not mutation_report:
             st.info("No mutation report — run analysis with a database match first.")
         else:
-            mc1, mc2, mc3, mc4, mc5 = st.columns(5)
-            mc1.metric(translate('ui.substitutions'), mutation_report["total_mutations"])
-            mc2.metric(translate('ui.indels'), mutation_report.get("total_indels", 0))
-            mc3.metric(
+            raw_substitutions = mutation_report.get("mutations", [])
+            classified_substitutions = variant_report.get("substitutions") or raw_substitutions
+            raw_by_position = {
+                (item.get("position_reference"), item.get("position_query")): item
+                for item in raw_substitutions
+            }
+            substitutions = []
+            for item in classified_substitutions:
+                enriched = dict(item)
+                raw_item = raw_by_position.get(
+                    (item.get("position_reference"), item.get("position_query")),
+                    {},
+                )
+                enriched.setdefault("type", raw_item.get("type", "variant"))
+                substitutions.append(enriched)
+            indel_blocks = variant_report.get("indel_blocks") or mutation_report.get("indels", [])
+            transitions = sum(1 for item in substitutions if item.get("type") == "transition")
+            transversions = sum(1 for item in substitutions if item.get("type") == "transversion")
+            mutation_rate = mutation_report.get("mutation_rate_percent", 0)
+
+            st.info(
+                f"Résumé : {len(substitutions)} substitution(s) détectée(s), "
+                f"{len(indel_blocks)} insertion(s)/délétion(s) regroupée(s). "
+                f"Taux de substitution : {mutation_rate:.2f}%."
+            )
+
+            with st.expander("Comprendre les résultats"):
+                st.markdown(
+                    "- **Transition** : remplacement A↔G ou C↔T, entre bases de même famille.\n"
+                    "- **Transversion** : remplacement entre une purine et une pyrimidine.\n"
+                    "- **Indel** : insertion ou délétion; les bases contiguës sont regroupées en un événement.\n"
+                    "- **Identité** : proportion de bases identiques; l’identité complète inclut les gaps, "
+                    "l’identité des bases alignées les exclut."
+                )
+
+            summary_cols = st.columns(5)
+            summary_cols[0].metric(translate('ui.substitutions'), len(substitutions))
+            summary_cols[1].metric(translate('ui.indels'), len(indel_blocks))
+            summary_cols[2].metric("Transitions", transitions)
+            summary_cols[3].metric("Transversions", transversions)
+            summary_cols[4].metric("Taux de substitution", f"{mutation_rate:.2f}%")
+
+            frameshift_count = sum(1 for item in indel_blocks if item.get("frameshift"))
+            consequences = {}
+            for item in substitutions:
+                consequence = item.get("consequence", "indéterminée")
+                consequences[consequence] = consequences.get(consequence, 0) + 1
+            if frameshift_count:
+                st.warning(f"{frameshift_count} événement(s) frameshift détecté(s) : la lecture des codons peut être décalée après l’indel.")
+            elif consequences:
+                important = sum(
+                    count for name, count in consequences.items()
+                    if name in {"missense", "nonsense", "readthrough", "radical", "downstream_of_frameshift"}
+                )
+                if important:
+                    st.warning(f"{important} substitution(s) potentiellement fonctionnelle(s) selon la classification disponible.")
+                elif all(name == "silent" for name in consequences):
+                    st.success("Les substitutions classifiées sont silencieuses : aucun changement d’acide aminé détecté dans le cadre choisi.")
+                else:
+                    st.info("L’impact biologique est indéterminé pour une partie des variants; une annotation complémentaire est recommandée.")
+
+            important_only = st.checkbox(
+                "Afficher uniquement les mutations importantes",
+                value=False,
+                help="Filtre missense, nonsense, readthrough, radicales, frameshift et indels non synonymes.",
+            )
+            important_consequences = {"missense", "nonsense", "readthrough", "radical", "downstream_of_frameshift"}
+            displayed_substitutions = [
+                item for item in substitutions
+                if not important_only or item.get("consequence") in important_consequences
+            ]
+            displayed_indels = [
+                {**item, "consequence": "frameshift" if item.get("frameshift") else "in frame"}
+                for item in indel_blocks
+                if not important_only or item.get("frameshift")
+            ]
+
+            identity_cols = st.columns(3)
+            identity_cols[0].metric(
                 "Identity (aligned bases only)",
                 f"{mutation_report.get('non_gap_identity_percent', mutation_report['identity_percent'])}%",
                 help="Matches ÷ compared positions only (gaps excluded) — matches the "
                      "'Compared positions' count shown below.",
             )
-            mc4.metric(
+            identity_cols[1].metric(
                 "Identity (full alignment)",
                 f"{mutation_report['identity_percent']}%",
                 help="Matches ÷ full alignment length, gaps included in the denominator "
                      "(BLAST-style) — will read lower than the aligned-bases-only identity "
                      "whenever there are indels, even with zero substitutions.",
             )
-            mc5.metric(translate('ui.compared_positions'), f"{mutation_report['compared_length']}")
+            identity_cols[2].metric(translate('ui.compared_positions'), f"{mutation_report['compared_length']}")
+
+            export_cols = st.columns(2)
+            with export_cols[0]:
+                mutation_csv_path = export_util.export_mutations_csv(result)
+                with open(mutation_csv_path, "r", encoding="utf-8") as handle:
+                    st.download_button(
+                        "Télécharger les variants (CSV)",
+                        handle.read(),
+                        file_name="mutations.csv",
+                        mime="text/csv",
+                    )
+            with export_cols[1]:
+                mutation_vcf_path = export_util.export_mutations_vcf(result)
+                with open(mutation_vcf_path, "r", encoding="utf-8") as handle:
+                    st.download_button(
+                        "Télécharger les substitutions (VCF)",
+                        handle.read(),
+                        file_name="mutations.vcf",
+                        mime="text/plain",
+                        help="Le VCF utilise les coordonnées de l’en-tête FASTA si un contig est fourni; sinon le contig est 'sequence'.",
+                    )
 
             st.plotly_chart(
-                viz.plot_mutation_map(mutation_report, mutation_report["compared_length"]),
+                viz.plot_mutation_map(
+                    {**mutation_report, "indel_blocks": indel_blocks},
+                    max(mutation_report["query_length"], mutation_report["reference_length"]),
+                ),
                 width='stretch',
             )
+
+            window_size = st.slider(
+                "Fenêtre de fréquence des variants (pb)",
+                min_value=50,
+                max_value=2000,
+                value=500,
+                step=50,
+                help="Regroupe les substitutions et indels par région de la séquence.",
+            )
+            sequence_length = max(mutation_report["query_length"], mutation_report["reference_length"])
+            frequency_rows = []
+            for start in range(1, sequence_length + 1, window_size):
+                end = min(sequence_length, start + window_size - 1)
+                substitution_count = sum(
+                    start <= (item.get("position_query") or item.get("position_reference", 0)) <= end
+                    for item in substitutions
+                )
+                indel_count = sum(
+                    start <= (item.get("start_position_query") or item.get("start_position_reference", 0)) <= end
+                    for item in indel_blocks
+                )
+                frequency_rows.append({
+                    "Région (pb)": f"{start}-{end}",
+                    "Substitutions": substitution_count,
+                    "Indels": indel_count,
+                    "Variants": substitution_count + indel_count,
+                })
+            if frequency_rows:
+                with st.expander("Fréquence des variants par région"):
+                    st.dataframe(pd.DataFrame(frequency_rows), hide_index=True, width="stretch")
 
             if mutation_report.get("alignment"):
                 aln_data = mutation_report["alignment"]
@@ -1549,19 +1697,17 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                     width='stretch',
                 )
 
-            mutations = mutation_report.get("mutations", [])
-            indels = mutation_report.get("indels", [])
-            if mutations:
+            if displayed_substitutions:
                 st.markdown(f"#### {translate('ui.substitutions')}")
-                _render_variant_table(mutations)
-                if len(mutations) > 50:
-                    st.info(f"Showing first 50 of {len(mutations)} substitutions.")
-            if indels:
+                _render_variant_table(displayed_substitutions)
+                if len(displayed_substitutions) > 50:
+                    st.info(f"Showing first 50 of {len(displayed_substitutions)} substitutions.")
+            if displayed_indels:
                 st.markdown(f"#### {translate('ui.indels')}")
-                _render_variant_table(indels)
-                if len(indels) > 50:
-                    st.info(f"Showing first 50 of {len(indels)} indels.")
-            if not mutations and not indels:
+                _render_variant_table(displayed_indels)
+                if len(displayed_indels) > 50:
+                    st.info(f"Showing first 50 of {len(displayed_indels)} indels.")
+            if not displayed_substitutions and not displayed_indels:
                 st.success("No differences after global alignment — sequences are identical.")
 
     # ── Tab 4: Translation ─────────────────────────────────────────────────────

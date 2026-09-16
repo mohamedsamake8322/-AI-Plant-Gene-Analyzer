@@ -212,6 +212,88 @@ def export_results_csv(
     return str(filepath)
 
 
+def export_mutations_csv(result: dict, filename: Optional[str] = None) -> str:
+    """Export substitutions and grouped indels as a flat variant table."""
+    if filename is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"mutations_{timestamp}.csv"
+
+    filepath = config.RESULTS_DIR / filename
+    mutation_report = result.get("mutation_report") or {}
+    variant_report = result.get("variant_report") or {}
+    substitutions = variant_report.get("substitutions") or mutation_report.get("mutations", [])
+    indels = variant_report.get("indel_blocks") or mutation_report.get("indels", [])
+    rows = []
+    for item in substitutions:
+        rows.append({
+            "variant_kind": "substitution",
+            "reference_position": item.get("position_reference", ""),
+            "query_position": item.get("position_query", ""),
+            "reference": item.get("reference", ""),
+            "query": item.get("query", ""),
+            "type": item.get("type", ""),
+            "consequence": item.get("consequence", ""),
+            "codon": f"{item.get('ref_codon', '')}>{item.get('query_codon', '')}" if item.get("ref_codon") else "",
+            "amino_acid": f"{item.get('ref_amino_acid', '')}>{item.get('query_amino_acid', '')}" if item.get("ref_amino_acid") else "",
+            "length": 1,
+            "frameshift": "",
+        })
+    for item in indels:
+        indel_type = item.get("type", "")
+        bases = item.get("bases", "")
+        rows.append({
+            "variant_kind": "indel",
+            "reference_position": item.get("start_position_reference", item.get("position_reference", "")),
+            "query_position": item.get("start_position_query", item.get("position_query", "")),
+            "reference": bases if indel_type == "deletion" else "-",
+            "query": bases if indel_type == "insertion" else "-",
+            "type": indel_type,
+            "consequence": "frameshift" if item.get("frameshift") else "in frame",
+            "codon": "",
+            "amino_acid": "",
+            "length": item.get("length", 1),
+            "frameshift": item.get("frameshift", ""),
+        })
+    fieldnames = [
+        "variant_kind", "reference_position", "query_position", "reference", "query",
+        "type", "consequence", "codon", "amino_acid", "length", "frameshift",
+    ]
+    with filepath.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+    return str(filepath)
+
+
+def export_mutations_vcf(result: dict, filename: Optional[str] = None) -> str:
+    """Export substitutions as VCF when a chromosome/contig is available."""
+    if filename is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"mutations_{timestamp}.vcf"
+
+    filepath = config.RESULTS_DIR / filename
+    metadata = result.get("header_metadata") or {}
+    contig = metadata.get("chromosome") or metadata.get("contig") or metadata.get("chrom")
+    contig = str(contig or "sequence")
+    mutation_report = result.get("mutation_report") or {}
+    substitutions = (result.get("variant_report") or {}).get("substitutions") or mutation_report.get("mutations", [])
+    lines = [
+        "##fileformat=VCFv4.3",
+        "##source=AI_Plant_Gene_Analyzer",
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO",
+    ]
+    for index, item in enumerate(substitutions, start=1):
+        ref = item.get("reference", "N")
+        alt = item.get("query", "N")
+        pos = item.get("position_reference")
+        if not pos or ref == "-" or alt == "-":
+            continue
+        consequence = item.get("consequence", "unknown")
+        lines.append(f"{contig}\t{pos}\tVAR{index}\t{ref}\t{alt}\t.\tPASS\tCONSEQUENCE={consequence}")
+    filepath.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return str(filepath)
+
+
 def export_results_html(
     result: dict,
     filename: Optional[str] = None,

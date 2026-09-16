@@ -479,8 +479,9 @@ def plot_mutation_map(mutation_report: dict, seq_length: int) -> go.Figure:
         seq_length:      length of the compared region
     """
     mutations = mutation_report.get("mutations", [])
+    indels = mutation_report.get("indel_blocks", mutation_report.get("indels", []))
 
-    if not mutations:
+    if not mutations and not indels:
         fig = go.Figure()
         fig.update_layout(
             **_base_layout("Mutation Map"),
@@ -521,7 +522,23 @@ def plot_mutation_map(mutation_report: dict, seq_length: int) -> go.Figure:
             f"Type : {group.capitalize()}"
         )
 
-    if not any(item["positions"] for item in grouped_mutations.values()):
+    indel_positions = []
+    indel_hover_texts = []
+    for indel in indels:
+        position = indel.get("start_position_query") or indel.get("start_position_reference")
+        if position is None:
+            continue
+        indel_positions.append(position)
+        indel_type = str(indel.get("type", "indel")).capitalize()
+        status = "Frameshift" if indel.get("frameshift") else "In-frame"
+        indel_hover_texts.append(
+            f"<b>Position {position}</b><br>"
+            f"Événement : {indel_type}<br>"
+            f"Bases : {indel.get('bases', '?')} ({indel.get('length', 1)} bp)<br>"
+            f"Conséquence : {status}"
+        )
+
+    if not any(item["positions"] for item in grouped_mutations.values()) and not indel_positions:
         fig = go.Figure()
         fig.update_layout(
             **_base_layout("Mutation Map"),
@@ -563,6 +580,24 @@ def plot_mutation_map(mutation_report: dict, seq_length: int) -> go.Figure:
             )
         )
 
+    if indel_positions:
+        fig.add_trace(
+            go.Scatter(
+                x=indel_positions,
+                y=[0.72] * len(indel_positions),
+                mode="markers",
+                marker=dict(
+                    size=16,
+                    color=SLATE,
+                    symbol="triangle-up",
+                    line=dict(color="#0d1b2a", width=1),
+                ),
+                text=indel_hover_texts,
+                hovertemplate="%{text}<extra></extra>",
+                name="Indels (gris)",
+            )
+        )
+
     fig.add_trace(
         go.Scatter(
             x=[0, seq_length],
@@ -575,15 +610,16 @@ def plot_mutation_map(mutation_report: dict, seq_length: int) -> go.Figure:
     )
 
     layout = _base_layout(
-        f"Mutation Map — {len(mutations)} mutation(s) detected"
+        f"Mutation Map — {len(mutations)} substitution(s), {len(indels)} indel(s)"
     )
     layout["xaxis"]["title"] = "Position (bp)"
     layout["yaxis"]["visible"] = False
+    layout["yaxis"]["range"] = [0.45, 1.2]
     layout["showlegend"] = True
     layout["legend"] = dict(
         title="Type de substitution",
         orientation="h",
-        y=1.18,
+        y=1.24,
         x=0,
     )
     fig.update_layout(**layout, height=220)
