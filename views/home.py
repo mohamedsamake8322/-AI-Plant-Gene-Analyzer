@@ -1550,26 +1550,28 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             mutation_rate = mutation_report.get("mutation_rate_percent", 0)
 
             st.info(
-                f"Résumé : {len(substitutions)} substitution(s) détectée(s), "
-                f"{len(indel_blocks)} insertion(s)/délétion(s) regroupée(s). "
-                f"Taux de substitution : {mutation_rate:.2f}%."
+                translate(
+                    "ui.mutation_summary",
+                    substitutions=len(substitutions),
+                    indels=len(indel_blocks),
+                    rate=mutation_rate,
+                )
             )
 
-            with st.expander("Comprendre les résultats"):
+            with st.expander(translate("ui.understand_results")):
                 st.markdown(
-                    "- **Transition** : remplacement A↔G ou C↔T, entre bases de même famille.\n"
-                    "- **Transversion** : remplacement entre une purine et une pyrimidine.\n"
-                    "- **Indel** : insertion ou délétion; les bases contiguës sont regroupées en un événement.\n"
-                    "- **Identité** : proportion de bases identiques; l’identité complète inclut les gaps, "
-                    "l’identité des bases alignées les exclut."
+                    f"- **{translate('ui.transitions')}** : {translate('ui.transition_definition')}\n"
+                    f"- **{translate('ui.transversions')}** : {translate('ui.transversion_definition')}\n"
+                    f"- **{translate('ui.indels')}** : {translate('ui.indel_definition')}\n"
+                    f"- **Identity** : {translate('ui.identity_definition')}"
                 )
 
             summary_cols = st.columns(5)
             summary_cols[0].metric(translate('ui.substitutions'), len(substitutions))
             summary_cols[1].metric(translate('ui.indels'), len(indel_blocks))
-            summary_cols[2].metric("Transitions", transitions)
-            summary_cols[3].metric("Transversions", transversions)
-            summary_cols[4].metric("Taux de substitution", f"{mutation_rate:.2f}%")
+            summary_cols[2].metric(translate("ui.transitions"), transitions)
+            summary_cols[3].metric(translate("ui.transversions"), transversions)
+            summary_cols[4].metric(translate("ui.substitution_rate"), f"{mutation_rate:.2f}%")
 
             frameshift_count = sum(1 for item in indel_blocks if item.get("frameshift"))
             consequences = {}
@@ -1591,9 +1593,9 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                     st.info("L’impact biologique est indéterminé pour une partie des variants; une annotation complémentaire est recommandée.")
 
             important_only = st.checkbox(
-                "Afficher uniquement les mutations importantes",
+                translate("ui.important_mutations_only"),
                 value=False,
-                help="Filtre missense, nonsense, readthrough, radicales, frameshift et indels non synonymes.",
+                help=translate("ui.important_mutations_help"),
             )
             important_consequences = {"missense", "nonsense", "readthrough", "radical", "downstream_of_frameshift"}
             displayed_substitutions = [
@@ -1608,17 +1610,14 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
 
             identity_cols = st.columns(3)
             identity_cols[0].metric(
-                "Identity (aligned bases only)",
+                translate("ui.identity_aligned"),
                 f"{mutation_report.get('non_gap_identity_percent', mutation_report['identity_percent'])}%",
-                help="Matches ÷ compared positions only (gaps excluded) — matches the "
-                     "'Compared positions' count shown below.",
+                help=translate("ui.identity_aligned_help"),
             )
             identity_cols[1].metric(
-                "Identity (full alignment)",
+                translate("ui.identity_full"),
                 f"{mutation_report['identity_percent']}%",
-                help="Matches ÷ full alignment length, gaps included in the denominator "
-                     "(BLAST-style) — will read lower than the aligned-bases-only identity "
-                     "whenever there are indels, even with zero substitutions.",
+                help=translate("ui.identity_full_help"),
             )
             identity_cols[2].metric(translate('ui.compared_positions'), f"{mutation_report['compared_length']}")
 
@@ -1627,7 +1626,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 mutation_csv_path = export_util.export_mutations_csv(result)
                 with open(mutation_csv_path, "r", encoding="utf-8") as handle:
                     st.download_button(
-                        "Télécharger les variants (CSV)",
+                        translate("ui.download_mutations_csv"),
                         handle.read(),
                         file_name="mutations.csv",
                         mime="text/csv",
@@ -1636,28 +1635,46 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 mutation_vcf_path = export_util.export_mutations_vcf(result)
                 with open(mutation_vcf_path, "r", encoding="utf-8") as handle:
                     st.download_button(
-                        "Télécharger les substitutions (VCF)",
+                        translate("ui.download_substitutions_vcf"),
                         handle.read(),
                         file_name="mutations.vcf",
                         mime="text/plain",
-                        help="Le VCF utilise les coordonnées de l’en-tête FASTA si un contig est fourni; sinon le contig est 'sequence'.",
+                        help=translate("ui.vcf_help"),
                     )
 
             st.plotly_chart(
                 viz.plot_mutation_map(
                     {**mutation_report, "indel_blocks": indel_blocks},
                     max(mutation_report["query_length"], mutation_report["reference_length"]),
+                    labels={
+                        "title": translate("ui.mutation_map_title"),
+                        "transition": f"{translate('ui.transitions')} ({translate('ui.yellow')})",
+                        "transversion": f"{translate('ui.transversions')} ({translate('ui.red')})",
+                        "indel": f"{translate('ui.indels')} ({translate('ui.gray')})",
+                        "legend_title": translate("ui.substitution_type"),
+                        "xaxis": f"{translate('ui.position')} (bp)",
+                        "position": translate("ui.position"),
+                        "reference_position": translate("ui.reference_position"),
+                        "query_position": translate("ui.query_position"),
+                        "change": translate("ui.change"),
+                        "type": translate("ui.type"),
+                        "event": translate("ui.event"),
+                        "bases": translate("ui.bases"),
+                        "consequence": translate("ui.consequence"),
+                        "frameshift": translate("ui.frameshift"),
+                        "in_frame": translate("ui.in_frame"),
+                    },
                 ),
                 width='stretch',
             )
 
             window_size = st.slider(
-                "Fenêtre de fréquence des variants (pb)",
+                translate("ui.variant_window"),
                 min_value=50,
                 max_value=2000,
                 value=500,
                 step=50,
-                help="Regroupe les substitutions et indels par région de la séquence.",
+                help=translate("ui.variant_window_help"),
             )
             sequence_length = max(mutation_report["query_length"], mutation_report["reference_length"])
             frequency_rows = []
@@ -1678,7 +1695,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                     "Variants": substitution_count + indel_count,
                 })
             if frequency_rows:
-                with st.expander("Fréquence des variants par région"):
+                with st.expander(translate("ui.variant_frequency")):
                     st.dataframe(pd.DataFrame(frequency_rows), hide_index=True, width="stretch")
 
             if mutation_report.get("alignment"):

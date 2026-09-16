@@ -208,7 +208,28 @@ def analyze_sequence_record(
             )
             similarity_results = []
 
-        if best_match and db:
+        min_ref_identity = getattr(config, "MIN_MUTATION_REFERENCE_IDENTITY", 85.0)
+        best_match_identity = best_match.get("similarity_score", 0) if best_match else 0
+
+        if best_match and db and best_match_identity < min_ref_identity:
+            # Mutation Analysis assumes a known-reference-vs-variant framing
+            # (see config.MIN_MUTATION_REFERENCE_IDENTITY for why). Below
+            # this threshold, calling detect_mutations()/analyze_variants()
+            # against the best available match would compute a technically
+            # real alignment, but frame ordinary evolutionary divergence
+            # between distant homologs as "mutations" -- misleading, not a
+            # technical failure, so this is a distinct message from the
+            # "(technical error)" warnings elsewhere in this function.
+            pipeline_warnings.append(
+                f"ℹ️ No close reference found for mutation calling: the best database match "
+                f"({best_match_identity:.1f}% identity) is below the "
+                f"{min_ref_identity:.0f}% threshold Mutation Analysis requires to distinguish "
+                "real mutations from natural divergence between distant homologs. The "
+                "Mutations tab will be empty for this sequence. To analyze mutations against "
+                "a specific reference regardless of database similarity, provide that "
+                "reference sequence directly."
+            )
+        elif best_match and db:
             try:
                 ref_seq = db[best_match["gene_name"]]["sequence"].upper().replace(" ", "")
                 ref_type = db[best_match["gene_name"]].get("sequence_type") or bio.detect_sequence_type(ref_seq)

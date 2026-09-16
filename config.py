@@ -80,13 +80,26 @@ SIMILARITY_LOW = 35.0
 MUTATION_RATE_HIGH = 10.0
 MUTATION_RATE_LOW = 2.0
 
+# Below this global identity %, the best Similarity match is too distant to
+# be treated as a "reference" for mutation calling. Mutation Analysis
+# assumes a known reference + a handful of induced/observed changes (e.g.
+# resequencing a strain against its reference genome) -- comparing against
+# a 40-60%-identical homolog instead produces thousands of "substitutions"
+# that are natural evolutionary divergence, not mutations, and would
+# mislead a user into reading a meaningless variant table. Chosen well
+# above SIMILARITY_HIGH (75%) since even a "high similarity" homolog from a
+# different species/paralog is still not a valid mutation-calling reference
+# -- this is deliberately a stricter, distinct threshold from the general
+# similarity confidence bands above.
+MIN_MUTATION_REFERENCE_IDENTITY = 85.0
+
 # Window size for sliding window similarity
 DEFAULT_WINDOW_SIZE = 30
 MIN_WINDOW_SIZE = 5
 MAX_WINDOW_SIZE = 60
 
 # Reading frames
-READING_FRAMES = [1, 2, 3, -1, -2, -3]
+READING_FRAMES = [0, 1, 2]
 
 # ─── Database Parameters ──────────────────────────────────────────────────────
 DEFAULT_TOP_N_MATCHES = 3
@@ -107,12 +120,12 @@ NUCLEOTIDE_COLORS = {
     "N": "#9e9e9e",  # grey
 }
 
-# Dark chart theme colors, matching the application shell.
-CHART_BG = "#1b1f14"
-CHART_PAPER = "#14170f"
-CHART_FONT_COLOR = "#edeae0"
-CHART_GRID_COLOR = "rgba(237,234,224,0.14)"
-CHART_LINE_COLOR = "#66705a"
+# Light theme colors
+CHART_BG = "#ffffff"
+CHART_PAPER = "#ffffff"
+CHART_FONT_COLOR = "#111111"
+CHART_GRID_COLOR = "rgba(0,0,0,0.08)"
+CHART_LINE_COLOR = "#cccccc"
 CHART_TITLE_COLOR = "#00d9a3"
 
 # ─── Export Settings ──────────────────────────────────────────────────────────

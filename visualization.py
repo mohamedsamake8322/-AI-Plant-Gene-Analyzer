@@ -470,7 +470,11 @@ def plot_alignment_overview(alignment_map: dict) -> go.Figure:
 
 # ─── Mutation map ──────────────────────────────────────────────────────────────
 
-def plot_mutation_map(mutation_report: dict, seq_length: int) -> go.Figure:
+def plot_mutation_map(
+    mutation_report: dict,
+    seq_length: int,
+    labels: dict[str, str] | None = None,
+) -> go.Figure:
     """
     Scatter plot of mutation positions along the sequence.
 
@@ -478,6 +482,24 @@ def plot_mutation_map(mutation_report: dict, seq_length: int) -> go.Figure:
         mutation_report: output of bioinformatics.detect_mutations()
         seq_length:      length of the compared region
     """
+    labels = labels or {
+        "title": "Mutation Map",
+        "transition": "Transitions (yellow)",
+        "transversion": "Transversions (red)",
+        "indel": "Indels (gray)",
+        "legend_title": "Substitution type",
+        "xaxis": "Position (bp)",
+        "position": "Position",
+        "reference_position": "Reference",
+        "query_position": "Query",
+        "change": "Change",
+        "type": "Type",
+        "event": "Event",
+        "bases": "Bases",
+        "consequence": "Consequence",
+        "frameshift": "Frameshift",
+        "in_frame": "In-frame",
+    }
     mutations = mutation_report.get("mutations", [])
     indels = mutation_report.get("indel_blocks", mutation_report.get("indels", []))
 
@@ -511,15 +533,15 @@ def plot_mutation_map(mutation_report: dict, seq_length: int) -> go.Figure:
         mutation_type = str(m.get("type", "transversion")).lower()
         group = "transition" if mutation_type == "transition" else "transversion"
         position_label = (
-            f"Réf. {reference_position} / Requête {query_position}"
+            f"{labels['reference_position']} {reference_position} / {labels['query_position']} {query_position}"
             if reference_position is not None and query_position is not None
-            else f"Position {position}"
+            else f"{labels['position']} {position}"
         )
         grouped_mutations[group]["positions"].append(position)
         grouped_mutations[group]["hover_texts"].append(
             f"<b>{position_label}</b><br>"
-            f"Changement : {m.get('reference', '?')} → {m.get('query', '?')}<br>"
-            f"Type : {group.capitalize()}"
+            f"{labels['change']} : {m.get('reference', '?')} → {m.get('query', '?')}<br>"
+            f"{labels['type']} : {group.capitalize()}"
         )
 
     indel_positions = []
@@ -530,12 +552,12 @@ def plot_mutation_map(mutation_report: dict, seq_length: int) -> go.Figure:
             continue
         indel_positions.append(position)
         indel_type = str(indel.get("type", "indel")).capitalize()
-        status = "Frameshift" if indel.get("frameshift") else "In-frame"
+        status = labels["frameshift"] if indel.get("frameshift") else labels["in_frame"]
         indel_hover_texts.append(
-            f"<b>Position {position}</b><br>"
-            f"Événement : {indel_type}<br>"
-            f"Bases : {indel.get('bases', '?')} ({indel.get('length', 1)} bp)<br>"
-            f"Conséquence : {status}"
+            f"<b>{labels['position']} {position}</b><br>"
+            f"{labels['event']} : {indel_type}<br>"
+            f"{labels['bases']} : {indel.get('bases', '?')} ({indel.get('length', 1)} bp)<br>"
+            f"{labels['consequence']} : {status}"
         )
 
     if not any(item["positions"] for item in grouped_mutations.values()) and not indel_positions:
@@ -557,8 +579,8 @@ def plot_mutation_map(mutation_report: dict, seq_length: int) -> go.Figure:
     fig = go.Figure()
 
     for group, color, label in (
-        ("transition", AMBER, "Transitions (jaune)"),
-        ("transversion", CORAL, "Transversions (rouge)"),
+        ("transition", AMBER, labels["transition"]),
+        ("transversion", CORAL, labels["transversion"]),
     ):
         positions = grouped_mutations[group]["positions"]
         if not positions:
@@ -594,7 +616,7 @@ def plot_mutation_map(mutation_report: dict, seq_length: int) -> go.Figure:
                 ),
                 text=indel_hover_texts,
                 hovertemplate="%{text}<extra></extra>",
-                name="Indels (gris)",
+                name=labels["indel"],
             )
         )
 
@@ -610,17 +632,20 @@ def plot_mutation_map(mutation_report: dict, seq_length: int) -> go.Figure:
     )
 
     layout = _base_layout(
-        f"Mutation Map — {len(mutations)} substitution(s), {len(indels)} indel(s)"
+        f"{labels['title']} — {len(mutations)} substitution(s), {len(indels)} indel(s)"
     )
-    layout["xaxis"]["title"] = "Position (bp)"
+    layout["xaxis"]["title"] = labels["xaxis"]
     layout["yaxis"]["visible"] = False
     layout["yaxis"]["range"] = [0.45, 1.2]
+    layout["margin"] = dict(l=55, r=190, t=55, b=45)
     layout["showlegend"] = True
     layout["legend"] = dict(
-        title="Type de substitution",
-        orientation="h",
-        y=1.24,
-        x=0,
+        title=labels["legend_title"],
+        orientation="v",
+        y=1,
+        x=1.02,
+        xanchor="left",
+        yanchor="top",
     )
     fig.update_layout(**layout, height=220)
     return fig
