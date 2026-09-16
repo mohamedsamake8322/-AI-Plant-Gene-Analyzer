@@ -28,6 +28,34 @@ def test_empty_similarity_results_have_no_skip_reason():
     assert result["similarity_results"] == []
 
 
+def test_distant_best_match_does_not_create_mutation_report():
+    result = pipeline.analyze_sequence_record(
+        {"header": "distant", "sequence": "A" * 12},
+        "DNA",
+        reading_frame=0,
+        db={"reference": {"sequence": "C" * 12, "sequence_type": "dna"}},
+        enable_length_prefilter=False,
+    )
+
+    assert result["mutation_report"] is None
+    assert result["variant_report"] is None
+    assert any("No close reference found" in warning for warning in result["metadata_warnings"])
+
+
+def test_explicit_reference_bypasses_similarity_threshold():
+    result = pipeline.analyze_sequence_record(
+        {"header": "explicit-reference", "sequence": "ATGAAATAGCCC"},
+        "DNA",
+        reading_frame=0,
+        db={},
+        reference_sequence="ATGAGA TAGCCC".replace(" ", ""),
+    )
+
+    assert result["mutation_reference_source"] == "explicit_reference"
+    assert result["mutation_report"]["total_mutations"] == 1
+    assert result["variant_report"]["substitutions"][0]["consequence"] == "silent"
+
+
 def test_similarity_skip_reason_for_candidate_cost(monkeypatch):
     monkeypatch.setattr(config, "MAX_ALIGNMENT_CELL_BUDGET", 1)
     result = pipeline.analyze_sequence_record(

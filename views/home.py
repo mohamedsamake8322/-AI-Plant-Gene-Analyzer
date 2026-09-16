@@ -207,6 +207,7 @@ def _cached_analyze(
     reading_frame: int,
     top_n_matches: int,
     similarity_deep_search: bool,
+    reference_sequence: str,
     _db: dict,
 ) -> dict:
     """Streamlit-cached wrapper around pipeline.analyze_sequence_record.
@@ -228,6 +229,7 @@ def _cached_analyze(
         input_type,
         reading_frame,
         db=_db,
+        reference_sequence=reference_sequence or None,
         top_n_matches=top_n_matches,
         enable_length_prefilter=not similarity_deep_search,
         logger=logger,
@@ -575,6 +577,12 @@ with col_input:
         height=140,
         placeholder=translate('ui.sequence_placeholder'),
     )
+    reference_sequence = st.text_area(
+        translate("ui.reference_sequence"),
+        height=90,
+        placeholder=translate("ui.reference_sequence_placeholder"),
+        help=translate("ui.reference_sequence_help"),
+    )
 
     records: list[dict[str, str]] = []
     analyze_all = False
@@ -746,6 +754,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                             reading_frame,
                             top_n_matches,
                             similarity_deep_search,
+                            reference_sequence,
                             _db=target_db,
                         )
                     analyzed_result["similarity_elapsed_seconds"] = round(
@@ -1527,7 +1536,15 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
         st.markdown(f"#### {translate('ui.mutation_analysis')}")
 
         if not mutation_report:
-            st.info("No mutation report — run analysis with a database match first.")
+            warnings = result.get("metadata_warnings", [])
+            reference_warning = next(
+                (warning for warning in warnings if "No close reference found" in warning),
+                None,
+            )
+            if reference_warning:
+                st.info(reference_warning)
+            else:
+                st.info("No mutation report — run analysis with a database match first, or provide an explicit reference sequence above.")
         else:
             raw_substitutions = mutation_report.get("mutations", [])
             classified_substitutions = variant_report.get("substitutions") or raw_substitutions
@@ -1557,6 +1574,8 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                     rate=mutation_rate,
                 )
             )
+            if result.get("mutation_reference_source") == "explicit_reference":
+                st.caption(translate("ui.mutation_reference_explicit"))
 
             with st.expander(translate("ui.understand_results")):
                 st.markdown(
@@ -1688,11 +1707,17 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                     start <= (item.get("start_position_query") or item.get("start_position_reference", 0)) <= end
                     for item in indel_blocks
                 )
+                window_consequences = sorted({
+                    str(item.get("consequence", "unknown")).replace("_", " ")
+                    for item in substitutions
+                    if start <= (item.get("position_query") or item.get("position_reference", 0)) <= end
+                })
                 frequency_rows.append({
-                    "Région (pb)": f"{start}-{end}",
+                    "Region (bp)": f"{start}-{end}",
                     "Substitutions": substitution_count,
                     "Indels": indel_count,
                     "Variants": substitution_count + indel_count,
+                    "Consequences": ", ".join(window_consequences) or "—",
                 })
             if frequency_rows:
                 with st.expander(translate("ui.variant_frequency")):

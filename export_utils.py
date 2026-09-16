@@ -126,6 +126,7 @@ def export_results_json(
         "similarity_results": result.get("similarity_results", []),
         "best_match": result.get("best_match"),
         "mutation_report": result.get("mutation_report"),
+        "variant_report": result.get("variant_report"),
         "interpretation": result.get("interpretation"),
     }
     
@@ -274,12 +275,18 @@ def export_mutations_vcf(result: dict, filename: Optional[str] = None) -> str:
     filepath = config.RESULTS_DIR / filename
     metadata = result.get("header_metadata") or {}
     contig = metadata.get("chromosome") or metadata.get("contig") or metadata.get("chrom")
+    has_real_contig = bool(contig)
     contig = str(contig or "sequence")
     mutation_report = result.get("mutation_report") or {}
     substitutions = (result.get("variant_report") or {}).get("substitutions") or mutation_report.get("mutations", [])
     lines = [
         "##fileformat=VCFv4.3",
         "##source=AI_Plant_Gene_Analyzer",
+        (
+            f"##contig=<ID={contig}>"
+            if has_real_contig
+            else "##contig=<ID=sequence,description=Local_sequence_coordinates_not_genomic>"
+        ),
         "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO",
     ]
     for index, item in enumerate(substitutions, start=1):
