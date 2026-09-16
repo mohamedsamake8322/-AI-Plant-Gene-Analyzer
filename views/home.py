@@ -440,8 +440,8 @@ with st.sidebar:
     st.markdown("#### 🔤 Traduction")
     reading_frame = st.selectbox(
         translate('ui.reading_frame'),
-        options=[1, 2, 3, -1, -2, -3],
-        format_func=lambda frame: f"{frame:+d}",
+        options=[0, 1, 2, -1, -2, -3],
+        format_func=lambda frame: f"+{frame + 1}" if frame >= 0 else f"{frame:+d}",
     )
 
     st.markdown("#### 🔧 Entrée")
@@ -1762,34 +1762,129 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             st.markdown(f"**Unique residues:** {stats.get('unique_residues', 'N/A')}")
             st.markdown(f"**Most abundant residue:** {max(dist['counts'], key=dist['counts'].get)}")
         else:
-            st.markdown(f"#### Protein Translation (Frame {reading_frame:+d})")
-
+            st.markdown(f"#### Selected frame: {reading_frame:+d}")
             tl = translation
-            st.markdown(f"**Protein length:** {tl['length']} amino acids")
-            st.markdown(
-                f"**Status:** {'Complete ORF (stop codon found)' if tl['status'] == 'complete' else 'No stop codon in frame'}"
-            )
+            codon_count = len(tl.get("codons", []))
+            status_label = "Complete ORF: stop codon found" if tl["status"] == "complete" else "Open translation: no stop codon in this frame"
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Protein length", f"{tl['length']} aa")
+            m2.metric("Complete codons", codon_count)
+            m3.metric("Status", "Complete" if tl["status"] == "complete" else "Open")
+            m4.metric("Remaining bases", tl.get("remainder_nucleotides", 0))
+            st.caption(status_label)
+            ambiguous_count = sum(1 for base in sequence.upper() if base not in {"A", "T", "G", "C"})
+            if ambiguous_count:
+                st.warning(
+                    f"{ambiguous_count} ambiguous nucleotide(s) detected. "
+                    "Translated amino acids containing ambiguous codons are shown as ?."
+                )
 
             if tl["protein"]:
-                st.code(tl["protein"], language=None)
+                st.markdown("**Protein sequence**")
+                st.code(tl.get("protein_with_stop", tl["protein"]), language=None)
             else:
                 st.warning("No protein sequence translated — check reading frame or sequence length.")
 
-            st.markdown("#### All Reading Frames (+ and - strands)")
-            all_frames = bio.translate_all_frames(sequence, include_reverse=True)
-            for frame_name, frame_result in all_frames.items():
-                with st.expander(f"{frame_name} — {frame_result['length']} aa"):
-                    st.code(frame_result["protein"] or "(empty)", language=None)
-                    st.caption(f"Status: {frame_result['status']}")
+            codon_rows = bio.translation_codon_rows(sequence, frame=reading_frame)
+            if codon_rows:
+                st.markdown("**Codon map**")
+                st.dataframe(
+                    pd.DataFrame(codon_rows).rename(columns={
+                        "codon_index": "Codon #", "start": "Start (nt)", "end": "End (nt)",
+                        "codon": "Codon", "amino_acid": "Amino acid", "is_stop": "Stop",
+                    }),
+                    hide_index=True,
+                    width="stretch",
+                )
+                st.download_button(
+                    "Download selected protein (FASTA)",
+                    f">translated_frame_{reading_frame:+d}\n{tl.get('protein_with_stop', tl['protein'])}\n",
+                    file_name=f"translated_frame_{reading_frame:+d}.fasta",
+                    mime="text/plain",
+                    key="translation_fasta",
+                )
 
-            st.markdown("#### Complementary Sequences")
+            st.markdown("#### Six-frame comparison")
+            all_frames = bio.translate_all_frames(sequence, include_reverse=True)
+            recommended_frame = max(
+                all_frames.items(),
+                key=lambda item: (item[1]["status"] == "complete", item[1]["length"]),
+            )[0]
+            st.info(
+                f"Recommended frame for review: **{recommended_frame}**. "
+                "This is a computational suggestion based on stop-codon completion and translated length, not proof of expression."
+            )
+            frame_rows = []
+            for frame_name, frame_result in all_frames.items():
+                frame_rows.append({
+                    "Frame": frame_name,
+                    "Strand": frame_result.get("strand", "forward").title(),
+                    "Protein (aa)": frame_result["length"],
+                    "Stop": "Yes" if frame_result["status"] == "complete" else "No",
+                    "Complete codons": len(frame_result.get("codons", [])),
+                    "Remaining bases": frame_result.get("remainder_nucleotides", 0),
+                })
+            st.dataframe(pd.DataFrame(frame_rows), hide_index=True, width="stretch")
+            for frame_name, frame_result in all_frames.items():
+                expanded = frame_name == f"Frame {reading_frame:+d}"
+                with st.expander(f"{frame_name} — {frame_result['length']} aa", expanded=expanded):
+                    st.code(frame_result.get("protein_with_stop", frame_result["protein"]) or "(empty)", language=None)
+                    st.caption(
+                        "Complete ORF / stop found" if frame_result["status"] == "complete"
+                        else "No stop codon in this frame"
+                    )
+
+            st.markdown("#### Predicted ORFs")
+            orf_rows = [
+                {
+                    "Strand / frame": orf["frame"],
+                    "Start (nt)": orf["start"],
+                    "End (nt)": orf["end"],
+                    "Length (nt)": orf["length"],
+                    "Protein (aa)": len(str(orf.get("protein", "")).replace("...[truncated]", "")),
+                    "Complete": "Yes" if orf["complete"] else "No",
+                }
+                for orf in result.get("orfs", [])[:100]
+            ]
+            if orf_rows:
+                st.dataframe(pd.DataFrame(orf_rows), hide_index=True, width="stretch")
+                st.markdown("**ORF map**")
+                sequence_length = max(len(sequence), 1)
+                for index, orf in enumerate(result.get("orfs", [])[:20], start=1):
+                    left = max(0.0, (int(orf["start"]) - 1) / sequence_length * 100)
+                    width = max(1.0, int(orf["length"]) / sequence_length * 100)
+                    strand_color = "#7A8B5C" if str(orf["frame"]).startswith("+") else "#B8873B"
+                    st.markdown(
+                        f"<div style='margin:0.25rem 0; color:#EDEAE0; font-size:0.85rem;'>"
+                        f"<span style='display:inline-block;width:7rem;'>{orf['frame']} · {orf['start']}-{orf['end']}</span>"
+                        f"<span style='display:inline-block;position:relative;width:calc(100% - 7rem);height:1.2rem;background:rgba(255,255,255,.08);'>"
+                        f"<span style='position:absolute;left:{left:.2f}%;width:{width:.2f}%;min-width:8px;height:100%;background:{strand_color};' title='ORF {index}'></span>"
+                        f"</span></div>",
+                        unsafe_allow_html=True,
+                    )
+                gff_rows = [
+                    f"{result.get('header', 'sequence')}\tPlantGeneAnalyzer\tORF\t{orf['start']}\t{orf['end']}\t.\t{ '+' if str(orf['frame']).startswith('+') else '-' }\t.\tID=orf_{idx + 1};frame={orf['frame']}"
+                    for idx, orf in enumerate(result.get("orfs", [])[:100])
+                ]
+                st.download_button(
+                    "Download ORFs (GFF3)",
+                    "##gff-version 3\n" + "\n".join(gff_rows) + "\n",
+                    file_name="predicted_orfs.gff3",
+                    mime="text/plain",
+                    key="translation_gff3",
+                )
+            else:
+                st.info("No ORF above the minimum length was detected.")
+
+            st.markdown("#### Complementary sequences")
             comp_col1, comp_col2 = st.columns(2)
             with comp_col1:
-                st.markdown("**5'→3' Complement:**")
+                st.markdown("**Complement (5'→3' orientation):**")
                 st.code(bio.complement(sequence[:80]) + ("…" if len(sequence) > 80 else ""), language=None)
             with comp_col2:
-                st.markdown("**Reverse Complement:**")
+                st.markdown("**Reverse complement:**")
                 st.code(bio.reverse_complement(sequence[:80]) + ("…" if len(sequence) > 80 else ""), language=None)
+            st.caption("Translation alone does not prove that a protein is expressed; experimental or transcript evidence is required.")
 
     # ── Tab 5: AI Interpretation ───────────────────────────────────────────────
     with tabs[4]:

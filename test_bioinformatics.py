@@ -146,6 +146,19 @@ class TestProteinTranslation:
         assert "Frame +1" in result
         assert "Frame -1" in result
 
+    def test_translation_metadata_and_codon_rows(self):
+        """Expose coordinates and stop information for the Translation tab."""
+        result = bio.translate_dna("ATGAAATAG", frame=0)
+        assert result["protein_with_stop"] == "MK*"
+        assert result["stop_position_nt"] == 9
+        assert result["remainder_nucleotides"] == 0
+
+        rows = bio.translation_codon_rows("ATGAAATAG", frame=0)
+        assert rows[0]["codon"] == "ATG"
+        assert rows[0]["start"] == 1
+        assert rows[-1]["amino_acid"] == "*"
+        assert rows[-1]["is_stop"] is True
+
 
 class TestMutationDetection:
     """Test mutation detection."""

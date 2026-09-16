@@ -620,3 +620,26 @@ LINE 1: SELECT COUNT(*) FROM genes;
 2026-09-16 21:52:42,153 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
 2026-09-16 21:52:43,735 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 5 candidates for top_n=3
 2026-09-16 21:52:52,531 - __main__ - INFO - Analysis session state saved
+2026-09-16 22:03:53,134 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-16 22:03:59,953 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-16 22:04:03,876 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-16 22:04:03,930 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-09-16 22:04:04,322 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 5 candidates for top_n=3
+2026-09-16 22:04:04,329 - __main__ - INFO - Analysis session state saved
+2026-09-16 22:04:25,034 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-16 22:04:53,427 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-16 22:04:58,113 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-16 22:05:00,227 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-16 22:05:00,284 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-09-16 22:05:01,084 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 5 candidates for top_n=3
+2026-09-16 22:05:16,787 - __main__ - INFO - Analysis session state saved
+2026-09-16 22:13:11,560 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-16 22:13:18,753 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-16 22:13:18,803 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-09-16 22:13:19,110 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 5 candidates for top_n=3
+2026-09-16 22:13:19,115 - __main__ - INFO - Analysis session state saved
+2026-09-16 22:13:38,623 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-16 22:13:38,668 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-09-16 22:13:39,290 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 5 candidates for top_n=3
+2026-09-16 22:13:39,295 - __main__ - INFO - Analysis session state saved
+2026-09-16 23:01:20,011 - __main__ - INFO - CSS loaded successfully from style.css

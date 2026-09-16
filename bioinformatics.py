@@ -766,11 +766,20 @@ def translate_dna(sequence: str, frame: int = 0) -> dict[str, object]:
 
     protein = "".join(protein_parts)
     status = "complete" if stop_pos is not None else "no_stop_codon"
+    nucleotide_length = len(codons_used) * 3
+    remainder = len(seq) % 3
+    stop_position_nt = (stop_pos + 1) * 3 if stop_pos is not None else None
     return {
         "protein": protein,
+        "protein_with_stop": protein + ("*" if stop_pos is not None else ""),
         "length": len(protein),
         "codons": codons_used,
         "stop_position": stop_pos,
+        "stop_position_nt": stop_position_nt,
+        "nucleotide_offset": offset,
+        "nucleotide_length": nucleotide_length,
+        "remainder_nucleotides": remainder,
+        "strand": "reverse" if frame < 0 else "forward",
         "status": status,
         "frame": frame_label,
     }
@@ -786,6 +795,24 @@ def translate_all_frames(sequence: str, include_reverse: bool = True) -> dict[st
         for frame in range(3):
             frames[f"Frame -{frame + 1}"] = translate_dna(sequence, -(frame + 1))
     return frames
+
+
+def translation_codon_rows(sequence: str, frame: int = 0) -> list[dict[str, object]]:
+    """Return codon/translation rows with one-based nucleotide coordinates."""
+    result = translate_dna(sequence, frame=frame)
+    rows = []
+    for index, codon in enumerate(result["codons"]):
+        aa = CODON_TABLE.get(codon, "?")
+        start = result["nucleotide_offset"] + index * 3 + 1
+        rows.append({
+            "codon_index": index + 1,
+            "start": start,
+            "end": start + 2,
+            "codon": codon,
+            "amino_acid": aa,
+            "is_stop": aa == "*",
+        })
+    return rows
 
 
 def detect_mutations(query: str, reference: str, seq_type: str = "dna") -> dict:
