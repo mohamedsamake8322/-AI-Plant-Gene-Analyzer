@@ -1,0 +1,9 @@
+variant_kind,reference_position,query_position,reference,query,type,consequence,impact_class,blosum62_score,codon,amino_acid,length,frameshift
+substitution,861,861,T,G,transversion,silent,conservative,5,ACT>ACG,T>T,1,
+substitution,996,996,T,G,transversion,missense,neutral,0,TTT>TTG,F>L,1,
+substitution,1850,1850,G,T,transversion,missense,radical,-3,AGA>ATA,R>I,1,
+substitution,2638,2638,A,G,transition,missense,neutral,0,ACT>GCT,T>A,1,
+substitution,4137,4137,A,T,transversion,silent,conservative,5,CGA>CGT,R>R,1,
+substitution,4213,4213,G,T,transversion,missense,conservative,1,GCT>TCT,A>S,1,
+substitution,5322,5322,A,T,transversion,silent,conservative,6,GGA>GGT,G>G,1,
+substitution,7066,7066,G,C,transversion,missense,radical,-1,GAC>CAC,D>H,1,

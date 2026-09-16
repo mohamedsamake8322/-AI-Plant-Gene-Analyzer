@@ -679,8 +679,11 @@ def _calculate_conservation(aligned_sequences: List[str]) -> float:
     align_length = len(aligned_sequences[0])
     conserved = 0
     for pos in range(align_length):
-        chars = {seq[pos] for seq in aligned_sequences if pos < len(seq) and seq[pos] != "-"}
-        if len(chars) == 1:
+        column = [seq[pos] if pos < len(seq) else "-" for seq in aligned_sequences]
+        # A column is conserved only when every displayed sequence contains
+        # the same residue. Gaps must not be ignored because the chart claims
+        # conservation across all sequences shown.
+        if column[0] != "-" and len(set(column)) == 1:
             conserved += 1
     return round(conserved / align_length * 100, 2) if align_length else 0.0
 

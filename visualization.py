@@ -792,7 +792,10 @@ def plot_msa_table(aligned_sequences: list, labels: list | None = None) -> go.Fi
                 ),
                 cells=dict(
                     values=[labels or [f"Seq {i+1}" for i in range(len(rows))]] + cell_values,
-                    fill_color=[["#0d1b2a"] * len(cell_values[0])] * 1 + cell_colors,
+                    # Keep row labels on a light surface: the nucleotide cells
+                    # use a dark-text palette, while the old dark label column
+                    # made names such as Query and A0A... nearly invisible.
+                    fill_color=[["#dce5d1"] * len(rows)] + cell_colors,
                     align="center",
                     font=dict(color="#061019", size=13),
                     line_color="rgba(0,217,163,0.15)",
