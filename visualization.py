@@ -772,17 +772,21 @@ def plot_msa_table(aligned_sequences: list, labels: list | None = None) -> go.Fi
     cell_values = list(map(list, zip(*rows)))
     cell_colors = list(map(list, zip(*fill_colors)))
 
-    header_row_height = 28
-    cell_row_height = 24
+    # Keep the table readable in its normal embedded viewport. Plotly's
+    # fullscreen mode gives the canvas more room, but the alignment must not
+    # depend on that button to reveal its rows and labels.
+    header_row_height = 34
+    cell_row_height = 32
 
     fig = go.Figure(
         data=[
             go.Table(
+                columnwidth=[110] + [30] * align_len,
                 header=dict(
                     values=["Sequence"] + header_values,
                     fill_color="#0d1b2a",
                     align="center",
-                    font=dict(color=TEAL, size=12),
+                    font=dict(color=TEAL, size=11),
                     line_color="rgba(0,217,163,0.25)",
                     height=header_row_height,
                 ),
@@ -790,7 +794,7 @@ def plot_msa_table(aligned_sequences: list, labels: list | None = None) -> go.Fi
                     values=[labels or [f"Seq {i+1}" for i in range(len(rows))]] + cell_values,
                     fill_color=[["#0d1b2a"] * len(cell_values[0])] * 1 + cell_colors,
                     align="center",
-                    font=dict(color="#061019", size=11),
+                    font=dict(color="#061019", size=13),
                     line_color="rgba(0,217,163,0.15)",
                     height=cell_row_height,
                 ),
@@ -803,8 +807,12 @@ def plot_msa_table(aligned_sequences: list, labels: list | None = None) -> go.Fi
     # reasonable width upstream), a mismatch between the two previously
     # left the actual colored cells squeezed into a thin strip inside a
     # much taller, mostly-blank figure.
-    total_height = 40 + header_row_height + cell_row_height * len(rows)
-    fig.update_layout(paper_bgcolor=THEME["paper"], height=max(200, total_height))
+    total_height = 56 + header_row_height + cell_row_height * len(rows)
+    fig.update_layout(
+        paper_bgcolor=THEME["paper"],
+        height=max(300, total_height),
+        margin=dict(l=8, r=8, t=16, b=16),
+    )
     return fig
 
 

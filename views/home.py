@@ -1399,14 +1399,11 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                         if msa_result.get("aligned_sequences"):
                             aligned = msa_result["aligned_sequences"]
                             full_width = len(aligned[0]) if aligned else 0
-                            # go.Table renders badly past ~60-80 columns: cells
-                            # shrink to illegibility and the header row (150
-                            # "Pos N" labels) can dominate the figure's fixed
-                            # height, squeezing the actual colored cells into a
-                            # thin unreadable strip -- confirmed visually in
-                            # testing. 60 matches the zoomed pairwise alignment
-                            # view elsewhere for a consistent "reading window".
-                            max_cols = 60
+                            # Keep the embedded view readable. A wider window is
+                            # available through Plotly fullscreen, but 40
+                            # columns keeps bases and position labels legible
+                            # without requiring that extra interaction.
+                            max_cols = 40
                             window = [seq[:max_cols] for seq in aligned]
                             if full_width > max_cols:
                                 st.info(

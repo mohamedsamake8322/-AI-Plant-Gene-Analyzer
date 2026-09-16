@@ -1,9 +1,0 @@
-variant_kind,reference_position,query_position,reference,query,type,consequence,codon,amino_acid,length,frameshift
-substitution,861,861,T,G,,silent,ACT>ACG,T>T,1,
-substitution,996,996,T,G,,missense,TTT>TTG,F>L,1,
-substitution,1850,1850,G,T,,missense,AGA>ATA,R>I,1,
-substitution,2638,2638,A,G,,missense,ACT>GCT,T>A,1,
-substitution,4137,4137,A,T,,silent,CGA>CGT,R>R,1,
-substitution,4213,4213,G,T,,missense,GCT>TCT,A>S,1,
-substitution,5322,5322,A,T,,silent,GGA>GGT,G>G,1,
-substitution,7066,7066,G,C,,missense,GAC>CAC,D>H,1,
