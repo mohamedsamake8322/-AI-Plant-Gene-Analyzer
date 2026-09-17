@@ -63,6 +63,10 @@ def analyze_sequence_record(
     if reading_frame == 0:
         reading_frame = 1
 
+    # Keep this available on every control-flow path, including sequences
+    # that skip similarity because they exceed the alignment limits.
+    explicit_reference = (reference_sequence or "").strip()
+
     sequence = bio.clean_sequence(record["sequence"], sequence_type="protein" if seq_type == "protein" else "dna")
 
     if len(sequence) > config.MAX_SEQUENCE_LENGTH:
@@ -216,8 +220,6 @@ def analyze_sequence_record(
 
         min_ref_identity = getattr(config, "MIN_MUTATION_REFERENCE_IDENTITY", 85.0)
         best_match_identity = best_match.get("similarity_score", 0) if best_match else 0
-        explicit_reference = (reference_sequence or "").strip()
-
         if explicit_reference:
             ref_seq = bio.clean_sequence(
                 explicit_reference,

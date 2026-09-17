@@ -663,3 +663,52 @@ LINE 1: SELECT COUNT(*) FROM genes;
 2026-09-17 06:25:15,940 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 5 candidates for top_n=3
 2026-09-17 06:25:59,377 - __main__ - INFO - Analysis session state saved
 2026-09-17 06:25:59,377 - __main__ - INFO - Analysis session state saved
+2026-09-17 06:40:43,469 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 06:41:05,142 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 06:41:12,888 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 06:41:16,516 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 06:41:16,616 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-09-17 06:41:17,046 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 5 candidates for top_n=3
+2026-09-17 06:41:17,093 - __main__ - ERROR - Unexpected error during analysis
+Traceback (most recent call last):
+  File "C:\Downloads\IA\views\home.py", line 751, in <module>
+    analyzed_result = _cached_analyze(
+  File "C:\Downloads\IA\.venv\lib\site-packages\streamlit\runtime\caching\cache_utils.py", line 280, in __call__
+    return self._get_or_create_cached_value(args, kwargs, spinner_message)
+  File "C:\Downloads\IA\.venv\lib\site-packages\streamlit\runtime\caching\cache_utils.py", line 325, in _get_or_create_cached_value
+    return self._handle_cache_miss(cache, value_key, func_args, func_kwargs)
+  File "C:\Downloads\IA\.venv\lib\site-packages\streamlit\runtime\caching\cache_utils.py", line 384, in _handle_cache_miss
+    computed_value = self._info.func(*func_args, **func_kwargs)
+  File "C:\Downloads\IA\views\home.py", line 227, in _cached_analyze
+    return pipeline.analyze_sequence_record(
+  File "C:\Downloads\IA\pipeline.py", line 95, in analyze_sequence_record
+    translation = bio.translate_dna(sequence, frame=reading_frame)
+  File "C:\Downloads\IA\bioinformatics.py", line 751, in translate_dna
+    raise ValueError("frame must be one of 1, 2, 3, -1, -2, or -3 (signed reading frame).")
+ValueError: frame must be one of 1, 2, 3, -1, -2, or -3 (signed reading frame).
+2026-09-17 06:48:07,614 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 06:48:16,506 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 06:48:18,614 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 06:48:18,657 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-09-17 06:48:18,949 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 5 candidates for top_n=3
+2026-09-17 06:48:29,369 - __main__ - INFO - Analysis session state saved
+2026-09-17 21:08:23,958 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 21:08:41,817 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 21:08:44,689 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 21:08:44,743 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-09-17 21:08:45,315 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 5 candidates for top_n=3
+2026-09-17 21:08:58,426 - __main__ - INFO - Analysis session state saved
+2026-09-17 21:27:29,659 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 21:27:38,101 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 21:27:43,735 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 21:27:43,803 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-09-17 21:27:44,454 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 5 candidates for top_n=3
+2026-09-17 21:27:44,481 - __main__ - INFO - Analysis session state saved
+2026-09-17 21:31:28,374 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 21:32:11,617 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 21:32:17,895 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 21:32:22,316 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 21:32:29,659 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 21:32:29,712 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-09-17 21:32:30,071 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 5 candidates for top_n=3
+2026-09-17 21:32:40,392 - __main__ - INFO - Analysis session state saved

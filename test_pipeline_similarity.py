@@ -54,7 +54,7 @@ def test_explicit_reference_bypasses_similarity_threshold():
 
     assert result["mutation_reference_source"] == "explicit_reference"
     assert result["mutation_report"]["total_mutations"] == 1
-    assert result["variant_report"]["substitutions"][0]["consequence"] == "silent"
+    assert result["variant_report"]["substitutions"][0]["consequence"] == "missense"
 
 
 def test_dna_variant_report_includes_blosum_and_impact_class():
@@ -65,6 +65,33 @@ def test_dna_variant_report_includes_blosum_and_impact_class():
     assert substitution["query_amino_acid"] == "L"
     assert substitution["blosum62_score"] == 0
     assert substitution["impact_class"] == "neutral"
+
+
+def test_negative_reading_frame_reaches_pipeline_variant_analysis():
+    result = pipeline.analyze_sequence_record(
+        {"header": "reverse-frame", "sequence": "ATGAAATAGCCC"},
+        "DNA",
+        reading_frame=-1,
+        db={},
+        reference_sequence="ATGAAA TAGCCC".replace(" ", ""),
+    )
+
+    assert result["translation"]["strand"] == "reverse"
+    assert result["variant_report"]["reading_frame"] == -1
+    assert result["variant_report"]["strand"] == "reverse"
+
+
+def test_alignment_skip_path_keeps_reference_source_defined(monkeypatch):
+    monkeypatch.setattr(config, "MAX_ALIGNMENT_SEQUENCE_LENGTH", 10)
+    result = pipeline.analyze_sequence_record(
+        {"header": "too-long-for-alignment", "sequence": "A" * 12},
+        "DNA",
+        reading_frame=1,
+        db={},
+    )
+
+    assert result["similarity_skipped_reason"] == "sequence_too_long"
+    assert result["mutation_reference_source"] is None
 
 
 def test_similarity_skip_reason_for_candidate_cost(monkeypatch):
