@@ -440,8 +440,8 @@ with st.sidebar:
     st.markdown("#### 🔤 Traduction")
     reading_frame = st.selectbox(
         translate('ui.reading_frame'),
-        options=[0, 1, 2, -1, -2, -3],
-        format_func=lambda frame: f"+{frame + 1}" if frame >= 0 else f"{frame:+d}",
+        options=config.READING_FRAMES,
+        format_func=lambda frame: f"{frame:+d}",
     )
 
     st.markdown("#### 🔧 Entrée")

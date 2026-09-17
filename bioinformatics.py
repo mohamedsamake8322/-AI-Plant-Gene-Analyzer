@@ -514,7 +514,7 @@ def _find_orfs_on_strand(sequence: str, frame_label_prefix: str, min_length: int
 
             if len(orf_seq) >= min_length:
                 protein_input = orf_seq[: ORF_PROTEIN_TRANSLATION_LIMIT_AA * 3]
-                protein = translate_dna(protein_input, frame=1)["protein"]
+                protein = translate_dna(protein_input)["protein"]
                 if len(orf_seq) > len(protein_input):
                     protein += "...[truncated]"
                 orfs.append({
@@ -730,32 +730,25 @@ def find_repeats(sequence: str, min_run_length: int = 6, min_unit_repeats: int =
 
 
 def translate_dna(sequence: str, frame: int = 1) -> dict[str, object]:
-    """Translate DNA for a signed reading frame: 1, 2, 3 (forward strand,
-    0/1/2-base offset respectively) or -1, -2, -3 (reverse complement, same
-    offset convention).
+    """Translate DNA for a signed reading frame from -3 through +3.
 
-    This is the ONLY accepted convention now -- confirmed bug in a prior
-    version: positive frames used `offset = frame` directly instead of
-    `frame - 1` (so +1 silently gave a 1-base offset instead of 0, +2 gave
-    a 2-base offset instead of 1, and +3 gave offset 3, which isn't a valid
-    0/1/2 offset and raised ValueError on every call -- i.e. the Translation
-    tab's "+3" option was completely broken). That version also claimed to
-    still accept "historical zero-based" 0/1/2 for forward frames alongside
-    the signed convention, but 1 and 2 are inherently ambiguous between the
-    two meanings for the same integer -- which is exactly how the offset
-    bug went unnoticed. There is no unsigned/legacy mode anymore: every
-    caller (Translation tab, ORF detection, mutation codon analysis in
-    variant_analysis.py) must pass one of the six signed values above.
+    Positive values use the supplied strand (+1 = offset 0); negative values
+    translate the reverse complement (-1 = offset 0). Historical frame=0 is
+    retained as an alias for +1 for existing programmatic callers.
     """
-    if frame not in (1, 2, 3, -1, -2, -3):
-        raise ValueError("frame must be one of 1, 2, 3, -1, -2, or -3 (signed reading frame).")
-
+    if frame == 0:
+        frame = 1
     if frame < 0:
         strand = reverse_complement(sequence)
+        offset = abs(frame) - 1
+        frame_label = frame
     else:
         strand = sequence
-    offset = abs(frame) - 1
-    frame_label = frame
+        offset = frame - 1
+        frame_label = frame
+
+    if frame not in (1, 2, 3, -1, -2, -3):
+        raise ValueError("frame must be one of 1, 2, 3, -1, -2, or -3 (signed reading frame).")
 
     seq = strand[offset:]
     protein_parts: list[str] = []
@@ -775,11 +768,20 @@ def translate_dna(sequence: str, frame: int = 1) -> dict[str, object]:
 
     protein = "".join(protein_parts)
     status = "complete" if stop_pos is not None else "no_stop_codon"
+    nucleotide_length = len(codons_used) * 3
+    remainder = len(seq) % 3
+    stop_position_nt = (stop_pos + 1) * 3 if stop_pos is not None else None
     return {
         "protein": protein,
+        "protein_with_stop": protein + ("*" if stop_pos is not None else ""),
         "length": len(protein),
         "codons": codons_used,
         "stop_position": stop_pos,
+        "stop_position_nt": stop_position_nt,
+        "nucleotide_offset": offset,
+        "nucleotide_length": nucleotide_length,
+        "remainder_nucleotides": remainder,
+        "strand": "reverse" if frame < 0 else "forward",
         "status": status,
         "frame": frame_label,
     }
@@ -789,12 +791,30 @@ def translate_all_frames(sequence: str, include_reverse: bool = True) -> dict[st
     """Translate DNA in forward (+) and reverse (-) reading frames."""
     frames = {
         f"Frame +{frame}": translate_dna(sequence, frame)
-        for frame in (1, 2, 3)
+        for frame in range(1, 4)
     }
     if include_reverse:
-        for frame in (1, 2, 3):
-            frames[f"Frame -{frame}"] = translate_dna(sequence, -frame)
+        for frame in range(3):
+            frames[f"Frame -{frame + 1}"] = translate_dna(sequence, -(frame + 1))
     return frames
+
+
+def translation_codon_rows(sequence: str, frame: int = 0) -> list[dict[str, object]]:
+    """Return codon/translation rows with one-based nucleotide coordinates."""
+    result = translate_dna(sequence, frame=frame)
+    rows = []
+    for index, codon in enumerate(result["codons"]):
+        aa = CODON_TABLE.get(codon, "?")
+        start = result["nucleotide_offset"] + index * 3 + 1
+        rows.append({
+            "codon_index": index + 1,
+            "start": start,
+            "end": start + 2,
+            "codon": codon,
+            "amino_acid": aa,
+            "is_stop": aa == "*",
+        })
+    return rows
 
 
 def detect_mutations(query: str, reference: str, seq_type: str = "dna") -> dict:

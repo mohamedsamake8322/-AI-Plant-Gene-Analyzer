@@ -99,7 +99,7 @@ MIN_WINDOW_SIZE = 5
 MAX_WINDOW_SIZE = 60
 
 # Reading frames
-READING_FRAMES = [0, 1, 2]
+READING_FRAMES = [1, 2, 3, -1, -2, -3]
 
 # ─── Database Parameters ──────────────────────────────────────────────────────
 DEFAULT_TOP_N_MATCHES = 3

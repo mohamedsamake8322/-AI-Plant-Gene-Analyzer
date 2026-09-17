@@ -319,7 +319,7 @@ def _best_protein_dna_alignment(protein_seq: str, dna_seq: str) -> dict:
     best = {"similarity_score": -1.0, "alignment": {}, "frame": "+1"}
     strands = [("+", dna_seq), ("-", bio.reverse_complement(dna_seq))]
     for strand_sign, strand_seq in strands:
-        for frame in range(3):
+        for frame in range(1, 4):
             translated = bio.translate_dna(strand_seq, frame)["protein"]
             global_aln = aln.needleman_wunsch(protein_seq, translated, seq_type="protein")
             if global_aln["identity_percent"] > best["similarity_score"]:

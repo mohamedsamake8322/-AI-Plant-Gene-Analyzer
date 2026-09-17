@@ -58,6 +58,11 @@ def analyze_sequence_record(
         if seq_type == "unknown":
             seq_type = "dna"
 
+    # Keep legacy programmatic callers using zero-based frame 0 working while
+    # the UI and public contract use signed frames +1..+3/-1..-3.
+    if reading_frame == 0:
+        reading_frame = 1
+
     sequence = bio.clean_sequence(record["sequence"], sequence_type="protein" if seq_type == "protein" else "dna")
 
     if len(sequence) > config.MAX_SEQUENCE_LENGTH:
@@ -225,7 +230,7 @@ def analyze_sequence_record(
                 sequence,
                 ref_seq,
                 seq_type=mut_seq_type,
-                reading_frame=abs(reading_frame) - 1 if mut_seq_type == "dna" else 0,
+                reading_frame=reading_frame if mut_seq_type == "dna" else 0,
             )
         elif best_match and db and best_match_identity < min_ref_identity:
             # Mutation Analysis assumes a known-reference-vs-variant framing
@@ -263,7 +268,7 @@ def analyze_sequence_record(
             try:
                 variant_report = variant_analysis.analyze_variants(
                     sequence, ref_seq, seq_type=mut_seq_type,
-                    reading_frame=abs(reading_frame) - 1 if mut_seq_type == "dna" else 0,
+                    reading_frame=reading_frame if mut_seq_type == "dna" else 0,
                 )
             except Exception:
                 if logger:
