@@ -163,24 +163,64 @@ def analyze_variants(
     query: str,
     reference: str,
     seq_type: str = "dna",
-    reading_frame: int = 0,
+    reading_frame: int = 1,
 ) -> dict[str, object]:
     """Produce a structured, biologically-classified variant report.
 
-    For DNA: substitutions before the first frameshift indel are classified
-    at the codon level (silent/missense/nonsense/readthrough); indels are
-    grouped into blocks and flagged as frameshift (length not a multiple of
-    3) or in-frame. Substitutions occurring after a frameshift indel are
-    reported with consequence "downstream_of_frameshift" rather than a
-    misleading codon call, since the reference-relative reading frame no
-    longer applies past that point.
+    reading_frame: for DNA, the SIGNED frame as selected in the UI --
+    1, 2, 3 (forward strand, 0/1/2-base offset) or -1, -2, -3 (reverse
+    strand). This is deliberately the same convention as the Translation
+    tab's reading-frame selector, and this function owns turning the sign
+    into an actual reverse-complement -- the caller must NOT pre-collapse
+    it with abs() before calling this (that was a real, confirmed bug:
+    -3 and +3 both became the same internal offset, and even when the sign
+    survived, codons were still sliced from the forward strand regardless
+    -- silently producing biologically wrong missense/silent/nonsense
+    calls for any negative frame, since a reverse frame's actual codons
+    live on the reverse-complemented strand, not the original one at an
+    offset).
+
+    For DNA on the reverse strand: both `query` and `reference` are
+    reverse-complemented before alignment/codon analysis, so codon
+    boundaries are computed on the strand that is actually being read.
+    Reported "position_reference"/"position_query" are converted back to
+    the ORIGINAL (as-given, 5'->3' input) coordinate system in all cases,
+    so the numbering stays comparable to Statistics/Similarity output and
+    never silently flips convention on the caller depending on strand.
 
     For protein: substitutions are classified as conservative/radical;
     "frameshift" doesn't apply (it's a DNA reading-frame concept), so indels
-    are reported with length only.
+    are reported with length only. reading_frame/strand are not meaningful
+    for protein input and are reported as None.
     """
     query = query.upper().replace(" ", "")
     reference = reference.upper().replace(" ", "")
+
+    orig_ref_len = len(reference)
+    orig_query_len = len(query)
+
+    strand = None
+    frame_offset = 0
+    if seq_type == "dna":
+        strand = "reverse" if reading_frame < 0 else "forward"
+        frame_offset = abs(reading_frame) - 1
+        if strand == "reverse":
+            query = bio.reverse_complement(query)
+            reference = bio.reverse_complement(reference)
+
+    def _to_original_ref_pos(pos_on_analyzed_strand: int) -> int:
+        # analyzed-strand position (1-based) -> original input coordinate.
+        # Reverse-complementing doesn't change length, so this flip is
+        # exact regardless of where indels later appear.
+        if strand == "reverse":
+            return orig_ref_len - pos_on_analyzed_strand + 1
+        return pos_on_analyzed_strand
+
+    def _to_original_query_pos(pos_on_analyzed_strand: int) -> int:
+        if strand == "reverse":
+            return orig_query_len - pos_on_analyzed_strand + 1
+        return pos_on_analyzed_strand
+
     alignment = aln.needleman_wunsch(query, reference, seq_type=seq_type)
     q_aln, r_aln = alignment["seq1_aligned"], alignment["seq2_aligned"]
 
@@ -201,8 +241,8 @@ def analyze_variants(
             if qc != rc:
                 variant: dict[str, object] = {
                     "kind": "SNP",
-                    "position_reference": ref_pos,
-                    "position_query": query_pos,
+                    "position_reference": _to_original_ref_pos(ref_pos),
+                    "position_query": _to_original_query_pos(query_pos),
                     "reference": rc,
                     "query": qc,
                 }
@@ -210,9 +250,9 @@ def analyze_variants(
                     variant.update(classify_protein_substitution(rc, qc))
                 elif frame_broken:
                     variant["consequence"] = "downstream_of_frameshift"
-                elif ref_pos > reading_frame and query_pos > reading_frame:
-                    codon_idx = (ref_pos - 1 - reading_frame) // 3
-                    ref_start = reading_frame + codon_idx * 3
+                elif ref_pos > frame_offset and query_pos > frame_offset:
+                    codon_idx = (ref_pos - 1 - frame_offset) // 3
+                    ref_start = frame_offset + codon_idx * 3
                     query_start = ref_start  # frame still in sync: no shift yet
                     ref_codon = reference[ref_start:ref_start + 3]
                     query_codon = query[query_start:query_start + 3]
@@ -226,14 +266,14 @@ def analyze_variants(
         elif qc == "-" and rc != "-":
             ref_pos += 1
             raw_indels.append({
-                "position_reference": ref_pos, "position_query": query_pos,
+                "position_reference": _to_original_ref_pos(ref_pos), "position_query": _to_original_query_pos(query_pos),
                 "reference": rc, "query": "-", "type": "deletion",
             })
             net_shift -= 1
         elif rc == "-" and qc != "-":
             query_pos += 1
             raw_indels.append({
-                "position_reference": ref_pos, "position_query": query_pos,
+                "position_reference": _to_original_ref_pos(ref_pos), "position_query": _to_original_query_pos(query_pos),
                 "reference": "-", "query": qc, "type": "insertion",
             })
             net_shift += 1
@@ -255,6 +295,7 @@ def analyze_variants(
     return {
         "seq_type": seq_type,
         "reading_frame": reading_frame if seq_type == "dna" else None,
+        "strand": strand,
         "substitutions": substitutions,
         "indel_blocks": indel_blocks,
         "substitution_summary": summary,
