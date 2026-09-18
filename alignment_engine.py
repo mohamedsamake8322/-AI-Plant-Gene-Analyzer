@@ -60,16 +60,28 @@ DNA_MATRIX = {
 }
 
 
-def get_score(char1: str, char2: str, seq_type: str = "dna") -> int:
+def get_score(char1: str, char2: str, seq_type: str = "dna", matrix_name: str = "default") -> int:
     c1 = char1.upper()
     c2 = char2.upper()
     if seq_type == "dna":
         return DNA_MATRIX.get(c1, DNA_MATRIX["N"]).get(c2, 0)
+    if matrix_name != "default":
+        return _protein_matrix_score(c1, c2, matrix_name)
     return BLOSUM62_MATRIX.get(c1, {}).get(c2, -4)
 
 
-@lru_cache(maxsize=2)
-def _score_lookup_table(seq_type: str) -> tuple[dict[str, int], int, np.ndarray]:
+def _protein_matrix_score(char1: str, char2: str, matrix_name: str) -> int:
+    from Bio.Align import substitution_matrices
+
+    matrix = substitution_matrices.load(matrix_name)
+    try:
+        return int(matrix[char1, char2])
+    except (KeyError, IndexError):
+        return -4
+
+
+@lru_cache(maxsize=16)
+def _score_lookup_table(seq_type: str, matrix_name: str = "default") -> tuple[dict[str, int], int, np.ndarray]:
     """Precompute a dense numeric substitution matrix + char->index map.
 
     Replaces get_score()'s per-cell dict-of-dict lookups (two hash lookups
@@ -85,7 +97,15 @@ def _score_lookup_table(seq_type: str) -> tuple[dict[str, int], int, np.ndarray]
     if seq_type == "dna":
         alphabet, matrix, fallback = "ATGCN", DNA_MATRIX, 0
     else:
-        alphabet, matrix, fallback = BLOSUM62_ALPHABET, BLOSUM62_MATRIX, -4
+        if matrix_name == "default":
+            alphabet, matrix, fallback = BLOSUM62_ALPHABET, BLOSUM62_MATRIX, -4
+        else:
+            from Bio.Align import substitution_matrices
+
+            loaded = substitution_matrices.load(matrix_name)
+            alphabet = "".join(str(letter) for letter in loaded.alphabet if str(letter).isalpha())
+            matrix = {a: {b: int(loaded[a, b]) for b in alphabet} for a in alphabet}
+            fallback = -4
 
     index = {ch: i for i, ch in enumerate(alphabet)}
     unknown_idx = len(alphabet)
@@ -296,6 +316,7 @@ def needleman_wunsch(
     seq_type: str = "dna",
     gap_open: int = -10,
     gap_extend: int = -1,
+    matrix_name: str = "default",
 ) -> Dict:
     """Global alignment (Needleman-Wunsch) with affine gap penalties (Gotoh's algorithm).
 
@@ -334,7 +355,7 @@ def needleman_wunsch(
             "memory/time use."
         )
 
-    char_index, unknown_idx, score_table = _score_lookup_table(seq_type)
+    char_index, unknown_idx, score_table = _score_lookup_table(seq_type, matrix_name)
     enc1 = _encode_sequence(seq1, char_index, unknown_idx)
     enc2 = _encode_sequence(seq2, char_index, unknown_idx)
 
@@ -444,6 +465,7 @@ def smith_waterman(
     seq_type: str = "dna",
     gap_open: int = -10,
     gap_extend: int = -1,
+    matrix_name: str = "default",
 ) -> Dict:
     """Local alignment (Smith-Waterman) with affine gap penalties by default.
 
@@ -469,7 +491,7 @@ def smith_waterman(
             "memory/time use."
         )
 
-    char_index, unknown_idx, score_table = _score_lookup_table(seq_type)
+    char_index, unknown_idx, score_table = _score_lookup_table(seq_type, matrix_name)
     enc1 = _encode_sequence(seq1, char_index, unknown_idx)
     enc2 = _encode_sequence(seq2, char_index, unknown_idx)
 
@@ -622,7 +644,13 @@ def _traceback(
     return "".join(reversed(aligned_seq1)), "".join(reversed(aligned_seq2))
 
 
-def star_alignment(sequences: List[str], seq_type: str = "dna") -> Dict:
+def star_alignment(
+    sequences: List[str],
+    seq_type: str = "dna",
+    gap_open: int = -10,
+    gap_extend: int = -1,
+    matrix_name: str = "default",
+) -> Dict:
     """
     Star alignment: align every sequence to the ungapped reference (first sequence),
     propagating gap columns across the full MSA.
@@ -635,7 +663,14 @@ def star_alignment(sequences: List[str], seq_type: str = "dna") -> Dict:
     msa = [reference]
 
     for seq in cleaned[1:]:
-        aln = needleman_wunsch(reference, seq, seq_type=seq_type)
+        aln = needleman_wunsch(
+            reference,
+            seq,
+            seq_type=seq_type,
+            gap_open=gap_open,
+            gap_extend=gap_extend,
+            matrix_name=matrix_name,
+        )
         ref_aln = aln["seq1_aligned"]
         new_aln = aln["seq2_aligned"]
 
@@ -688,13 +723,60 @@ def _calculate_conservation(aligned_sequences: List[str]) -> float:
     return round(conserved / align_length * 100, 2) if align_length else 0.0
 
 
+def consensus_profile(aligned_sequences: List[str]) -> Dict:
+    """Return consensus, conservation and variable-column data for an MSA."""
+    if not aligned_sequences:
+        return {"consensus": "", "columns": [], "variable_columns": [], "conservation_score": 0.0}
+    width = max(len(sequence) for sequence in aligned_sequences)
+    columns = []
+    consensus = []
+    variable_columns = []
+    for index in range(width):
+        column = [sequence[index] if index < len(sequence) else "-" for sequence in aligned_sequences]
+        counts = {char: column.count(char) for char in set(column) if char != "-"}
+        if not counts:
+            consensus_char, conservation = "-", 0.0
+        else:
+            consensus_char, count = max(counts.items(), key=lambda item: (item[1], item[0]))
+            conservation = round(count / len(column) * 100, 2)
+        consensus.append(consensus_char)
+        row = {
+            "position": index + 1,
+            "consensus": consensus_char,
+            "conservation_percent": conservation,
+            "counts": counts,
+            "variable": len(counts) > 1,
+        }
+        columns.append(row)
+        if row["variable"]:
+            variable_columns.append(index + 1)
+    return {
+        "consensus": "".join(consensus),
+        "columns": columns,
+        "variable_columns": variable_columns,
+        "conservation_score": round(
+            sum(row["conservation_percent"] == 100.0 for row in columns) / width * 100,
+            2,
+        ) if width else 0.0,
+    }
+
+
 def pairwise_align(
     seq1: str,
     seq2: str,
     mode: str = "global",
     seq_type: str = "dna",
+    gap_open: int = -10,
+    gap_extend: int = -1,
+    matrix_name: str = "default",
 ) -> Dict:
     """Convenience wrapper returning alignment + identity statistics."""
     if mode == "local":
-        return smith_waterman(seq1, seq2, seq_type=seq_type)
-    return needleman_wunsch(seq1, seq2, seq_type=seq_type)
+        return smith_waterman(
+            seq1, seq2, seq_type=seq_type, gap_open=gap_open,
+            gap_extend=gap_extend, matrix_name=matrix_name,
+        )
+    return needleman_wunsch(
+        seq1, seq2, seq_type=seq_type, gap_open=gap_open,
+        gap_extend=gap_extend, matrix_name=matrix_name,
+    )

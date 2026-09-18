@@ -712,3 +712,23 @@ ValueError: frame must be one of 1, 2, 3, -1, -2, or -3 (signed reading frame).
 2026-09-17 21:32:29,712 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
 2026-09-17 21:32:30,071 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 5 candidates for top_n=3
 2026-09-17 21:32:40,392 - __main__ - INFO - Analysis session state saved
+2026-09-17 21:45:13,770 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 21:45:26,011 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 21:45:41,604 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 21:45:41,791 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 21:45:41,833 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-09-17 21:45:42,099 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 1 candidates for top_n=3
+2026-09-17 21:45:42,820 - __main__ - INFO - Analysis session state saved
+2026-09-17 21:46:05,421 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 21:46:17,797 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 21:46:17,948 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 21:46:18,005 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-09-17 21:46:18,287 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 1 candidates for top_n=3
+2026-09-17 21:46:18,287 - __main__ - INFO - Analysis session state saved
+2026-09-17 21:49:16,562 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 22:02:21,135 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 22:02:33,832 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 22:02:36,703 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-17 22:02:36,753 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-09-17 22:02:37,061 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 5 candidates for top_n=3
+2026-09-17 22:02:46,369 - __main__ - INFO - Analysis session state saved

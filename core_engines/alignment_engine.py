@@ -12,6 +12,7 @@ progressive_alignment = _orig.progressive_alignment
 star_alignment = _orig.star_alignment
 alignment_statistics = _orig.alignment_statistics
 pairwise_align = _orig.pairwise_align
+consensus_profile = _orig.consensus_profile
 
 __all__ = [
     'needleman_wunsch',
@@ -20,4 +21,5 @@ __all__ = [
     'star_alignment',
     'alignment_statistics',
     'pairwise_align',
+    'consensus_profile',
 ]

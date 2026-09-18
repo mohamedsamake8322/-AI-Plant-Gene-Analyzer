@@ -47,6 +47,7 @@ cd C:\Downloads\IA
 - [04 - Mutations](04_mutations.md)
 - [05 - Translation](05_translation.md)
 - [06 - Limites et depannage](06_limites_et_depannage.md)
+- [07 - Independent Tools - Alignments](07_independent_alignments.md)
 
 ## Regle importante d'interpretation
 
