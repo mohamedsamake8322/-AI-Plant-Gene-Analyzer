@@ -732,3 +732,7 @@ ValueError: frame must be one of 1, 2, 3, -1, -2, or -3 (signed reading frame).
 2026-09-17 22:02:36,753 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
 2026-09-17 22:02:37,061 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 5 candidates for top_n=3
 2026-09-17 22:02:46,369 - __main__ - INFO - Analysis session state saved
+2026-09-18 19:56:18,053 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-18 19:56:18,053 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-18 19:56:19,391 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-18 19:56:19,391 - __main__ - INFO - CSS loaded successfully from style.css
