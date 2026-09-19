@@ -84,3 +84,14 @@ def test_upgma_produces_newick():
     tree = phylo.upgma(matrix, ["A", "B", "C"])
     assert tree["newick"].endswith(";")
     assert "A" in tree["newick"] and "B" in tree["newick"]
+
+
+def test_upgma_newick_uses_parent_child_branch_lengths():
+    matrix = np.array([
+        [0.0, 0.1],
+        [0.1, 0.0],
+    ])
+    newick = phylo.upgma(matrix, ["A", "B"])["newick"]
+
+    assert newick == "(A:0.050000,B:0.050000);"
+    assert ":0.100000);" not in newick

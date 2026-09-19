@@ -193,15 +193,25 @@ def neighbor_joining(distance_matrix: np.ndarray, names: List[str]) -> Dict:
 
 
 def linkage_to_newick(linkage_matrix: np.ndarray, labels: List[str]) -> str:
-    """Convert scipy linkage matrix to Newick format."""
+    """Convert a SciPy linkage matrix to Newick with correct branch lengths.
+
+    SciPy stores each node's height in ``node.dist``. Newick needs the
+    distance from a node to its parent. SciPy's average-linkage height is
+    the full pairwise distance at a UPGMA merge, so each edge uses half of
+    the height difference. The root has no parent and must not receive a
+    branch length.
+    """
     tree = to_tree(linkage_matrix, rd=False)
 
-    def _node_to_newick(node) -> str:
+    def _node_to_newick(node, parent_height: float | None = None) -> str:
+        branch_length = None if parent_height is None else max(parent_height - node.dist, 0.0) / 2
         if node.is_leaf():
-            return f"{labels[node.id]}:{max(node.dist, 0):.6f}"
-        left = _node_to_newick(node.get_left())
-        right = _node_to_newick(node.get_right())
-        return f"({left},{right}):{max(node.dist, 0):.6f}"
+            suffix = "" if branch_length is None else f":{branch_length:.6f}"
+            return f"{labels[node.id]}{suffix}"
+        left = _node_to_newick(node.get_left(), node.dist)
+        right = _node_to_newick(node.get_right(), node.dist)
+        subtree = f"({left},{right})"
+        return subtree if branch_length is None else f"{subtree}:{branch_length:.6f}"
 
     return _node_to_newick(tree) + ";"
 
