@@ -901,12 +901,121 @@ def plot_dendrogram(dendro: dict, labels: list | None = None) -> go.Figure:
             )
         )
 
-    fig.update_layout(
-        **_base_layout("Phylogenetic Tree"),
-        xaxis=dict(showticklabels=False, zeroline=False, showgrid=False),
-        yaxis=dict(title="Distance", zeroline=False, showgrid=True),
-        height=420,
+    fig.update_layout(**_base_layout("Phylogenetic Tree"), height=420)
+    fig.update_xaxes(showticklabels=False, zeroline=False, showgrid=False)
+    fig.update_yaxes(title="Distance", zeroline=False, showgrid=True)
+    fig.add_trace(go.Scatter(
+        x=[None], y=[None], mode="lines", line=dict(color=CYAN, width=3),
+        name="Branch = distance", showlegend=True,
+    ))
+    fig.add_trace(go.Scatter(
+        x=[None], y=[None], mode="markers", marker=dict(size=9, color=MINT),
+        name="Leaf = sequence", showlegend=True,
+    ))
+    return fig
+
+
+def plot_distance_heatmap(distance_matrix: list[list[float]], labels: list[str], method: str = "") -> go.Figure:
+    """Show pairwise distances with exact values available on hover."""
+    fig = go.Figure(
+        go.Heatmap(
+            z=distance_matrix,
+            x=labels,
+            y=labels,
+            colorscale=[[0, MINT], [0.5, AMBER], [1, CORAL]],
+            hovertemplate="Sequence 1: %{y}<br>Sequence 2: %{x}<br>Distance: %{z:.6f}<extra></extra>",
+            colorbar=dict(title="Distance<br>(0 = identical)"),
+        )
     )
+    title = "Pairwise evolutionary distances"
+    if method:
+        title += f" ({method})"
+    fig.update_layout(
+        **_base_layout(title),
+        height=max(360, 70 * len(labels)),
+        annotations=[dict(
+            text="Green = closer | Yellow = intermediate | Red = more divergent",
+            x=0, y=1.12, xref="paper", yref="paper", showarrow=False,
+            xanchor="left", font=dict(size=11, color=THEME["font_color"]),
+        )],
+    )
+    fig.update_xaxes(side="top", tickangle=-35)
+    fig.update_yaxes(autorange="reversed")
+    return fig
+
+
+def plot_neighbor_joining(edges: list[dict], labels: list[str]) -> go.Figure:
+    """Render a simple interactive rectangular tree from NJ edge records."""
+    children = {edge["parent"]: (edge["child_1"], edge["child_2"]) for edge in edges}
+    lengths = {
+        (edge["parent"], edge["child_1"]): max(0.0, float(edge["branch_1"]))
+        for edge in edges
+    }
+    lengths.update({
+        (edge["parent"], edge["child_2"]): max(0.0, float(edge["branch_2"]))
+        for edge in edges
+    })
+    root = edges[-1]["parent"] if edges else ""
+    leaf_order = [label for label in labels if label]
+    y_positions = {label: index for index, label in enumerate(reversed(leaf_order))}
+    next_y = len(y_positions)
+
+    def assign_y(node: str) -> float:
+        nonlocal next_y
+        if node in y_positions:
+            return y_positions[node]
+        child_1, child_2 = children[node]
+        y_positions[node] = (assign_y(child_1) + assign_y(child_2)) / 2
+        next_y += 1
+        return y_positions[node]
+
+    if root:
+        assign_y(root)
+    x_positions = {root: 0.0}
+
+    def assign_x(node: str, x: float) -> None:
+        if node not in children:
+            return
+        child_1, child_2 = children[node]
+        for child in (child_1, child_2):
+            child_x = x + lengths.get((node, child), 0.0)
+            x_positions[child] = child_x
+            assign_x(child, child_x)
+
+    if root:
+        assign_x(root, 0.0)
+    fig = go.Figure()
+    for parent, (child_1, child_2) in children.items():
+        parent_x = x_positions.get(parent, 0.0)
+        fig.add_trace(go.Scatter(
+            x=[parent_x, x_positions.get(child_1, parent_x), None, parent_x, x_positions.get(child_2, parent_x)],
+            y=[y_positions[parent], y_positions[child_1], None, y_positions[parent], y_positions[child_2]],
+            mode="lines",
+            line=dict(color=CYAN, width=2),
+            hoverinfo="none",
+            showlegend=False,
+        ))
+    fig.add_trace(go.Scatter(
+        x=[x_positions.get(label, 0.0) for label in leaf_order],
+        y=[y_positions.get(label, 0.0) for label in leaf_order],
+        text=leaf_order,
+        mode="markers+text",
+        textposition="middle right",
+        marker=dict(size=9, color=MINT),
+        hovertemplate="Sequence: %{text}<extra></extra>",
+        showlegend=False,
+    ))
+    fig.add_trace(go.Scatter(
+        x=[None], y=[None], mode="lines", line=dict(color=CYAN, width=2),
+        name="Branch = evolutionary distance", showlegend=True,
+    ))
+    fig.add_trace(go.Scatter(
+        x=[None], y=[None], mode="markers", marker=dict(size=9, color=MINT),
+        name="Dot = sequence", showlegend=True,
+    ))
+    fig.update_layout(**_base_layout("Neighbor-Joining tree (unrooted method, display rooted for readability)"))
+    fig.update_xaxes(title="Branch length", showgrid=True, zeroline=True)
+    fig.update_yaxes(showticklabels=False, showgrid=False, zeroline=False)
     return fig
 
 

@@ -48,6 +48,8 @@ cd C:\Downloads\IA
 - [05 - Translation](05_translation.md)
 - [06 - Limites et depannage](06_limites_et_depannage.md)
 - [07 - Independent Tools - Alignments](07_independent_alignments.md)
+- [08 - Independent Tools - Distance Matrix](08_distance_matrix.md)
+- [09 - Independent Tools - Phylogeny](09_phylogeny.md)
 
 ## Regle importante d'interpretation
 

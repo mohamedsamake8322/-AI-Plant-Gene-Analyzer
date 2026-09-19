@@ -240,8 +240,15 @@ with tool_tabs[0]:
 
 with tool_tabs[1]:
     st.markdown(f"#### {translate('ui.distance_matrix_title', default='Compute Pairwise Distance Matrix')}")
+    st.caption("The matrix is the shared input for the phylogenetic tree. Compute it here, then send it to Phylogeny.")
     distance_input = st.text_area(translate('ui.distance_input_hint', default="Paste FASTA or one sequence per line:"), height=160, key="independent_distance_input")
     distance_method = st.selectbox(translate('ui.method', default="Method"), ["hamming", "jukes_cantor", "kimura", "pam"], index=2, key="independent_distance_method")
+    st.info({
+        "hamming": "Raw fraction of observed differences.",
+        "jukes_cantor": "Corrects nucleotide distances for repeated substitutions.",
+        "kimura": "Separates transitions and transversions in a nucleotide model.",
+        "pam": "Protein distance; use amino-acid sequences, not DNA.",
+    }[distance_method])
     if st.button(translate('ui.compute_distance_matrix', default="Compute Distance Matrix"), key="independent_dm_compute"):
         from sequence_loader import parse_fasta
         from core_engines.distance_engine import distance_matrix
@@ -254,11 +261,33 @@ with tool_tabs[1]:
             result = distance_matrix(sequences, method=distance_method)
             names = result["sequence_names"]
             frame = pd.DataFrame(result["distance_matrix"], index=names, columns=names)
+            st.session_state["independent_distance_result"] = result
+            st.session_state["independent_distance_names"] = names
+            st.session_state["independent_distance_method_used"] = distance_method
+            st.session_state["independent_distance_sequences"] = sequences
+            st.plotly_chart(viz.plot_distance_heatmap(result["distance_matrix"], names, distance_method), width="stretch")
+            st.caption("Legend: green means a smaller model distance, yellow an intermediate distance, and red a larger model distance. Hover a cell for the exact value.")
             st.dataframe(frame)
+            pairs = [(float(frame.iloc[i, j]), names[i], names[j]) for i in range(len(names)) for j in range(i + 1, len(names))]
+            if pairs:
+                closest = min(pairs)
+                farthest = max(pairs)
+                st.success(f"Closest pair: {closest[1]} and {closest[2]} (distance {closest[0]:.6f}).")
+                st.warning(f"Most distant pair: {farthest[1]} and {farthest[2]} (distance {farthest[0]:.6f}).")
+            st.caption("Distances use one shared star alignment. The first sequence is the alignment reference.")
+            if st.button("Use this matrix to build the tree", key="independent_use_matrix_for_tree"):
+                st.session_state["independent_phylogeny_matrix_ready"] = True
+                st.success("Matrix linked to Phylogeny. Open the Phylogeny tab and build the tree.")
             st.download_button("Download CSV", frame.to_csv().encode("utf-8"), file_name="distance_matrix.csv", key="independent_dm_download")
 
 with tool_tabs[2]:
     st.markdown(f"#### {translate('ui.phylogeny_title', default='Build Phylogenetic Tree')}")
+    linked_result = st.session_state.get("independent_distance_result")
+    linked_method = st.session_state.get("independent_distance_method_used")
+    if linked_result and st.session_state.get("independent_phylogeny_matrix_ready"):
+        st.success(f"Using the linked {linked_method} distance matrix from Distance Matrix.")
+    else:
+        st.info("Compute a distance matrix first, then use 'Use this matrix to build the tree'.")
     phylogeny_input = st.text_area(translate('ui.phylogeny_input_hint', default="Paste sequences for phylogeny (FASTA or lines):"), height=160, key="independent_phylogeny_input")
     phylogeny_method = st.selectbox(translate('ui.tree_algorithm', default="Tree algorithm"), ["upgma", "neighbor_joining"], key="independent_phylogeny_method")
     if st.button(translate('ui.build_tree', default="Build Tree"), key="independent_build_tree"):
@@ -266,15 +295,33 @@ with tool_tabs[2]:
         from core_engines.distance_engine import distance_matrix
         from core_engines.phylogeny_engine import upgma, neighbor_joining
         import numpy as np
-        records = parse_fasta(phylogeny_input)
-        sequences = [{"name": record.get("header", f"Seq{i + 1}"), "sequence": record["sequence"]} for i, record in enumerate(records)]
-        if len(sequences) < 2:
-            st.warning(translate('ui.pairwise_missing', default="Provide at least 2 sequences for a simple tree."))
+        if linked_result and st.session_state.get("independent_phylogeny_matrix_ready"):
+            distances = linked_result
+            names = st.session_state["independent_distance_names"]
         else:
-            distances = distance_matrix(sequences, method="kimura")
+            records = parse_fasta(phylogeny_input)
+            sequences = [{"name": record.get("header", f"Seq{i + 1}"), "sequence": record["sequence"]} for i, record in enumerate(records)]
+            if len(sequences) < 2:
+                st.warning(translate("ui.phylogeny_missing", default="Provide at least 2 sequences to build a phylogenetic tree."))
+                distances = None
+            else:
+                distances = distance_matrix(sequences, method="kimura")
+            names = distances["sequence_names"] if distances else []
+        if distances:
             builder = upgma if phylogeny_method == "upgma" else neighbor_joining
-            tree = builder(np.array(distances["distance_matrix"]), distances["sequence_names"])
-            st.write("**Tree metadata**", {"algorithm": tree.get("algorithm")})
+            tree = builder(np.array(distances["distance_matrix"]), names)
+            st.write("**Tree metadata**", {
+                "algorithm": tree.get("algorithm"),
+                "distance_method": distances.get("method"),
+                "tree_type": tree.get("tree_type"),
+            })
+            if phylogeny_method == "upgma" and tree.get("dendrogram_data"):
+                st.plotly_chart(viz.plot_dendrogram(tree["dendrogram_data"], labels=names), width="stretch")
+                st.caption("Legend: leaves are sequences; branch height represents the distance used by UPGMA. This is a clustering result, not a proof of ancestry.")
+            elif phylogeny_method == "neighbor_joining":
+                st.warning("Neighbor-Joining is an additive, unrooted method; the displayed root is only a layout anchor.")
+                st.plotly_chart(viz.plot_neighbor_joining(tree.get("edges", []), names), width="stretch")
+                st.caption("Legend: dots are sequences and horizontal branch length represents model distance. The display anchor is not a biological root.")
             if tree.get("newick"):
                 st.code(tree["newick"])
                 st.download_button("Download Newick", tree["newick"], file_name="phylogeny_tree.nwk", mime="text/plain", key="independent_newick_download")

@@ -468,6 +468,7 @@ TRANSLATIONS = {
             "compute_distance_matrix": "Compute Distance Matrix",
             "phylogeny_title": "Build Phylogenetic Tree",
             "phylogeny_input_hint": "Paste sequences for phylogeny (FASTA or lines):",
+            "phylogeny_missing": "Provide at least 2 sequences to build a phylogenetic tree.",
             "tree_algorithm": "Tree algorithm",
             "build_tree": "Build Tree",
             "protein_biochemical_analysis": "Protein biochemical analysis",
