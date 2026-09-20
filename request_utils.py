@@ -10,6 +10,7 @@ from __future__ import annotations
 import time
 from typing import Optional
 
+import certifi          # <-- ligne à ajouter
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -17,6 +18,13 @@ from urllib3.util.retry import Retry
 
 def _build_session(retries: int = 3, backoff_factor: float = 0.5, status_forcelist=(429, 500, 502, 503, 504)) -> requests.Session:
     s = requests.Session()
+    # Force le bundle de certificats fourni par le paquet certifi, plutôt que
+    # de laisser `requests` résoudre REQUESTS_CA_BUNDLE/CURL_CA_BUNDLE depuis
+    # l'environnement système -- une variable Windows pointant vers un
+    # chemin invalide (ex. posée par un autre logiciel installé sur la
+    # machine) casserait sinon TOUTES les requêtes HTTPS de ce module, sans
+    # rapport avec le code lui-même.
+    s.verify = certifi.where()          # <-- ligne à ajouter
     retry = Retry(
         total=retries,
         read=retries,
@@ -56,7 +64,10 @@ def get(url: str, params: dict | None = None, timeout: int = 30, headers: dict |
         delay = 1.0
         for attempt in range(1, retries + 1):
             try:
-                resp = requests.get(url, params=params, timeout=timeout, headers=headers)
+                resp = requests.get(
+                    url, params=params, timeout=timeout, headers=headers,
+                    verify=certifi.where(),      # <-- ligne à ajouter
+                )
                 break
             except Exception:
                 if attempt == retries:
