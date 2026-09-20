@@ -65,8 +65,9 @@ tool_tabs = st.tabs([
 with tool_tabs[0]:
     st.markdown(f"#### {translate('ui.tab_alignments')}")
     st.info(
-        "Global alignment compares sequences end to end. Local alignment finds the best shared region. "
-        "MSA aligns several sequences in a common reference-guided layout."
+        "Use the upper MSA section for 2 or more homologous sequences. Use the lower pairwise section for exactly 2 sequences. "
+        "Global alignment compares sequences end to end; local alignment finds the best shared region. "
+        "These are sequence-similarity measurements, not proof of gene identity or biological function."
     )
     if st.button("Load alignment example", key="independent_msa_example"):
         st.session_state["independent_msa_input"] = (
@@ -188,6 +189,11 @@ with tool_tabs[0]:
                     export_cols[4].download_button("NEXUS", align_export.nexus(aligned_sequences, labels, metadata), "alignment.nex", "text/plain", key="msa_export_nexus")
 
     pairwise_left, pairwise_right = st.columns(2)
+    st.markdown("#### Pairwise comparison of two sequences")
+    st.caption(
+        "Paste one sequence in each field. Use DNA with DNA or protein with protein. "
+        "If both cleaned inputs are identical, the 100% result is an intentional self-comparison, not biological evidence."
+    )
     with pairwise_left:
         pairwise_seq1 = st.text_area(translate('ui.sequence_1', default="Sequence 1"), height=80, key="independent_pw1")
     with pairwise_right:
@@ -203,6 +209,14 @@ with tool_tabs[0]:
             from core_engines.alignment_engine import needleman_wunsch, smith_waterman
             seq1 = bio.clean_sequence(pairwise_seq1, sequence_type="protein" if pairwise_type == "Protein" else "dna")
             seq2 = bio.clean_sequence(pairwise_seq2, sequence_type="protein" if pairwise_type == "Protein" else "dna")
+            if not seq1 or not seq2:
+                st.error("Both sequences must contain valid characters for the selected type.")
+                st.stop()
+            if seq1 == seq2:
+                st.warning(
+                    f"The two cleaned inputs are identical ({len(seq1):,} characters). "
+                    "This is a self-comparison control, so 100% identity is expected."
+                )
             seq_type = bio.detect_sequence_type(seq1) if pairwise_type == "Auto" else pairwise_type.lower()
             if pairwise_type == "Auto" and bio.detect_sequence_type(seq2) != seq_type:
                 st.error("The two sequences must have the same detected type.")
@@ -227,7 +241,12 @@ with tool_tabs[0]:
             metrics[4].metric("Score", global_result["alignment_score"])
             st.caption(
                 f"Coverage sequence 1: {global_stats['aligned_columns_without_gaps'] / len(seq1) * 100:.1f}% | "
-                f"Coverage sequence 2: {global_stats['aligned_columns_without_gaps'] / len(seq2) * 100:.1f}%"
+                f"Coverage sequence 2: {global_stats['aligned_columns_without_gaps'] / len(seq2) * 100:.1f}% | "
+                f"Identity without gaps: {global_stats['non_gap_identity_percent']:.2f}%"
+            )
+            st.caption(
+                "Interpretation: identity, matches, mismatches and gaps describe this alignment. "
+                "They do not by themselves confirm homology, annotation or biological function."
             )
             st.markdown("**Smith-Waterman (local)**")
             st.code(local_result["seq1_aligned"] + "\n" + local_result["seq2_aligned"])

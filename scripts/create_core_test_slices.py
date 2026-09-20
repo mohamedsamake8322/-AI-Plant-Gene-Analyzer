@@ -42,12 +42,12 @@ def main() -> None:
         encoding="utf-8",
     )
 
-    fasta_genes = short_genes[:3]
+    fasta_genes = short_genes[:6]
     fasta_lines = []
     for index, gene in enumerate(fasta_genes, start=1):
         identifier = gene.get("gene_id", f"quinoa_seq_{index}")
         fasta_lines.extend([f">{identifier}", sequence_of(gene)])
-    (output_dir / "quinoa_alignment_phylogeny_3.fasta").write_text(
+    (output_dir / "quinoa_alignment_phylogeny_6.fasta").write_text(
         "\n".join(fasta_lines) + "\n", encoding="utf-8"
     )
 

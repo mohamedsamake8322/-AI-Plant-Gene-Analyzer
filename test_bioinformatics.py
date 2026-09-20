@@ -8,6 +8,34 @@ Run with: pytest test_bioinformatics.py -v
 import pytest
 import bioinformatics as bio
 import sequence_loader as loader
+import visualization as viz
+
+
+class TestVisualizationRenderingRegression:
+    """Ensure Plotly figures keep valid coordinate arrays after the legend-only fix."""
+
+    def test_plot_tree_figures_do_not_emit_none_coordinates(self):
+        dendro = {
+            "icoord": [[0, 5, 10, 15], [0, 5, 10, 15]],
+            "dcoord": [[0, 1, 1, 2], [0, 1, 1, 2]],
+            "color_list": ["#00d9a3", "#00d9a3"],
+        }
+        dendro_fig = viz.plot_dendrogram(dendro, labels=["A", "B"])
+        nj_fig = viz.plot_neighbor_joining(
+            [{"parent": "Root", "child_1": "A", "child_2": "B", "branch_1": 1.0, "branch_2": 1.0}],
+            ["A", "B"],
+        )
+
+        for fig in (dendro_fig, nj_fig):
+            for trace in fig.data:
+                if getattr(trace, "visible", None) == "legendonly":
+                    assert list(getattr(trace, "x", [])) == [], "Legend-only trace should be empty"
+                    assert list(getattr(trace, "y", [])) == [], "Legend-only trace should be empty"
+                else:
+                    if hasattr(trace, "x"):
+                        assert any(v is not None for v in trace.x), "Data trace has no valid x coordinates"
+                    if hasattr(trace, "y"):
+                        assert any(v is not None for v in trace.y), "Data trace has no valid y coordinates"
 
 
 class TestSequenceCleaning:

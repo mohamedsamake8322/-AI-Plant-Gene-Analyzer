@@ -92,6 +92,21 @@ def _normalize_plotly_color(color_value: str) -> str:
     return color_value
 
 
+def _legend_only_placeholder(name: str, color: str, mode: str = "lines") -> go.Scatter:
+    """Keep a legend entry without injecting invalid x/y=None coordinates into the render."""
+    return go.Scatter(
+        x=[],
+        y=[],
+        mode=mode,
+        line=dict(color=color, width=3) if mode == "lines" else None,
+        marker=dict(size=9, color=color) if mode == "markers" else None,
+        name=name,
+        showlegend=True,
+        hoverinfo="skip",
+        visible="legendonly",
+    )
+
+
 # ─── Nucleotide distribution ───────────────────────────────────────────────────
 
 def plot_nucleotide_pie(dist: dict) -> go.Figure:
@@ -904,14 +919,8 @@ def plot_dendrogram(dendro: dict, labels: list | None = None) -> go.Figure:
     fig.update_layout(**_base_layout("Phylogenetic Tree"), height=420)
     fig.update_xaxes(showticklabels=False, zeroline=False, showgrid=False)
     fig.update_yaxes(title="Distance", zeroline=False, showgrid=True)
-    fig.add_trace(go.Scatter(
-        x=[None], y=[None], mode="lines", line=dict(color=CYAN, width=3),
-        name="Branch = distance", showlegend=True,
-    ))
-    fig.add_trace(go.Scatter(
-        x=[None], y=[None], mode="markers", marker=dict(size=9, color=MINT),
-        name="Leaf = sequence", showlegend=True,
-    ))
+    fig.add_trace(_legend_only_placeholder("Branch = distance", CYAN, mode="lines"))
+    fig.add_trace(_legend_only_placeholder("Leaf = sequence", MINT, mode="markers"))
     return fig
 
 
@@ -1005,14 +1014,8 @@ def plot_neighbor_joining(edges: list[dict], labels: list[str]) -> go.Figure:
         hovertemplate="Sequence: %{text}<extra></extra>",
         showlegend=False,
     ))
-    fig.add_trace(go.Scatter(
-        x=[None], y=[None], mode="lines", line=dict(color=CYAN, width=2),
-        name="Branch = evolutionary distance", showlegend=True,
-    ))
-    fig.add_trace(go.Scatter(
-        x=[None], y=[None], mode="markers", marker=dict(size=9, color=MINT),
-        name="Dot = sequence", showlegend=True,
-    ))
+    fig.add_trace(_legend_only_placeholder("Branch = evolutionary distance", CYAN, mode="lines"))
+    fig.add_trace(_legend_only_placeholder("Dot = sequence", MINT, mode="markers"))
     fig.update_layout(**_base_layout("Neighbor-Joining tree (unrooted method, display rooted for readability)"))
     fig.update_xaxes(title="Branch length", showgrid=True, zeroline=True)
     fig.update_yaxes(showticklabels=False, showgrid=False, zeroline=False)

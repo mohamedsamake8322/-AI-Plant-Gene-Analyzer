@@ -62,12 +62,17 @@ Le MSA estime le cout cumule des alignements reference-vers-sequence. Une execut
 
 ## Interpretation debutant
 
+- La zone MSA en haut sert a aligner au moins deux sequences dans une grille commune.
+- La zone Pairwise en bas sert a comparer exactement deux sequences : une dans Sequence 1 et une dans Sequence 2.
+- Si les deux entrees pairwise sont identiques apres nettoyage, une identite de 100 % est normale mais ne constitue qu'un controle d'auto-comparaison.
 - **Global** : aligne les sequences du debut a la fin.
 - **Local** : cherche la meilleure region commune.
 - **MSA** : aligne plusieurs sequences dans une grille commune.
 - **Match** : caracteres identiques dans une colonne.
 - **Mismatch** : caracteres differents dans une colonne.
 - **Gap** : insertion d'un tiret pour maintenir la correspondance.
+
+Les pourcentages, scores et graphiques sont vrais comme resultats mathematiques de l'algorithme et des parametres choisis. Ils ne prouvent pas seuls que deux sequences sont le meme gene, homologues, exprimees ou fonctionnelles. Pour une conclusion biologique, utiliser une reference documentee et une validation externe comme BLAST/NCBI ou UniProt.
 
 ## Phase 2 restante
 
