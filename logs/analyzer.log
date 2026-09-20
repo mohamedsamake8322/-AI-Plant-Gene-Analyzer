@@ -742,3 +742,15 @@ ValueError: frame must be one of 1, 2, 3, -1, -2, or -3 (signed reading frame).
 2026-09-19 23:39:05,945 - __main__ - INFO - CSS loaded successfully from style.css
 2026-09-19 23:45:43,544 - __main__ - INFO - CSS loaded successfully from style.css
 2026-09-20 10:49:50,383 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-20 11:59:43,484 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-20 12:00:10,176 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-20 12:00:24,885 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-20 12:00:24,962 - __main__ - INFO - Starting analysis for record 1/1: GeneID:110715973 | Chenopodium quinoa | Type: dna
+2026-09-20 12:00:25,718 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 17 candidates for top_n=3
+2026-09-20 12:00:48,278 - __main__ - INFO - Analysis session state saved
+2026-09-20 12:01:05,488 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-20 12:01:06,944 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-20 12:01:06,977 - __main__ - INFO - Starting analysis for record 1/1: A0A803MVK7 | Chenopodium quinoa | Type: protein
+2026-09-20 12:01:08,074 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 1 candidates for top_n=3
+2026-09-20 12:01:08,186 - __main__ - INFO - Analysis session state saved
+2026-09-20 12:12:55,339 - __main__ - INFO - CSS loaded successfully from style.css

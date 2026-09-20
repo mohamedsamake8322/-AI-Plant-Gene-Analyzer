@@ -265,8 +265,12 @@ def restructure_to_schema(gid: str, flat: dict) -> dict:
     traits = []
     for t in flat.get("traits", []) or []:
         if isinstance(t, str):
-            traits.append({"trait": t, "evidence": "tf annotation", "source": "planttfdb", "retrieved_at": now})
-            sources_seen.add("planttfdb")
+            if t.startswith("TF:") or t == "transcription_factor":
+                traits.append({"trait": t, "evidence": "tf annotation", "source": "planttfdb", "retrieved_at": now})
+                sources_seen.add("planttfdb")
+            else:
+                traits.append({"trait": t, "evidence": "keyword", "source": "uniprot", "retrieved_at": now})
+                sources_seen.add("uniprot")
         else:
             t = dict(t)
             t.setdefault("source", "manual")
@@ -279,9 +283,9 @@ def restructure_to_schema(gid: str, flat: dict) -> dict:
 
     has_seq = bool(raw_seq.get("dna") or raw_seq.get("rna") or raw_seq.get("protein"))
     default_origin = "sequence_backed" if has_seq else "annotation_only"
-
     nested = {
         "gene_id": gid,
+        "symbol": flat.get("symbol"),
         "organism": flat.get("organism"),
         "common_name": flat.get("common_name", ""),
         # "sequence_backed" (default) = has (or was intended to have) a
@@ -481,6 +485,7 @@ def collect_species(
                         entry.setdefault("annotations", {}).update(r["annotations"])
                     if r.get("traits"):
                         entry["traits"] = sorted(set(entry.get("traits", [])) | set(r["traits"]))
+                    entry.setdefault("symbol", r.get("symbol"))
                     # Keep the UniProt accession discoverable even though
                     # it's no longer the dict's key -- needed by the KEGG
                     # block below, and useful for the app/API either way.
@@ -557,6 +562,7 @@ def collect_species(
                     existing.setdefault("annotations", {}).update(
                         r.get("annotations", {})
                     )
+                    existing.setdefault("symbol", r.get("symbol"))
                     if "TF:" not in " ".join(existing.get("traits", [])):
                         existing.setdefault("traits", []).extend(r.get("traits", []))
                 if gid and r.get("sequence"):
