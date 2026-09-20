@@ -413,6 +413,7 @@ def collect_species(
                     entry = all_records.setdefault(gid, {
                         "gene_id": gid,
                         "accession": r.get("accession"),
+                        "symbol": r.get("symbol"),
                         "organism": r.get("organism", name),
                         "source": r.get("source", "ncbi"),
                     })
@@ -448,7 +449,19 @@ def collect_species(
                 if acc:
                     accession_index[acc] = key
 
+            # Fallback: match by normalized gene symbol when no RefSeq
+            # cross-reference is available.
+            def _norm_symbol(s: str | None) -> str:
+                return "".join(ch for ch in (s or "").lower() if ch.isalnum())
+
+            symbol_index: dict[str, str] = {}
+            for key, rec in all_records.items():
+                sym = _norm_symbol(rec.get("symbol"))
+                if sym:
+                    symbol_index[sym] = key
+
             merged_via_ncbi = 0
+            merged_via_symbol = 0
             for r in recs:
                 gid = r.get("gene_id")
                 if not gid:
@@ -460,6 +473,12 @@ def collect_species(
                         target = accession_index[candidate]
                         merged_via_ncbi += 1
                         break
+
+                if target == gid:
+                    sym_key = _norm_symbol(r.get("symbol"))
+                    if sym_key and sym_key in symbol_index:
+                        target = symbol_index[sym_key]
+                        merged_via_symbol += 1
 
                 if target not in all_records:
                     all_records[target] = r
@@ -485,13 +504,15 @@ def collect_species(
                         entry.setdefault("annotations", {}).update(r["annotations"])
                     if r.get("traits"):
                         entry["traits"] = sorted(set(entry.get("traits", [])) | set(r["traits"]))
-                    entry.setdefault("symbol", r.get("symbol"))
+                    if not entry.get("symbol") and r.get("symbol"):
+                        entry["symbol"] = r["symbol"]
                     # Keep the UniProt accession discoverable even though
                     # it's no longer the dict's key -- needed by the KEGG
                     # block below, and useful for the app/API either way.
                     entry.setdefault("uniprot_accession", gid)
             source_counts["uniprot"] = len(all_records) - before
             source_counts["uniprot_merged_via_ncbi"] = merged_via_ncbi
+            source_counts["uniprot_merged_via_symbol"] = merged_via_symbol
         except Exception as e:
             errors.append(f"uniprot: {e}")
 
@@ -562,7 +583,8 @@ def collect_species(
                     existing.setdefault("annotations", {}).update(
                         r.get("annotations", {})
                     )
-                    existing.setdefault("symbol", r.get("symbol"))
+                    if not existing.get("symbol") and r.get("symbol"):
+                        existing["symbol"] = r["symbol"]
                     if "TF:" not in " ".join(existing.get("traits", [])):
                         existing.setdefault("traits", []).extend(r.get("traits", []))
                 if gid and r.get("sequence"):
