@@ -1,0 +1,109 @@
+=== A. Codes de preuve GO (evidence_code) par sequence_type
+ sequence_type | code | n_annotations 
+---------------+------+---------------
+ dna           | IEA  |         18334
+ dna           | IBA  |          7434
+ dna           | IDA  |           204
+ dna           | IMP  |            67
+ dna           | IEP  |            59
+ dna           | ISS  |            53
+ dna           | TAS  |            44
+ dna           | IPI  |             3
+ dna           | IGI  |             2
+ dna           | IC   |             2
+ dna           | NAS  |             1
+ protein       | IEA  |         86782
+ protein       | IBA  |         16061
+ protein       | IDA  |           245
+ protein       | TAS  |            82
+ protein       | IEP  |            63
+ protein       | ISS  |            62
+ protein       | IMP  |            37
+ protein       | IGI  |             5
+ protein       | IC   |             4
+ protein       | IPI  |             3
+ protein       | NAS  |             1
+ protein       | EXP  |             1
+(23 rows)
+
+=== B. Genes ayant au moins une annotation GO non automatique (code different de IEA)
+ sequence_type | n_genes 
+---------------+---------
+ dna           |    2306
+ protein       |    5061
+(2 rows)
+
+=== C. Origine des annotations (evidence_source), top 15
+   evidence_source    |   n   
+----------------------+-------
+ InterPro             | 26607
+ UniProtKB-KW         | 25774
+ GO_Central           | 23496
+ UniProtKB-SubCell    | 13912
+ TreeGrafter          | 12344
+ UniProtKB-UniRule    |  9257
+ UniProtKB-ARBA       |  7684
+ UniProtKB-EC         |  6042
+ EnsemblPlants        |  1861
+ UniProtKB-UniPathway |  1418
+ AgBase               |   452
+ UniProtKB            |   450
+ GOC                  |   150
+ RHEA                 |    67
+ CACAO                |    21
+(15 rows)
+
+=== D. Familles PLAZA : couverture parmi les genes avec GO
+ sequence_type | n_genes_go | avec_famille_homologue | n_familles_homologues 
+---------------+------------+------------------------+-----------------------
+ dna           |       5540 |                   2950 |                  1547
+ protein       |      24053 |                  10507 |                  3657
+(2 rows)
+
+=== E. Plus grandes familles homologues (genes avec GO)
+   famille    |  n  
+--------------+-----
+ HOM05D000001 | 125
+ HOM05D000030 | 110
+ HOM05D000039 |  76
+ HOM05D000009 |  68
+ HOM05D000025 |  58
+ HOM05D000032 |  58
+ HOM05D000044 |  54
+ HOM05D000016 |  52
+ HOM05D000075 |  50
+ HOM05D000059 |  45
+(10 rows)
+
+=== F. Formats d identifiants des genes avec GO (A = lettre, 9 = chiffre)
+ sequence_type |   motif    |  n   |  exemple   
+---------------+------------+------+------------
+ protein       | A9A999AAA9 | 9778 | A0A060CUY1
+ protein       | A9A999A9A9 | 4059 | A0A059Q8J5
+ protein       | A9A999AA99 | 3993 | A0A060CX87
+ dna           | A9A999AAA9 | 1762 | A0A060CVD8
+ protein       | A9A9A9AAA9 | 1723 | A0A0B5CNT8
+ protein       | A9A999A999 | 1656 | A0A060D112
+ dna           | A9A9A9AAA9 |  739 | A0A0K2GUT6
+ dna           | A9A999AA99 |  702 | A0A060CY61
+ dna           | A9A999A9A9 |  666 | A0A060D0N9
+ protein       | A9A9A9A9A9 |  643 | A0A0A0R8A4
+ protein       | A9A9A9AA99 |  633 | A0A0A0US36
+ protein       | A9AAA9     |  454 | A1XCH9
+ dna           | A9A9A9A9A9 |  363 | A0A0B4J2Y9
+ dna           | A9A999A999 |  315 | A0A060D100
+ dna           | A9A9A9AA99 |  307 | A0A1D6DT47
+(15 rows)
+
+=== G. Plage des id et nombre de date_added renseignes
+ id_min | id_max |   n    | avec_date_added 
+--------+--------+--------+-----------------
+      1 | 176150 | 168577 |               0
+(1 row)
+
+=== H. Dates de recuperation des GO terms (retrieved_at)
+         plus_ancien         |         plus_recent         
+-----------------------------+-----------------------------
+ 2026-08-29T13:15:39.050361Z | 2026-08-31T12:22:33.643619Z
+(1 row)
+

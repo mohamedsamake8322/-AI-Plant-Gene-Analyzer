@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import time
 from typing import Optional
+from urllib.parse import urlparse
 
-import certifi          # <-- ligne à ajouter
+import certifi
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -18,13 +19,7 @@ from urllib3.util.retry import Retry
 
 def _build_session(retries: int = 3, backoff_factor: float = 0.5, status_forcelist=(429, 500, 502, 503, 504)) -> requests.Session:
     s = requests.Session()
-    # Force le bundle de certificats fourni par le paquet certifi, plutôt que
-    # de laisser `requests` résoudre REQUESTS_CA_BUNDLE/CURL_CA_BUNDLE depuis
-    # l'environnement système -- une variable Windows pointant vers un
-    # chemin invalide (ex. posée par un autre logiciel installé sur la
-    # machine) casserait sinon TOUTES les requêtes HTTPS de ce module, sans
-    # rapport avec le code lui-même.
-    s.verify = certifi.where()          # <-- ligne à ajouter
+    s.verify = certifi.where()
     retry = Retry(
         total=retries,
         read=retries,
@@ -42,6 +37,16 @@ def _build_session(retries: int = 3, backoff_factor: float = 0.5, status_forceli
 
 _DEFAULT_SESSION: Optional[requests.Session] = None
 
+# Cadence minimale (en secondes entre deux requêtes) par domaine. KEGG
+# bloque explicitement au-delà de 3 requêtes/seconde -- on vise 2/s pour
+# garder une marge de sécurité. Les autres domaines gardent le rythme
+# par défaut existant.
+_MIN_INTERVAL_BY_HOST = {
+    "rest.kegg.jp": 0.5,
+}
+_DEFAULT_MIN_INTERVAL = 0.08
+_last_request_time: dict[str, float] = {}
+
 
 def get_session() -> requests.Session:
     global _DEFAULT_SESSION
@@ -50,23 +55,29 @@ def get_session() -> requests.Session:
     return _DEFAULT_SESSION
 
 
-def get(url: str, params: dict | None = None, timeout: int = 30, headers: dict | None = None, retries: int = 3) -> requests.Response:
-    """Perform a GET with retries/backoff. Raises requests.RequestException on hard failures.
+def _throttle(url: str) -> None:
+    host = urlparse(url).netloc
+    min_interval = _MIN_INTERVAL_BY_HOST.get(host, _DEFAULT_MIN_INTERVAL)
+    last = _last_request_time.get(host, 0.0)
+    wait = min_interval - (time.monotonic() - last)
+    if wait > 0:
+        time.sleep(wait)
+    _last_request_time[host] = time.monotonic()
 
-    The underlying urllib3 Retry will handle retries for 429/5xx. We also apply a small sleep
-    after each successful request to be polite to public APIs.
-    """
+
+def get(url: str, params: dict | None = None, timeout: int = 30, headers: dict | None = None, retries: int = 3) -> requests.Response:
+    """Perform a GET with retries/backoff. Raises requests.RequestException on hard failures."""
+    _throttle(url)
     sess = get_session()
     try:
         resp = sess.get(url, params=params, timeout=timeout, headers=headers)
     except Exception:
-        # Last-resort: fall back to a plain requests.get with simple exponential backoff
         delay = 1.0
         for attempt in range(1, retries + 1):
             try:
                 resp = requests.get(
                     url, params=params, timeout=timeout, headers=headers,
-                    verify=certifi.where(),      # <-- ligne à ajouter
+                    verify=certifi.where(),
                 )
                 break
             except Exception:
@@ -74,11 +85,5 @@ def get(url: str, params: dict | None = None, timeout: int = 30, headers: dict |
                     raise
                 time.sleep(delay)
                 delay *= 2
-    # If server replies 429, 5xx etc., let callers decide; session retried already.
-    # Small polite pause to reduce burst rate
-    try:
-        time.sleep(0.08)
-    except Exception:
-        pass
     resp.raise_for_status()
     return resp

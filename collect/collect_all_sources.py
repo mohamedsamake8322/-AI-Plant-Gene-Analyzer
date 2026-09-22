@@ -278,8 +278,10 @@ def restructure_to_schema(gid: str, flat: dict) -> dict:
             traits.append(t)
             sources_seen.add(t.get("source", "manual"))
 
-    if raw_seq or flat.get("source") == "ncbi":
+    if raw_seq.get("dna") or raw_seq.get("rna"):
         sources_seen.add("ncbi")
+    if raw_seq.get("protein") and flat.get("source") != "ncbi":
+        sources_seen.add("uniprot")
 
     has_seq = bool(raw_seq.get("dna") or raw_seq.get("rna") or raw_seq.get("protein"))
     default_origin = "sequence_backed" if has_seq else "annotation_only"
@@ -296,6 +298,7 @@ def restructure_to_schema(gid: str, flat: dict) -> dict:
         # ID (PLAZA vs NCBI accession mismatch). See collect_all_sources.py
         # PLAZA block for why this trade-off was made.
         "origin": flat.get("origin", default_origin),
+        "external_links": flat.get("external_links", {}),
         "sequence": {
             "dna": raw_seq.get("dna"),
             "rna": raw_seq.get("rna"),
@@ -455,9 +458,12 @@ def collect_species(
                 return "".join(ch for ch in (s or "").lower() if ch.isalnum())
 
             symbol_index: dict[str, str] = {}
+            symbol_collisions: set[str] = set()
             for key, rec in all_records.items():
                 sym = _norm_symbol(rec.get("symbol"))
                 if sym:
+                    if sym in symbol_index and symbol_index[sym] != key:
+                        symbol_collisions.add(sym)
                     symbol_index[sym] = key
 
             merged_via_ncbi = 0
@@ -476,7 +482,7 @@ def collect_species(
 
                 if target == gid:
                     sym_key = _norm_symbol(r.get("symbol"))
-                    if sym_key and sym_key in symbol_index:
+                    if sym_key and sym_key in symbol_index and sym_key not in symbol_collisions:
                         target = symbol_index[sym_key]
                         merged_via_symbol += 1
 

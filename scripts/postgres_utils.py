@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote_plus
 
@@ -613,7 +614,9 @@ def _record_to_params(record: dict) -> dict:
         # when origin is unexpectedly absent.
         "origin": record.get("origin", "annotation_only"),
         "length": record.get("length") or (len(sequence) if sequence else None),
-        "date_added": record.get("date_added"),
+        # Always timestamp the upsert at load time. The collector records do
+        # not consistently carry a top-level date_added field.
+        "date_added": datetime.now(timezone.utc),
         "sequence_hash": record.get("sequence_hash") or sequence_hash(sequence),
         "kmer_hashes": (
             _kmer_signature(sequence, KMER_K, sequence_type or "dna")

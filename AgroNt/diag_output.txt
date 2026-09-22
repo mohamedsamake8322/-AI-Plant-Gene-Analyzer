@@ -1,0 +1,221 @@
+=== 1. Colonnes et types de la table genes
+     column_name     |        data_type         
+---------------------+--------------------------
+ id                  | integer
+ gene_id             | text
+ symbol              | text
+ organism            | text
+ sequence            | text
+ sequence_type       | text
+ description         | text
+ source              | text
+ source_url          | text
+ external_links      | jsonb
+ expression_profiles | jsonb
+ pathways            | jsonb
+ publications        | jsonb
+ annotations         | jsonb
+ traits              | jsonb
+ length              | integer
+ date_added          | timestamp with time zone
+ sequence_hash       | text
+ origin              | text
+ relations           | jsonb
+ kmer_hashes         | ARRAY
+(21 rows)
+
+=== 2. Nombre de genes et taille de la table
+ n_genes | taille_totale 
+---------+---------------
+  168577 | 684 MB
+(1 row)
+
+=== 3. Genes par sequence_type
+ sequence_type |   n   
+---------------+-------
+ (null)        | 62787
+ dna           | 61985
+ protein       | 37731
+ rna           |  6074
+(4 rows)
+
+=== 4. Genes par organisme et sequence_type (top 20)
+             organism              | sequence_type |   n   
+-----------------------------------+---------------+-------
+ Zea mays                          | (null)        | 37896
+ Chenopodium quinoa                | dna           | 33353
+ Zea mays                          | dna           | 28632
+ Zea mays                          | protein       | 24996
+ Chenopodium quinoa                | (null)        | 24891
+ Chenopodium quinoa                | protein       | 12670
+ Zea mays                          | rna           |  5450
+ Chenopodium quinoa                | rna           |   624
+ Zea mays subsp. mays              | protein       |    61
+ Zea mays subsp. huehuetenangensis | protein       |     2
+ Zea mays subsp. mexicana          | protein       |     1
+ Zea mays subsp. parviglumis       | protein       |     1
+(12 rows)
+
+=== 5. Croissance : ajouts par mois et sequence_type (mois les plus recents)
+  mois  | sequence_type |   n   
+--------+---------------+-------
+ (null) | dna           | 61985
+ (null) | protein       | 37731
+ (null) | rna           |  6074
+ (null) | (null)        | 62787
+(4 rows)
+
+=== 6. Provenance : source et origin par sequence_type
+              source               |     origin      | sequence_type |   n   
+-----------------------------------+-----------------+---------------+-------
+ plaza                             | plaza_only      | (null)        | 62787
+ ncbi                              | sequence_backed | dna           | 45655
+ ncbi,planttfdb,uniprot            | sequence_backed | protein       | 12797
+ ncbi                              | sequence_backed | protein       | 11857
+ ncbi,planttfdb,plaza,uniprot      | sequence_backed | protein       |  9403
+ ncbi                              | sequence_backed | rna           |  6074
+ kegg,ncbi,planttfdb               | sequence_backed | dna           |  5401
+ kegg,ncbi                         | sequence_backed | dna           |  5113
+ kegg,ncbi,planttfdb,plaza,uniprot | sequence_backed | dna           |  1853
+ ncbi,planttfdb,plaza              | sequence_backed | protein       |  1778
+ kegg,ncbi,planttfdb,uniprot       | sequence_backed | dna           |  1708
+ kegg,ncbi,planttfdb,plaza,uniprot | sequence_backed | protein       |  1132
+ ncbi,planttfdb,plaza,uniprot      | sequence_backed | dna           |  1101
+ ncbi,planttfdb,uniprot            | sequence_backed | dna           |   876
+ kegg,ncbi,planttfdb,uniprot       | sequence_backed | protein       |   712
+ ncbi,planttfdb,plaza              | sequence_backed | dna           |   245
+ ncbi,planttfdb                    | sequence_backed | protein       |    35
+ kegg,ncbi,planttfdb,plaza         | sequence_backed | dna           |    21
+ kegg,ncbi,planttfdb,plaza         | sequence_backed | protein       |     8
+ ncbi,uniprot                      | sequence_backed | protein       |     8
+ ncbi,uniprot                      | sequence_backed | dna           |     6
+ ncbi,planttfdb                    | sequence_backed | dna           |     6
+ ncbi,plaza,uniprot                | sequence_backed | protein       |     1
+(23 rows)
+
+=== 7. Formats d identifiants (A = lettre, 9 = chiffre)
+ sequence_type |         motif         |   n   |        exemple        
+---------------+-----------------------+-------+-----------------------
+ (null)        | AAAAA:AA99999AA999999 | 37896 | PLAZA:Zm00001eb000010
+ dna           | AAA:999999999         | 32062 | cqi:110681584
+ (null)        | AAAAA:AAA99999999     | 24891 | PLAZA:AUR62000001
+ dna           | AAAAAA:999999999      | 20281 | GeneID:100037738
+ protein       | A9A999AAA9            | 10696 | A0A060CUY1
+ protein       | AAA9999999.9          |  9554 | KAL5669913.1
+ rna           | AAAAAA:999999999      |  5887 | GeneID:100037748
+ protein       | A9A999A9A9            |  4423 | A0A059Q8J5
+ protein       | A9A999AA99            |  4371 | A0A060CX87
+ dna           | AA999999.9            |  2972 | AB031011.1
+ dna           | A9A999AAA9            |  1892 | A0A060CVD8
+ protein       | A9A999A999            |  1798 | A0A060D112
+ protein       | A9A9A9AAA9            |  1725 | A0A0B5CNT8
+ protein       | AAAAAA:999999999      |  1301 | GeneID:100101535
+ protein       | AAA99999.9            |  1005 | AUG33529.1
+ dna           | A9A999AA99            |   768 | A0A060CY61
+ dna           | A9A9A9AAA9            |   742 | A0A0K2GUT6
+ dna           | A9A999A9A9            |   705 | A0A060D0N9
+ protein       | A9A9A9A9A9            |   643 | A0A0A0R8A4
+ protein       | A9A9A9AA99            |   634 | A0A0A0US36
+ protein       | A9AAA9                |   454 | A1XCH9
+ dna           | AAAAAA:999999         |   416 | GeneID:541612
+ dna           | A9A9A9A9A9            |   364 | A0A0B4J2Y9
+ dna           | A9A999A999            |   342 | A0A060D100
+ dna           | AAA:999999            |   337 | zma:541613
+(25 rows)
+
+=== 8. Genes avec GO terms, par sequence_type et organisme
+ sequence_type |             organism              |   n   
+---------------+-----------------------------------+-------
+ protein       | Zea mays                          | 14447
+ protein       | Chenopodium quinoa                |  9541
+ dna           | Zea mays                          |  3163
+ dna           | Chenopodium quinoa                |  2377
+ protein       | Zea mays subsp. mays              |    61
+ protein       | Zea mays subsp. huehuetenangensis |     2
+ protein       | Zea mays subsp. mexicana          |     1
+ protein       | Zea mays subsp. parviglumis       |     1
+(8 rows)
+
+=== 9. Cles presentes dans la colonne annotations
+      cle      |   n    
+---------------+--------
+ go_terms      | 168577
+ kegg_pathways | 168577
+ ko_ids        | 168577
+ mapman        | 168577
+ tf_family     | 168577
+(5 rows)
+
+=== 10. Cles a l interieur des elements go_terms
+       cle       |   n    
+-----------------+--------
+ aspect          | 129549
+ evidence_code   | 129549
+ evidence_source | 129549
+ id              | 129549
+ retrieved_at    | 129549
+ source          | 129549
+ term            | 129549
+(7 rows)
+
+=== 11. Repartition des aspects et des codes de preuve (evidence) GO
+       aspect       | evidence |   n   
+--------------------+----------+-------
+ molecular_function | (null)   | 56674
+ biological_process | (null)   | 40190
+ cellular_component | (null)   | 32685
+(3 rows)
+
+=== 12. Exemple de go_terms (3 genes)
+    gene_id     |                                                                                                premier_go_term                                                                                                
+----------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ XM_021897159.1 | {"id": "GO:0005737", "term": "cytoplasm", "aspect": "cellular_component", "source": "uniprot", "retrieved_at": "2026-08-29T13:15:40.047731Z", "evidence_code": "IEA", "evidence_source": "TreeGrafter"}
+ XM_021897156.1 | {"id": "GO:0005737", "term": "cytoplasm", "aspect": "cellular_component", "source": "uniprot", "retrieved_at": "2026-08-29T13:15:40.356244Z", "evidence_code": "IEA", "evidence_source": "UniProtKB-ARBA"}
+ XM_021897155.1 | {"id": "GO:0005737", "term": "cytoplasm", "aspect": "cellular_component", "source": "uniprot", "retrieved_at": "2026-08-29T13:15:39.224248Z", "evidence_code": "IEA", "evidence_source": "UniProtKB-SubCell"}
+(3 rows)
+
+=== 13. Faisabilite du mapping proteine -> ADN : references croisees
+ sequence_type |   n   | avec_lien_externe | avec_relation 
+---------------+-------+-------------------+---------------
+ dna           | 61985 |              1950 |             0
+ protein       | 37731 |               654 |             0
+ rna           |  6074 |                65 |             0
+ (null)        | 62787 |                 0 |             0
+(4 rows)
+
+=== 14. Echantillon external_links et relations (5 proteines et 5 ADN avec GO)
+ sequence_type |     gene_id      |                       external_links                       |                                                                                                                                                  relations                                                                                                                                                   
+---------------+------------------+------------------------------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ protein       | A0A803L5C4       | {}                                                         | {"orthologs": [{"source": "plaza", "family_id": "ORTHO05D002735", "ortholog_id": "Nitab4.5_0000187g0060", "retrieved_at": "2026-08-29T13:15:42.660651Z", "ortholog_species": "nta"}, {"source": "plaza", "family_id": "ORTHO05D002735", "ortholog_id": "Nitab4.5_0000673g0210", "retrieved_at": "2026-08-29T
+ protein       | A0A803L5E1       | {}                                                         | {"orthologs": [{"source": "plaza", "family_id": "ORTHO05D001287", "ortholog_id": "Nitab4.5_0000319g0060", "retrieved_at": "2026-08-29T13:15:42.662661Z", "ortholog_species": "nta"}, {"source": "plaza", "family_id": "ORTHO05D001287", "ortholog_id": "Nitab4.5_0001418g0090", "retrieved_at": "2026-08-29T
+ protein       | A0A803L5G7       | {}                                                         | {"orthologs": [{"source": "plaza", "family_id": "ORTHO05D004878", "ortholog_id": "Nitab4.5_0000618g0090", "retrieved_at": "2026-08-29T13:15:42.662661Z", "ortholog_species": "nta"}, {"source": "plaza", "family_id": "ORTHO05D004878", "ortholog_id": "Nitab4.5_0001410g0090", "retrieved_at": "2026-08-29T
+ protein       | A0A803L5J0       | {}                                                         | {"orthologs": [{"source": "plaza", "family_id": "ORTHO05D000244", "ortholog_id": "Nitab4.5_0000147g0300", "retrieved_at": "2026-08-29T13:15:42.662661Z", "ortholog_species": "nta"}, {"source": "plaza", "family_id": "ORTHO05D000244", "ortholog_id": "Nitab4.5_0000354g0050", "retrieved_at": "2026-08-29T
+ protein       | A0A803L5J7       | {}                                                         | {"orthologs": [{"source": "plaza", "family_id": "ORTHO05D006202", "ortholog_id": "Nitab4.5_0006805g0030", "retrieved_at": "2026-08-29T13:15:42.662661Z", "ortholog_species": "nta"}, {"source": "plaza", "family_id": "ORTHO05D006202", "ortholog_id": "Nitab4.5_0009301g0030", "retrieved_at": "2026-08-29T
+ dna           | GeneID:110704132 | {"alt_id_kegg,ncbi,planttfdb,plaza,uniprot": "A0A803MTB4"} | {"orthologs": [], "homologous_family_id": "HOM05D000295", "orthologous_family_id": "ORTHO05D138027"}
+ dna           | XM_021880467.1   | {}                                                         | {"orthologs": [], "homologous_family_id": null, "orthologous_family_id": null}
+ dna           | A0A803LDG5       | {}                                                         | {"orthologs": [{"source": "plaza", "family_id": "ORTHO05D005959", "ortholog_id": "Nitab4.5_0002898g0050", "retrieved_at": "2026-08-29T13:15:39.314436Z", "ortholog_species": "nta"}, {"source": "plaza", "family_id": "ORTHO05D005959", "ortholog_id": "Nitab4.5_0005225g0020", "retrieved_at": "2026-08-29T
+ dna           | A0A803LDV4       | {}                                                         | {"orthologs": [{"source": "plaza", "family_id": "ORTHO05D006137", "ortholog_id": "Nitab4.5_0004280g0140", "retrieved_at": "2026-08-29T13:15:39.318212Z", "ortholog_species": "nta"}, {"source": "plaza", "family_id": "ORTHO05D006137", "ortholog_id": "Nitab4.5_0004287g0030", "retrieved_at": "2026-08-29T
+ dna           | A0A803N7Y0       | {}                                                         | {"orthologs": [{"source": "plaza", "family_id": "ORTHO05D006401", "ortholog_id": "Nitab4.5_0000217g0100", "retrieved_at": "2026-08-29T13:15:39.190224Z", "ortholog_species": "nta"}, {"source": "plaza", "family_id": "ORTHO05D006401", "ortholog_id": "Nitab4.5_0000910g0030", "retrieved_at": "2026-08-29T
+(10 rows)
+
+=== 15. Symboles presents a la fois en ADN et en proteine (piste de correspondance)
+ symboles_communs 
+------------------
+                0
+(1 row)
+
+=== 16. Doublons de sequence (sequence_hash)
+ total  | hash_distincts 
+--------+----------------
+ 168577 |         105790
+(1 row)
+
+=== 17. Longueur des sequences par type
+ sequence_type |   n   |  min   | mediane |  max   
+---------------+-------+--------+---------+--------
+ dna           | 61985 |     50 |    1182 |  39909
+ protein       | 37731 |     50 |     351 |  17461
+ rna           |  6074 |    271 |    1898 |  13818
+ (null)        | 62787 | (null) |  (null) | (null)
+(4 rows)
+
