@@ -35,6 +35,13 @@ SPECIES_MAP: dict[str, str] = {
     "triticum aestivum": "Tae",
 }
 
+# Extended TF repository species (PlantTFDB v5.0 extended dataset).
+# These species use a different download layout under TFext/ and the file name
+# prefix "Ext-" compared with the main TF repository.
+EXTENDED_SPECIES_MAP: dict[str, str] = {
+    "chenopodium quinoa": "Cqu",
+}
+
 # TF family descriptions for annotation enrichment
 TF_FAMILY_DESC: dict[str, str] = {
     "MYB": "MYB transcription factors — regulate anthocyanin, lignin, cell fate",
@@ -68,20 +75,28 @@ def fetch_planttfdb(species: str, retmax: int = 300) -> list[dict]:
     Returns:
         List of normalized gene records with TF annotations
     """
-    sp_code = SPECIES_MAP.get(species.lower())
+    key = species.lower()
+    sp_code = SPECIES_MAP.get(key)
+    is_extended = False
+    if not sp_code:
+        sp_code = EXTENDED_SPECIES_MAP.get(key)
+        is_extended = sp_code is not None
+
     if not sp_code:
         print(f"  [PlantTFDB] No species code for '{species}', attempting generic search...")
         return _fetch_generic(species, retmax)
 
-    print(f"  [PlantTFDB] Fetching TFs for {species} ({sp_code})...")
+    print(f"  [PlantTFDB] Fetching TFs for {species} ({sp_code}, {'extended' if is_extended else 'core'} repository)...")
 
     records = []
     try:
-        # Try the API endpoint first
-        records = _fetch_via_api(sp_code, species, retmax)
+        # Extended-species records are not exposed in the same API surface as the
+        # main PlantTFDB dataset, and their URL pattern is different. Prefer the
+        # direct download path for these species instead of guessing a JSON API.
+        if not is_extended:
+            records = _fetch_via_api(sp_code, species, retmax)
         if not records:
-            # Fall back to download endpoint
-            records = _fetch_via_download(sp_code, species, retmax)
+            records = _fetch_via_download(sp_code, species, retmax, is_extended=is_extended)
     except Exception as e:
         print(f"  [PlantTFDB] Error: {e}")
 
@@ -125,84 +140,163 @@ def _fetch_via_api(sp_code: str, species: str, retmax: int) -> list[dict]:
     return records
 
 
-def _fetch_via_download(sp_code: str, species: str, retmax: int) -> list[dict]:
+def _parse_fasta(text: str) -> dict[str, str]:
+    """
+    Parse a FASTA text block into {header_id: sequence}.
+
+    Keyed by the FIRST whitespace-delimited token of each header (minus the
+    leading '>'), which is the conventional way FASTA IDs are matched against
+    a companion tab-delimited list. PlantTFDB's exact header convention for
+    the peptide FASTA files isn't independently verified here (the download
+    itself is a gzip binary we can't preview ahead of time) -- so
+    _fetch_via_download logs how many TF_list entries actually found a
+    matching sequence after this parse, as a live sanity check rather than
+    a silent assumption.
+    """
+    sequences: dict[str, str] = {}
+    current_id: str | None = None
+    current_chunks: list[str] = []
+
+    def _flush():
+        if current_id is not None:
+            sequences[current_id] = "".join(current_chunks).upper()
+
+    for line in text.splitlines():
+        if not line:
+            continue
+        if line.startswith(">"):
+            _flush()
+            header = line[1:].strip()
+            current_id = header.split()[0] if header else None
+            current_chunks = []
+        else:
+            current_chunks.append(line.strip())
+    _flush()
+
+    return sequences
+
+
+def _download_and_decompress(url: str, timeout: int = 30) -> bytes | None:
+    """GET a URL, transparently retry without .gz, and gunzip if needed."""
+    import gzip
+
+    try:
+        resp = rq.get(url, timeout=timeout)
+        if resp.status_code == 404 and url.endswith(".gz"):
+            url = url.replace(".gz", "")
+            resp = rq.get(url, timeout=timeout)
+        resp.raise_for_status()
+        content = resp.content
+        if url.endswith(".gz"):
+            content = gzip.decompress(content)
+        return content
+    except Exception as e:
+        print(f"  [PlantTFDB] Download failed for {url}: {e}")
+        return None
+
+
+def _fetch_via_download(sp_code: str, species: str, retmax: int, is_extended: bool = False) -> list[dict]:
     """
     Fetch TF list from PlantTFDB download page (tab-delimited).
     Format: TF_ID\tGene_ID\tFamily\tSpecies
+
+    Extended species (e.g. quinoa) live under a different repository layout
+    and must use the TFext/ folder and Ext- filename prefix.
+
+    Also fetches the companion peptide FASTA and merges protein sequences
+    into each record by TF_ID (falling back to Gene_ID) where a match is
+    found. Missing the peptide file, or missing individual matches, is not
+    fatal -- records still carry the TF annotation without a sequence, same
+    as before this addition, and sequence_available reflects the real
+    per-record outcome rather than being hardcoded.
     """
     records = []
-    url = f"{PLANTTFDB_DL}/TF_list/{sp_code}_TF_list.txt.gz"
 
-    try:
-        import gzip
-        import io
+    if is_extended:
+        list_url = f"{PLANTTFDB_DL}/TFext/TF_list/Ext-{sp_code}_TF_list.txt.gz"
+        pep_url = f"{PLANTTFDB_DL}/TFext/seq/Ext-{sp_code}_pep.fas.gz"
+    else:
+        list_url = f"{PLANTTFDB_DL}/TF_list/{sp_code}_TF_list.txt.gz"
+        pep_url = f"{PLANTTFDB_DL}/seq/{sp_code}_pep.fas.gz"
 
-        resp = rq.get(url, timeout=30)
-        if resp.status_code == 404:
-            # Try non-gzipped version
-            url = url.replace(".gz", "")
-            resp = rq.get(url, timeout=30)
+    list_content = _download_and_decompress(list_url)
+    if list_content is None:
+        return records
 
-        resp.raise_for_status()
-        content = resp.content
+    # Sequences are a best-effort enrichment on top of the TF list: if this
+    # download fails for any reason, we still return valid TF annotation
+    # records (sequence_available=False on all of them) rather than losing
+    # the whole batch.
+    pep_content = _download_and_decompress(pep_url)
+    sequences: dict[str, str] = {}
+    if pep_content is not None:
+        try:
+            sequences = _parse_fasta(pep_content.decode("utf-8"))
+            print(f"  [PlantTFDB] Parsed {len(sequences)} sequences from peptide FASTA")
+        except Exception as e:
+            print(f"  [PlantTFDB] Failed to parse peptide FASTA: {e}")
+    else:
+        print(f"  [PlantTFDB] No peptide FASTA available for {sp_code} -- annotations only, no sequences")
 
-        # Decompress if gzipped
-        if url.endswith(".gz"):
-            content = gzip.decompress(content)
+    matched = 0
+    lines = list_content.decode("utf-8").splitlines()
+    for line in lines[1:]:
+        if not line.strip():
+            continue
+        parts = line.split("\t")
+        if len(parts) < 3:
+            continue
 
-        lines = content.decode("utf-8").splitlines()
-        header = lines[0].lower() if lines else ""
+        tf_id = parts[0].strip()
+        gene_id = parts[1].strip() if len(parts) > 1 else tf_id
+        family = parts[2].strip() if len(parts) > 2 else "Unknown"
 
-        for line in lines[1:]:  # skip header
-            if not line.strip():
-                continue
-            parts = line.split("\t")
-            if len(parts) < 3:
-                continue
+        sequence = sequences.get(tf_id) or sequences.get(gene_id) or ""
+        if sequence:
+            matched += 1
 
-            tf_id = parts[0].strip()
-            gene_id = parts[1].strip() if len(parts) > 1 else tf_id
-            family = parts[2].strip() if len(parts) > 2 else "Unknown"
+        rec = {
+            "gene_id": gene_id or tf_id,
+            "symbol": tf_id,
+            "organism": species,
+            "sequence": sequence,
+            "sequence_type": "protein",
+            "description": TF_FAMILY_DESC.get(family, f"{family} transcription factor"),
+            "length": len(sequence),
+            "source": "planttfdb",
+            "annotations": {
+                "tf_family": family,
+                "tf_id": tf_id,
+                "is_transcription_factor": True,
+                "family_description": TF_FAMILY_DESC.get(family, ""),
+                "sequence_available": bool(sequence),
+            },
+            "external_links": {
+                "planttfdb": (
+                    f"http://planttfdb.gao-lab.org/tf_ext.php?sp={sp_code}&did={tf_id}"
+                    if is_extended else
+                    f"http://planttfdb.gao-lab.org/tf.php?sp={sp_code}&id={tf_id}"
+                ),
+                "accession": gene_id,
+            },
+            "traits": [f"TF:{family}", "transcription_factor"],
+            "expression_profiles": [],
+            "pathways": [],
+            "publications": [],
+        }
+        records.append(rec)
 
-            rec = {
-                "gene_id": gene_id or tf_id,
-                "symbol": tf_id,
-                "organism": species,
-                # NOTE: the download fallback (TF_list.txt.gz) only contains
-                # TF_ID / Gene_ID / Family / Species -- no sequence. This is
-                # a genuine data gap, not a bug: PlantTFDB's sequence FASTA
-                # download endpoint hasn't been verified/implemented here
-                # yet. Don't infer "no sequence" from an empty string
-                # elsewhere in the pipeline -- check
-                # annotations.sequence_available instead.
-                "sequence": "",
-                "sequence_type": "protein",
-                "description": TF_FAMILY_DESC.get(family, f"{family} transcription factor"),
-                "length": 0,
-                "source": "planttfdb",
-                "annotations": {
-                    "tf_family": family,
-                    "tf_id": tf_id,
-                    "is_transcription_factor": True,
-                    "family_description": TF_FAMILY_DESC.get(family, ""),
-                    "sequence_available": False,
-                },
-                "external_links": {
-                    "planttfdb": f"http://planttfdb.gao-lab.org/tf.php?sp={sp_code}&id={tf_id}",
-                    "accession": gene_id,
-                },
-                "traits": [f"TF:{family}", "transcription_factor"],
-                "expression_profiles": [],
-                "pathways": [],
-                "publications": [],
-            }
-            records.append(rec)
+        if len(records) >= retmax:
+            break
 
-            if len(records) >= retmax:
-                break
-
-    except Exception as e:
-        print(f"  [PlantTFDB] Download failed: {e}")
+    if sequences:
+        # Live sanity check: if this ratio is near 0%, the FASTA header
+        # convention assumed by _parse_fasta doesn't match TF_list's ID
+        # column for this species/repository, and the matching key needs
+        # adjusting (e.g. header might carry the Gene_ID, a version suffix,
+        # or a different ID scheme entirely for extended-repo species).
+        pct = 100 * matched / len(records) if records else 0
+        print(f"  [PlantTFDB] Sequence match: {matched}/{len(records)} records ({pct:.0f}%)")
 
     return records
 
@@ -272,6 +366,6 @@ def _parse_tf_record(tf: dict, species: str) -> dict | None:
 
 if __name__ == "__main__":
     import json
-    results = fetch_planttfdb("Arabidopsis thaliana", retmax=5)
+    results = fetch_planttfdb("Chenopodium quinoa", retmax=5)
     print(json.dumps(results[:2], indent=2))
     print(f"Total: {len(results)}")

@@ -48,6 +48,31 @@ def collect_and_clean_type(
     """
     print(f"\n[→] Collecting {seq_type.upper()} sequences for '{plant_term}'...")
 
+    if seq_type == "dna":
+        from collect_ncbi import fetch_genomic_by_gene, make_record_from_fasta
+
+        dna_max_length = max_length if max_length is not None else 100_000
+        cache_path = ROOT / "data" / "cache" / "ncbi_gene_dna" / (
+            plant_term.lower().replace(" ", "_") + ".json"
+        )
+        triples = fetch_genomic_by_gene(
+            plant_term,
+            retmax=retmax,
+            max_length=dna_max_length,
+            cache_path=cache_path,
+        )
+        return [
+            make_record_from_fasta(
+                header,
+                sequence,
+                db="nucleotide",
+                resolved_gene_id=gene_id,
+                organism=plant_term,
+                gene_symbol=gene_symbol,
+            )
+            for header, sequence, gene_id, gene_symbol in triples
+        ]
+
     ncbi_options = {
         "dna": {"db": "nucleotide", "mrna_only": False},
         "rna": {"db": "nucleotide", "mrna_only": True},

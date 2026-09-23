@@ -6,8 +6,10 @@ Uses Biopython Entrez. Reads credentials from .env (NCBI_EMAIL, NCBI_API_KEY).
 
 from pathlib import Path
 import http.client
+import json
 import os
 import sys
+import tempfile
 import time
 import re
 import urllib.error
@@ -125,22 +127,19 @@ def build_search_term(
     plants_only: bool = True,
     organism: str | None = None,
     exclude_wgs: bool = True,
+    db: str = "nucleotide",
+    mrna_only: bool = False,
+    max_length: int | None = None,
 ) -> str:
     parts = [f"({term})"]
     if plants_only:
         parts.append(PLANTS_FILTER)
     if organism:
         parts.append(f'"{organism}"[Organism]')
-    if exclude_wgs:
-        # Primary defense: stop Whole Genome Shotgun assembly records at
-        # the esearch stage itself, so they're never esummary'd, efetch'd,
-        # or scored -- instead of downloading them and filtering
-        # afterward. "wgs[Filter]" is NCBI's own documented property
-        # filter for WGS division records. See is_wgs_record() for the
-        # defense-in-depth check applied to anything that slips through
-        # regardless (e.g. a raw esearch term built without this
-        # function, or a future NCBI filter-name change).
+    if exclude_wgs and db == "nucleotide" and not mrna_only:
         parts.append("NOT wgs[Filter]")
+    if max_length:
+        parts.append(f"1:{max_length}[SLEN]")
     return " AND ".join(parts)
 
 
@@ -179,7 +178,7 @@ def resolve_accession_id(
     candidates = [q for q in candidates if q]
 
     for base in candidates:
-        term = build_search_term(base, plants_only=plants_only, organism=organism)
+        term = build_search_term(base, plants_only=plants_only, organism=organism, db=db)
         try:
             handle = Entrez.esearch(db=db, term=term, retmax=1, timeout=NCBI_TIMEOUT)
             res = Entrez.read(handle)
@@ -393,12 +392,207 @@ def _resolve_gene_ids_batch(batch: list[str], db: str) -> dict[str, str]:
     return resolved
 
 
+def _gene_summary_documents(summary_response) -> list:
+    """Normalize the Gene esummary response across Biopython versions."""
+    if isinstance(summary_response, dict):
+        document_set = summary_response.get("DocumentSummarySet", {})
+        return document_set.get("DocumentSummary", [])
+    return []
+
+
+def _gene_coordinates(doc) -> tuple[str, int, int, int] | None:
+    """Return accession, 1-based bounds, and NCBI strand for a Gene DocSum."""
+    genomic_info = doc.get("GenomicInfo") or []
+    for info in genomic_info:
+        try:
+            accession = str(info.get("ChrAccVer") or "")
+            start = int(info.get("ChrStart"))
+            stop = int(info.get("ChrStop"))
+        except (TypeError, ValueError):
+            continue
+        if not accession or start < 0 or stop < 0:
+            continue
+        strand = 1 if start <= stop else 2
+        seq_start = min(start, stop) + 1
+        seq_stop = max(start, stop) + 1
+        return accession, seq_start, seq_stop, strand
+    return None
+
+
+def _efetch_gene_region(
+    accession: str,
+    seq_start: int,
+    seq_stop: int,
+    strand: int,
+    max_retries: int = 3,
+) -> tuple[str, str]:
+    """Fetch one genomic locus and return its FASTA header and sequence."""
+    for attempt in range(1, max_retries + 1):
+        try:
+            with Entrez.efetch(
+                db="nucleotide",
+                id=accession,
+                rettype="fasta",
+                retmode="text",
+                seq_start=seq_start,
+                seq_stop=seq_stop,
+                strand=strand,
+                timeout=NCBI_TIMEOUT,
+            ) as handle:
+                text = handle.read()
+            records = parse_fasta_text(text)
+            if not records:
+                raise ValueError(f"empty FASTA for {accession}:{seq_start}-{seq_stop}")
+            return records[0]
+        except Exception as exc:
+            if attempt == max_retries:
+                raise
+            print(f"Warning: genomic locus fetch failed ({attempt}/{max_retries}): {exc}")
+            time.sleep(2 ** attempt)
+    raise RuntimeError("unreachable")
+
+
+def _write_genomic_cache(cache_path: Path, cache: dict[str, dict]) -> None:
+    """Persist genomic records atomically so interruption cannot corrupt it."""
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=cache_path.parent,
+            prefix=f".{cache_path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temp_path = handle.name
+            json.dump(cache, handle, ensure_ascii=False)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, cache_path)
+        temp_path = None
+    finally:
+        if temp_path:
+            try:
+                os.unlink(temp_path)
+            except FileNotFoundError:
+                pass
+
+
+def fetch_genomic_by_gene(
+    species: str,
+    retmax: int = 300,
+    max_length: int | None = DEFAULT_MAX_LENGTH,
+    cache_path: Path | None = None,
+) -> list[tuple[str, str, str | None, str | None]]:
+    """Fetch gene-level genomic DNA through NCBI Gene coordinates.
+
+    NCBI's nucleotide database generally stores a gene's genomic sequence as
+    coordinates on a chromosome/scaffold, not as a standalone accession. This
+    function resolves Gene IDs and GenomicInfo in batches, then efetches only
+    each locus. Cached records are reused across interrupted collection runs.
+    """
+    term = f'"{species}"[Organism]'
+    try:
+        handle = Entrez.esearch(db="gene", term=term, retmax=retmax, timeout=NCBI_TIMEOUT)
+        result = Entrez.read(handle)
+        handle.close()
+    except Exception as exc:
+        print(f"Gene search failed for {species}: {exc}")
+        return []
+
+    gene_ids = [str(gene_id) for gene_id in result.get("IdList", [])]
+    if not gene_ids:
+        print(f"No Gene records for {species}")
+        return []
+
+    cache: dict[str, dict] = {}
+    if cache_path and cache_path.exists():
+        try:
+            cache = json.loads(cache_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            print(f"Warning: ignoring unreadable genomic DNA cache {cache_path}")
+
+    output: list[tuple[str, str, str | None, str | None]] = []
+    missing: list[str] = []
+    for offset in range(0, len(gene_ids), 200):
+        batch = gene_ids[offset:offset + 200]
+        try:
+            handle = Entrez.esummary(db="gene", id=",".join(batch), timeout=NCBI_TIMEOUT)
+            response = Entrez.read(handle)
+            handle.close()
+        except Exception as exc:
+            print(f"Gene summary failed for {species} batch {offset}: {exc}")
+            continue
+
+        documents = _gene_summary_documents(response)
+        if len(documents) != len(batch):
+            print(
+                f"Warning: Gene esummary returned {len(documents)} document(s) "
+                f"for {len(batch)} ID(s); skipping this batch to avoid misattribution."
+            )
+            continue
+
+        # Gene esummary does not expose the input ID consistently as a
+        # document field (CurrentID is not the Entrez Gene ID). The API
+        # preserves the requested ID order, so correlate by position after
+        # checking the response length.
+        for gene_id, doc in zip(batch, documents):
+            coordinates = _gene_coordinates(doc)
+            if not gene_id or not coordinates:
+                continue
+            accession, seq_start, seq_stop, strand = coordinates
+            gene_symbol = (doc.get("Name") or doc.get("Symbol") or doc.get("Description") or None)
+            length = seq_stop - seq_start + 1
+            if max_length is not None and length > max_length:
+                continue
+
+            cached = cache.get(gene_id)
+            cache_key = f"{accession}:{seq_start}-{seq_stop}:{strand}"
+            if cached and cached.get("cache_key") == cache_key and cached.get("sequence"):
+                output.append((cached["header"], cached["sequence"], gene_id, cached.get("symbol")))
+                continue
+            missing.append(gene_id)
+            try:
+                header, sequence = _efetch_gene_region(
+                    accession, seq_start, seq_stop, strand
+                )
+                cache[gene_id] = {
+                    "cache_key": cache_key,
+                    "header": header,
+                    "sequence": sequence,
+                    "symbol": gene_symbol,
+                }
+                if cache_path:
+                    _write_genomic_cache(cache_path, cache)
+                output.append((header, sequence, gene_id, gene_symbol))
+                time.sleep(NCBI_SLEEP)
+            except Exception as exc:
+                print(f"Skipped GeneID:{gene_id} ({accession}:{seq_start}-{seq_stop}): {exc}")
+
+        # Persist at the end of every coordinate-summary batch as well. This
+        # covers batches made entirely of cache hits and keeps the checkpoint
+        # durable even if the process stops immediately afterward.
+        if cache_path:
+            _write_genomic_cache(cache_path, cache)
+
+    if cache_path:
+        _write_genomic_cache(cache_path, cache)
+
+    print(
+        f"Genomic DNA for {species}: {len(output)} record(s), "
+        f"{len(missing)} locus fetch(es), {len(gene_ids)} Gene ID(s) selected"
+    )
+    return output
+
+
 def make_record_from_fasta(
     header: str,
     seq: str,
     db: str = "nucleotide",
     resolved_gene_id: str | None = None,
     organism: str | None = None,
+    gene_symbol: str | None = None,
 ) -> dict:
     accession = header.split()[0]
     # Use the shared Entrez GeneID when we have one (see
@@ -407,7 +601,7 @@ def make_record_from_fasta(
     # to the accession -- old behavior -- when resolution wasn't available,
     # so nothing breaks for callers that don't pass resolved_gene_id.
     gene_id = f"GeneID:{resolved_gene_id}" if resolved_gene_id else accession
-    symbol = accession
+    symbol = (gene_symbol or accession).strip() or accession
     # BUG FIX: `organism` used to always come from parse_organism_from_header(),
     # which guesses from free-text FASTA header content and could (and did)
     # grab a gene product description instead of the species name (see that
@@ -416,6 +610,9 @@ def make_record_from_fasta(
     # caller already knows the organism, trust it directly instead of
     # re-deriving it from text. Only fall back to the heuristic parser when
     # no organism was supplied (broader, unscoped searches).
+    external_links = {}
+    if resolved_gene_id:
+        external_links["ncbi_gene"] = f"https://www.ncbi.nlm.nih.gov/gene/{resolved_gene_id}"
     rec = {
         "gene_id": gene_id,
         "accession": accession,
@@ -425,7 +622,7 @@ def make_record_from_fasta(
         "sequence": seq.upper().replace(" ", ""),
         "sequence_type": "dna" if db in ("nucleotide", "nuccore") else "protein",
         "description": header,
-        "external_links": {},
+        "external_links": external_links,
         "expression_profiles": [],
         "pathways": [],
         "publications": [],
@@ -565,7 +762,10 @@ def fetch_by_term(
     scoped_term = term
     if mrna_only:
         scoped_term = f"({term}) AND biomol_mrna[prop]"
-    query = build_search_term(scoped_term, plants_only=plants_only, organism=organism)
+    query = build_search_term(
+        scoped_term, plants_only=plants_only, organism=organism,
+        db=db, mrna_only=mrna_only, max_length=max_length,
+    )
     ids = []
     try:
         handle = Entrez.esearch(db=db, term=query, retmax=retmax, timeout=NCBI_TIMEOUT)
@@ -664,15 +864,26 @@ def add_records_to_db(
         print("Could not import validator script: ", e)
         return
     for item in records:
-        # Accept both the new (header, seq, resolved_gene_id) triples from
-        # fetch_by_term() and plain (header, seq) pairs (e.g. from
-        # fetch_fasta_by_accession(), which doesn't do gene ID resolution).
-        if len(item) == 3:
+        # Accept the (header, seq, resolved_gene_id[, gene_symbol]) tuples
+        # from fetch_by_term()/fetch_genomic_by_gene(), as well as plain
+        # (header, seq) pairs from callers that do not resolve gene IDs.
+        if len(item) == 4:
+            header, seq, resolved_gene_id, gene_symbol = item
+        elif len(item) == 3:
             header, seq, resolved_gene_id = item
+            gene_symbol = None
         else:
             header, seq = item
             resolved_gene_id = None
-        rec = make_record_from_fasta(header, seq, db=db, resolved_gene_id=resolved_gene_id, organism=organism)
+            gene_symbol = None
+        rec = make_record_from_fasta(
+            header,
+            seq,
+            db=db,
+            resolved_gene_id=resolved_gene_id,
+            organism=organism,
+            gene_symbol=gene_symbol,
+        )
         ok, msg = validator.add_record_to_db(rec, db_path)
         print(f"{rec.get('gene_id')}: {msg}")
         time.sleep(0.2)

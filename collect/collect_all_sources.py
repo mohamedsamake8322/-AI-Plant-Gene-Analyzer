@@ -180,6 +180,39 @@ def _gc_content(dna_seq: str | None) -> float | None:
     return round(gc / len(seq), 4)
 
 
+def _write_json_atomic(path: Path, payload: object) -> None:
+    """Write a source checkpoint without leaving a truncated JSON file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_suffix(path.suffix + ".tmp")
+    temp_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    temp_path.replace(path)
+
+
+def _load_source_checkpoint(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, list) else []
+    except (OSError, ValueError):
+        print(f"  Warning: ignoring invalid source checkpoint {path}")
+        return []
+
+
+def _merge_source_records(existing: list[dict], incoming: list[dict]) -> list[dict]:
+    """Merge source records by gene/accession while preserving first order."""
+    merged: dict[str, dict] = {}
+    for record in [*existing, *incoming]:
+        key = record.get("gene_id") or record.get("accession") or record.get("symbol")
+        if not key:
+            continue
+        if key not in merged:
+            merged[key] = record
+        else:
+            merged[key].update({k: v for k, v in record.items() if v not in (None, "", [], {})})
+    return list(merged.values())
+
+
 def _completeness_score(nested: dict) -> float:
     """
     0-1 score of how filled-in a gene record is, used to prioritize which
@@ -375,6 +408,7 @@ def collect_species(
     all_records: dict[str, dict] = {}
     source_counts: dict[str, int] = {}
     errors: list[str] = []
+    checkpoint_dir = out_dir / ".cache" / safe_name
 
     # ── NCBI ─────────────────────────────────────────────────────────────────
     if "ncbi" in sources:
@@ -388,7 +422,18 @@ def collect_species(
             for seq_type in ("dna", "rna", "protein"):
                 temp_raw   = temp_dir / f"ncbi_raw_{seq_type}.json"
                 temp_clean = temp_dir / f"ncbi_clean_{seq_type}.json"
-                recs = cmt.collect_and_clean_type(name, seq_type, retmax, temp_raw, temp_clean)
+                checkpoint = checkpoint_dir / f"ncbi_{seq_type}.json"
+                cached_recs = _load_source_checkpoint(checkpoint)
+                if len(cached_recs) >= retmax:
+                    recs = cached_recs[:retmax]
+                    print(f"  [resume] NCBI {seq_type}: {len(recs)} cached records reused")
+                else:
+                    fresh_recs = cmt.collect_and_clean_type(
+                        name, seq_type, retmax, temp_raw, temp_clean
+                    )
+                    recs = _merge_source_records(cached_recs, fresh_recs)
+                    _write_json_atomic(checkpoint, recs)
+                    print(f"  [checkpoint] NCBI {seq_type}: {len(recs)} records saved")
                 for r in recs:
                     gid = r.get("gene_id") or r.get("symbol")
                     if not gid:
@@ -431,7 +476,16 @@ def collect_species(
     if "uniprot" in sources:
         try:
             cu = import_local_collect_module("collect_uniprot")
-            recs = cu.fetch_uniprot(name, retmax=retmax, reviewed_only=reviewed_only)
+            checkpoint = checkpoint_dir / "uniprot.json"
+            cached_recs = _load_source_checkpoint(checkpoint)
+            if len(cached_recs) >= retmax:
+                recs = cached_recs[:retmax]
+                print(f"  [resume] UniProt: {len(recs)} cached records reused")
+            else:
+                fresh_recs = cu.fetch_uniprot(name, retmax=retmax, reviewed_only=reviewed_only)
+                recs = _merge_source_records(cached_recs, fresh_recs)
+                _write_json_atomic(checkpoint, recs)
+                print(f"  [checkpoint] UniProt: {len(recs)} records saved")
             before = len(all_records)
 
             # Crosswalk: NCBI-sourced records always keep their own raw
@@ -526,7 +580,16 @@ def collect_species(
     if "kegg" in sources:
         try:
             ck = import_local_collect_module("collect_kegg")
-            recs = ck.fetch_kegg(name, retmax=retmax)
+            checkpoint = checkpoint_dir / "kegg.json"
+            cached_recs = _load_source_checkpoint(checkpoint)
+            if len(cached_recs) >= retmax:
+                recs = cached_recs[:retmax]
+                print(f"  [resume] KEGG: {len(recs)} cached records reused")
+            else:
+                fresh_recs = ck.fetch_kegg(name, retmax=retmax)
+                recs = _merge_source_records(cached_recs, fresh_recs)
+                _write_json_atomic(checkpoint, recs)
+                print(f"  [checkpoint] KEGG: {len(recs)} records saved")
             before = len(all_records)
 
             # Crosswalk: UniProt already resolves and stores each protein's
@@ -577,7 +640,16 @@ def collect_species(
     if "planttfdb" in sources:
         try:
             ptf = import_local_collect_module("collect_planttfdb")
-            recs = ptf.fetch_planttfdb(name, retmax=retmax)
+            checkpoint = checkpoint_dir / "planttfdb.json"
+            cached_recs = _load_source_checkpoint(checkpoint)
+            if len(cached_recs) >= retmax:
+                recs = cached_recs[:retmax]
+                print(f"  [resume] PlantTFDB: {len(recs)} cached records reused")
+            else:
+                fresh_recs = ptf.fetch_planttfdb(name, retmax=retmax)
+                recs = _merge_source_records(cached_recs, fresh_recs)
+                _write_json_atomic(checkpoint, recs)
+                print(f"  [checkpoint] PlantTFDB: {len(recs)} records saved")
             before = len(all_records)
             for r in recs:
                 gid = r.get("gene_id")
@@ -608,7 +680,17 @@ def collect_species(
     if "plaza" in sources:
         try:
             cp = import_local_collect_module("collect_plaza")
-            recs = cp.fetch_plaza(name, retmax=plaza_retmax)
+            checkpoint = checkpoint_dir / "plaza.json"
+            cached_recs = _load_source_checkpoint(checkpoint)
+            unlimited_plaza = plaza_retmax in (None, 0)
+            if cached_recs and (unlimited_plaza or len(cached_recs) >= plaza_retmax):
+                recs = cached_recs if unlimited_plaza else cached_recs[:plaza_retmax]
+                print(f"  [resume] PLAZA: {len(recs)} cached records reused")
+            else:
+                fresh_recs = cp.fetch_plaza(name, retmax=plaza_retmax)
+                recs = _merge_source_records(cached_recs, fresh_recs)
+                _write_json_atomic(checkpoint, recs)
+                print(f"  [checkpoint] PLAZA: {len(recs)} records saved")
 
             def _norm(s: str) -> str:
                 return "".join(ch for ch in (s or "").lower() if ch.isalnum())
