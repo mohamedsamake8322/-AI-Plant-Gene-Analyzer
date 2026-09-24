@@ -19,6 +19,15 @@ from Bio import Entrez
 import logging
 
 ROOT = Path(__file__).resolve().parents[1]
+# ncbi_rate_limiter.py vit a la racine du projet (a cote de collect/ et
+# scripts/), partage entre TOUS les scripts de collecte. On l'ajoute au
+# path ici, plutot que de compter sur l'appelant (collect_all_sources.py
+# le fait deja pour le pipeline complet, mais collect_ncbi.py peut aussi
+# etre lance seul en CLI -- voir son usage documente plus bas).
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from ncbi_rate_limiter import acquire as _rate_limit_acquire
+
 DEFAULT_DB = ROOT / "genes_database.json"
 PLANTS_FILTER = "plants[filter]"
 # Was 500_000 -- calibrated only to catch whole chromosomes (observed up to
@@ -89,6 +98,7 @@ def _efetch_fasta_batch(batch: list[str], db: str = "nucleotide", max_retries: i
     ids = ",".join(batch)
     for attempt in range(1, max_retries + 1):
         try:
+            _rate_limit_acquire()
             with Entrez.efetch(db=db, id=ids, rettype="fasta", retmode="text", timeout=NCBI_TIMEOUT) as handle:
                 txt = handle.read()
             if isinstance(txt, bytes):
@@ -185,6 +195,7 @@ def resolve_accession_id(
     for base in candidates:
         term = build_search_term(base, plants_only=plants_only, organism=organism, db=db)
         try:
+            _rate_limit_acquire()
             handle = Entrez.esearch(db=db, term=term, retmax=1, timeout=NCBI_TIMEOUT)
             res = Entrez.read(handle)
             handle.close()
@@ -199,6 +210,7 @@ def resolve_accession_id(
     if plants_only and organism:
         for base in [acc, versionless] if versionless != acc else [acc]:
             try:
+                _rate_limit_acquire()
                 handle = Entrez.esearch(db=db, term=base, retmax=1, timeout=NCBI_TIMEOUT)
                 res = Entrez.read(handle)
                 handle.close()
@@ -222,6 +234,7 @@ def _fetch_sequence_length(id_or_acc: str, db: str = "nucleotide") -> int | None
     path unchanged -- this is a speed optimization, never a hard gate.
     """
     try:
+        _rate_limit_acquire()
         handle = Entrez.esummary(db=db, id=id_or_acc, timeout=NCBI_TIMEOUT)
         res = Entrez.read(handle)
         handle.close()
@@ -264,6 +277,7 @@ def _prefilter_batch_by_length(batch: list[str], db: str, max_length: int | None
     # meaning --max-length 0 / no-limit runs also silently skipped the WGS
     # check, which is a separate, independent signal from length.)
     try:
+        _rate_limit_acquire()
         handle = Entrez.esummary(db=db, id=",".join(batch), timeout=NCBI_TIMEOUT)
         res = Entrez.read(handle)
         handle.close()
@@ -434,6 +448,14 @@ def _efetch_gene_region(
     """Fetch one genomic locus and return its FASTA header and sequence."""
     for attempt in range(1, max_retries + 1):
         try:
+            # CRITIQUE : cette fonction est appelee par jusqu'a
+            # NCBI_GENE_FETCH_WORKERS threads EN PARALLELE (voir
+            # fetch_genomic_by_gene ci-dessous). acquire() est le SEUL
+            # point qui garantit que le debit CUMULE de ces threads reste
+            # sous la limite NCBI -- sans lui, 6 threads a 10 req/s chacun
+            # envoient jusqu'a 60 req/s reels, d'ou les coupures observees
+            # meme avec --workers 1 au niveau du pipeline global.
+            _rate_limit_acquire()
             with Entrez.efetch(
                 db="nucleotide",
                 id=accession,
@@ -499,6 +521,7 @@ def fetch_genomic_by_gene(
     """
     term = f'"{species}"[Organism]'
     try:
+        _rate_limit_acquire()
         handle = Entrez.esearch(db="gene", term=term, retmax=retmax, timeout=NCBI_TIMEOUT)
         result = Entrez.read(handle)
         handle.close()
@@ -566,7 +589,11 @@ def fetch_genomic_by_gene(
             header, sequence = _efetch_gene_region(
                 accession, seq_start, seq_stop, strand
             )
-            time.sleep(NCBI_SLEEP)
+            # (plus de time.sleep(NCBI_SLEEP) ici -- acquire(), appele a
+            # l'interieur de _efetch_gene_region juste avant l'appel reel,
+            # cadence deja correctement le debit CUMULE de tous les
+            # threads ; un sleep supplementaire ici ne ferait que
+            # ralentir sans ameliorer la securite.)
             return gene_id, header, sequence, gene_symbol
 
         with ThreadPoolExecutor(max_workers=NCBI_GENE_FETCH_WORKERS) as executor:
