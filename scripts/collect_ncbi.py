@@ -5,6 +5,7 @@ Uses Biopython Entrez. Reads credentials from .env (NCBI_EMAIL, NCBI_API_KEY).
 """
 
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 import http.client
 import json
 import os
@@ -79,6 +80,10 @@ load_dotenv(ROOT / ".env")
 
 # Pause between NCBI requests: ~0.11s with API key (≈10 req/s), ~0.34s without (≈3 req/s)
 NCBI_SLEEP = 0.11 if os.getenv("NCBI_API_KEY") else 0.34
+_default_gene_workers = "6" if os.getenv("NCBI_API_KEY") else "2"
+NCBI_GENE_FETCH_WORKERS = max(
+    1, min(12, int(os.getenv("NCBI_GENE_FETCH_WORKERS", _default_gene_workers)))
+)
 
 def _efetch_fasta_batch(batch: list[str], db: str = "nucleotide", max_retries: int = 3) -> str:
     ids = ",".join(batch)
@@ -537,6 +542,7 @@ def fetch_genomic_by_gene(
         # document field (CurrentID is not the Entrez Gene ID). The API
         # preserves the requested ID order, so correlate by position after
         # checking the response length.
+        pending: list[tuple[str, str, int, int, int, str | None]] = []
         for gene_id, doc in zip(batch, documents):
             coordinates = _gene_coordinates(doc)
             if not gene_id or not coordinates:
@@ -553,22 +559,32 @@ def fetch_genomic_by_gene(
                 output.append((cached["header"], cached["sequence"], gene_id, cached.get("symbol")))
                 continue
             missing.append(gene_id)
-            try:
-                header, sequence = _efetch_gene_region(
-                    accession, seq_start, seq_stop, strand
-                )
-                cache[gene_id] = {
-                    "cache_key": cache_key,
-                    "header": header,
-                    "sequence": sequence,
-                    "symbol": gene_symbol,
-                }
-                if cache_path:
-                    _write_genomic_cache(cache_path, cache)
-                output.append((header, sequence, gene_id, gene_symbol))
-                time.sleep(NCBI_SLEEP)
-            except Exception as exc:
-                print(f"Skipped GeneID:{gene_id} ({accession}:{seq_start}-{seq_stop}): {exc}")
+            pending.append((gene_id, accession, seq_start, seq_stop, strand, gene_symbol))
+
+        def fetch_pending(item):
+            gene_id, accession, seq_start, seq_stop, strand, gene_symbol = item
+            header, sequence = _efetch_gene_region(
+                accession, seq_start, seq_stop, strand
+            )
+            time.sleep(NCBI_SLEEP)
+            return gene_id, header, sequence, gene_symbol
+
+        with ThreadPoolExecutor(max_workers=NCBI_GENE_FETCH_WORKERS) as executor:
+            futures = [executor.submit(fetch_pending, item) for item in pending]
+            for future, item in zip(futures, pending):
+                try:
+                    gene_id, header, sequence, gene_symbol = future.result()
+                    _, accession, seq_start, seq_stop, strand, _ = item
+                    cache[gene_id] = {
+                        "cache_key": f"{accession}:{seq_start}-{seq_stop}:{strand}",
+                        "header": header,
+                        "sequence": sequence,
+                        "symbol": gene_symbol,
+                    }
+                    output.append((header, sequence, gene_id, gene_symbol))
+                except Exception as exc:
+                    gene_id, accession, seq_start, seq_stop, _, _ = item
+                    print(f"Skipped GeneID:{gene_id} ({accession}:{seq_start}-{seq_stop}): {exc}")
 
         # Persist at the end of every coordinate-summary batch as well. This
         # covers batches made entirely of cache hits and keeps the checkpoint

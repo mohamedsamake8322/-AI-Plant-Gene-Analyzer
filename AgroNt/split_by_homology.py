@@ -6,9 +6,15 @@ Split train/val/test d'un jeu de gènes en évitant que des séquences
 quasi-identiques (paralogues, variants) se retrouvent dans des ensembles
 différents -- via clustering MinHash/LSH par similarité de k-mers.
 
+CORRECTIF (vs version initiale) : cluster_by_homology() utilisait un
+parcours "visited" qui pouvait laisser un même gène appartenir à deux
+clusters différents (lsh.query() peut renvoyer un gène deja rattache a
+un autre cluster). Remplace par une vraie union-find : chaque gene
+appartient a exactement un cluster, garanti par construction.
+
 Usage:
     python split_by_homology.py --in data/agront_go_terms_bp.json \
-        --out-dir data/splits --train 0.8 --val 0.1 --test 0.1
+        --out-dir data/splits --train 0.8 --val 0.1
 """
 from __future__ import annotations
 
@@ -35,34 +41,52 @@ def build_minhash(seq: str, k: int = 8, num_perm: int = 128) -> MinHash:
     return mh
 
 
+class _UnionFind:
+    def __init__(self, n: int):
+        self.parent = list(range(n))
+
+    def find(self, x: int) -> int:
+        while self.parent[x] != x:
+            self.parent[x] = self.parent[self.parent[x]]
+            x = self.parent[x]
+        return x
+
+    def union(self, a: int, b: int) -> None:
+        ra, rb = self.find(a), self.find(b)
+        if ra != rb:
+            self.parent[ra] = rb
+
+
 def cluster_by_homology(
     genes: list[dict], jaccard_threshold: float = 0.8, num_perm: int = 128,
 ) -> list[list[int]]:
     """
     Regroupe les indices de genes en clusters de sequences 'similaires'
-    (Jaccard estime >= jaccard_threshold sur les k-mers) via LSH -- pour
-    que chaque cluster reste entierement dans un seul split.
+    (Jaccard estime >= jaccard_threshold sur les k-mers) via LSH.
+
+    Union-find garantit qu'un gene n'appartient JAMAIS a plus d'un
+    cluster, meme si lsh.query() renvoie des voisins qui se chevauchent
+    entre plusieurs requetes (ce qui arrive en pratique et causait une
+    fuite train/test dans la version precedente).
     """
     lsh = MinHashLSH(threshold=jaccard_threshold, num_perm=num_perm)
-    minhashes: dict[int, MinHash] = {}
+    minhashes: list[MinHash] = []
 
     for i, g in enumerate(genes):
         mh = build_minhash(g["sequence"], num_perm=num_perm)
-        minhashes[i] = mh
+        minhashes.append(mh)
         lsh.insert(str(i), mh)
 
-    visited: set[int] = set()
-    clusters: list[list[int]] = []
+    uf = _UnionFind(len(genes))
+    for i, mh in enumerate(minhashes):
+        for neighbor in lsh.query(mh):
+            uf.union(i, int(neighbor))
 
+    groups: dict[int, list[int]] = defaultdict(list)
     for i in range(len(genes)):
-        if i in visited:
-            continue
-        neighbors = lsh.query(minhashes[i])
-        cluster = [int(n) for n in neighbors]
-        clusters.append(cluster)
-        visited.update(cluster)
+        groups[uf.find(i)].append(i)
 
-    return clusters
+    return list(groups.values())
 
 
 def assign_splits(
@@ -93,7 +117,6 @@ def assign_splits(
     split_indices: dict[str, list[int]] = {"train": [], "val": [], "test": []}
 
     for cluster_idx, size in cluster_sizes:
-        # Assigne au split le plus en dessous de sa cible relative.
         best_split = min(
             ("train", "val", "test"),
             key=lambda s: current[s] / max(target[s], 1),
@@ -112,6 +135,20 @@ def label_distribution(genes: list[dict], indices: list[int]) -> dict[str, int]:
     return dict(counter)
 
 
+def _assert_no_overlap(split_indices: dict[str, list[int]]) -> None:
+    """Garde-fou : leve une exception si un index apparait dans 2 splits."""
+    seen: dict[int, str] = {}
+    for split_name, indices in split_indices.items():
+        for i in indices:
+            if i in seen:
+                raise RuntimeError(
+                    f"FUITE DETECTEE : l'index {i} apparait dans "
+                    f"'{seen[i]}' ET '{split_name}'. Ne devrait jamais "
+                    f"arriver avec l'union-find -- signaler ce cas."
+                )
+            seen[i] = split_name
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--in", dest="input", required=True)
@@ -126,13 +163,24 @@ def main() -> None:
     genes = data["genes"]
     print(f"Genes charges : {len(genes)}")
 
-    print("Clustering par homologie (MinHash/LSH)...")
+    print("Clustering par homologie (MinHash/LSH, union-find)...")
     clusters = cluster_by_homology(genes, jaccard_threshold=args.jaccard_threshold)
     print(f"Clusters formes : {len(clusters)}")
     sizes = sorted((len(c) for c in clusters), reverse=True)
     print(f"  plus gros cluster : {sizes[0]} genes | clusters de taille 1 : {sum(1 for s in sizes if s == 1)}")
 
+    # Verification interne : la somme des tailles de cluster doit egaler
+    # le nombre total de genes, sans doublon ni gene manquant.
+    total_in_clusters = sum(len(c) for c in clusters)
+    all_indices = set(i for c in clusters for i in c)
+    assert total_in_clusters == len(genes), (
+        f"Incoherence : {total_in_clusters} indices dans les clusters "
+        f"pour {len(genes)} genes -- un gene est compte plusieurs fois."
+    )
+    assert len(all_indices) == len(genes), "Un gene est absent de tout cluster."
+
     split_indices = assign_splits(clusters, genes, args.train, args.val, seed=args.seed)
+    _assert_no_overlap(split_indices)  # doit toujours passer avec l'union-find
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -141,7 +189,7 @@ def main() -> None:
         split_genes = [genes[i] for i in indices]
         out_path = out_dir / f"{split_name}.json"
         out_path.write_text(
-            json.dumps({"genes": split_genes}, ensure_ascii=False, indent=2),
+            json.dumps({"metadata": data["metadata"], "genes": split_genes}, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
         pct = len(indices) / len(genes) * 100
@@ -149,13 +197,14 @@ def main() -> None:
         print(f"  {split_name:5} : {len(indices):5} genes ({pct:.1f}%) "
               f"-> {out_path} | {n_labels_present}/{len(data['metadata']['label_classes'])} classes representees")
 
-    # Verification : une classe totalement absente du train est inutilisable
     train_labels = set(label_distribution(genes, split_indices["train"]).keys())
-    all_labels = set(data["metadata"]["label_classes"])
+    all_labels = {c["id"] for c in data["metadata"]["label_classes"]}
     missing = all_labels - train_labels
     if missing:
         print(f"\n⚠️  {len(missing)} classe(s) absente(s) du train : {sorted(missing)}")
         print("   -> le modele ne pourra jamais apprendre a les predire.")
+
+    print("\n✓ Aucune fuite entre splits (verifie par _assert_no_overlap).")
 
 
 if __name__ == "__main__":

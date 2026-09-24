@@ -64,13 +64,14 @@ def fetch_kegg(species: str, retmax: int = 300) -> list[dict]:
 
     print(f"  [KEGG] Found {len(gene_ids)} genes, fetching details...")
     records = []
-    for i, gene_id in enumerate(gene_ids[:retmax]):
-        rec = _fetch_gene_entry(org_code, gene_id, species)
-        if rec:
-            records.append(rec)
-        if (i + 1) % 50 == 0:
-            print(f"    [KEGG] Processed {i+1}/{min(len(gene_ids), retmax)} genes...")
-        time.sleep(0.2)  # KEGG rate limit: ~5 req/s
+    selected_ids = gene_ids[:retmax]
+    for i in range(0, len(selected_ids), 10):
+        chunk = selected_ids[i:i + 10]
+        records.extend(_fetch_gene_entries(org_code, chunk, species))
+        processed = min(i + len(chunk), len(selected_ids))
+        if processed % 50 == 0 or processed == len(selected_ids):
+            print(f"    [KEGG] Processed {processed}/{len(selected_ids)} genes...")
+        time.sleep(0.2)  # KEGG rate limit: ~5 requests/s
 
     return records
 
@@ -107,6 +108,42 @@ def _fetch_gene_entry(org_code: str, gene_id: str, species: str) -> dict | None:
         # species collection -- skip it and keep going.
         print(f"  [KEGG] Failed to parse {org_code}:{gene_id}: {e}")
         return None
+
+
+def _fetch_gene_entries(org_code: str, gene_ids: list[str], species: str) -> list[dict]:
+    """Fetch up to ten KEGG entries in one REST request.
+
+    KEGG's ``get`` endpoint accepts a ``+``-joined list of gene IDs. The
+    response contains one flat-file block per found entry, separated by
+    ``///``. Parsing in batches preserves the same normalized records as the
+    old one-request-per-gene path while removing thousands of avoidable HTTP
+    round trips from large collections.
+    """
+    if not gene_ids:
+        return []
+    try:
+        query = "+".join(f"{org_code}:{gene_id}" for gene_id in gene_ids)
+        resp = rq.get(f"{KEGG_BASE}/get/{query}", timeout=60)
+        blocks = [block.strip() for block in resp.text.split("///") if block.strip()]
+        records: list[dict] = []
+        for block in blocks:
+            entry_id = ""
+            for line in block.splitlines():
+                if line.startswith("ENTRY"):
+                    entry_id = line[12:].strip().split()[0]
+                    break
+            if entry_id:
+                rec = _parse_kegg_flat(block, entry_id, org_code, species)
+                if rec:
+                    records.append(rec)
+        return records
+    except (requests.RequestException, ValueError) as e:
+        print(f"  [KEGG] Batch request failed for {gene_ids[:3]}: {e}; retrying individually")
+        return [
+            rec
+            for gene_id in gene_ids
+            if (rec := _fetch_gene_entry(org_code, gene_id, species)) is not None
+        ]
 
 
 def _parse_kegg_flat(text: str, gene_id: str, org_code: str, species: str) -> dict | None:
