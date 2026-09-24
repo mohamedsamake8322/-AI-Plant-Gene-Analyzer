@@ -201,6 +201,52 @@ def plot_amino_acid_bar(dist: dict) -> go.Figure:
     return fig
 
 
+def plot_hydrophobicity_profile(profile: dict) -> go.Figure:
+    """Plot a sliding-window Kyte-Doolittle hydrophobicity profile."""
+    points = profile.get("points", [])
+    positions = [point["position"] for point in points]
+    scores = [point["score"] for point in points]
+    threshold = profile.get("threshold", 1.6)
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=positions,
+        y=scores,
+        mode="lines",
+        line=dict(color=TEAL, width=2),
+        name="Kyte-Doolittle",
+        hovertemplate="Position %{x:.1f}<br>Score %{y:.3f}<extra></extra>",
+    ))
+    fig.add_hline(y=threshold, line_dash="dash", line_color=AMBER,
+                  annotation_text=f"Indicative threshold {threshold}")
+    layout = _base_layout(f"Hydrophobicity profile ({profile.get('window', '?')}-aa window)")
+    layout["xaxis"]["title"] = "Window center (residue)"
+    layout["yaxis"]["title"] = "Kyte-Doolittle score"
+    fig.update_layout(**layout)
+    return fig
+
+
+def plot_charge_profile(profile: dict) -> go.Figure:
+    """Plot estimated net charge over pH 0-14."""
+    points = profile.get("points", [])
+    ph_values = [point["ph"] for point in points]
+    charges = [point["net_charge"] for point in points]
+    fig = go.Figure(go.Scatter(
+        x=ph_values,
+        y=charges,
+        mode="lines+markers",
+        marker=dict(size=4, color=CYAN),
+        line=dict(color=CYAN, width=2),
+        name="Estimated net charge",
+        hovertemplate="pH %{x:.1f}<br>Net charge %{y:.3f}<extra></extra>",
+    ))
+    fig.add_hline(y=0, line_dash="dash", line_color=AMBER)
+    layout = _base_layout(f"Estimated net charge versus pH (pI {profile.get('isoelectric_point', 'N/A')})")
+    layout["xaxis"]["title"] = "pH"
+    layout["yaxis"]["title"] = "Net charge"
+    fig.update_layout(**layout)
+    return fig
+
+
 # ─── GC content gauge ─────────────────────────────────────────────────────────
 
 def plot_gc_gauge(

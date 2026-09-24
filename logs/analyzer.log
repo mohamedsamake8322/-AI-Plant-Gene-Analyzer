@@ -754,3 +754,13 @@ ValueError: frame must be one of 1, 2, 3, -1, -2, or -3 (signed reading frame).
 2026-09-20 12:01:08,074 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 1 candidates for top_n=3
 2026-09-20 12:01:08,186 - __main__ - INFO - Analysis session state saved
 2026-09-20 12:12:55,339 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-24 12:58:17,424 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-24 18:13:24,032 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-24 18:13:38,773 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-24 18:13:52,175 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-24 18:13:55,878 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-24 18:14:03,776 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-24 18:14:03,818 - __main__ - INFO - Starting analysis for record 1/1: QV058469.1
+2026-09-24 18:14:05,170 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 45 candidates for top_n=3
+2026-09-24 18:14:09,006 - __main__ - INFO - Analysis session state saved
+2026-09-24 18:20:40,738 - __main__ - INFO - CSS loaded successfully from style.css

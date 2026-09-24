@@ -188,6 +188,36 @@ class TestProteinTranslation:
         assert rows[-1]["is_stop"] is True
 
 
+class TestProteinProperties:
+    """Regression tests for reference protein-property calculations."""
+
+    def test_instability_index_uses_guruprasad_diwv(self):
+        sequence = "MKWVTFISLLFLFSSAYS"
+
+        reference_index = bio.calculate_instability_index(sequence)
+        proxy_index = bio.calculate_instability_proxy(sequence)
+
+        assert reference_index == pytest.approx(17.5666666667, abs=1e-10)
+        assert proxy_index == pytest.approx(27.4705882353, abs=1e-10)
+        assert reference_index != pytest.approx(proxy_index)
+        assert bio.generate_protein_statistics(sequence)["instability_index"] == pytest.approx(17.57)
+
+    def test_profiles_and_motifs_use_explicit_positions(self):
+        sequence = "MNNSTACNPSYTC"
+
+        hydro = bio.hydrophobicity_profile(sequence, window=5)
+        charge = bio.charge_profile(sequence, step=1.0)
+        motifs = bio.detect_protein_motifs(sequence)
+
+        assert hydro["points"][0]["start"] == 1
+        assert hydro["points"][0]["end"] == 5
+        assert hydro["points"][0]["position"] == 3.0
+        assert charge["points"][0]["ph"] == 0.0
+        assert charge["points"][-1]["ph"] == 14.0
+        assert [item["position"] for item in motifs["n_glycosylation_candidates"]] == [2, 3]
+        assert [item["position"] for item in motifs["phosphorylation_candidates"]] == [4, 5, 10, 11, 12]
+
+
 class TestMutationDetection:
     """Test mutation detection."""
     

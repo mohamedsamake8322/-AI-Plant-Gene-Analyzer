@@ -389,6 +389,7 @@ with tool_tabs[3]:
             result = bio.generate_protein_statistics(cleaned)
             categories = result["biochemical_categories"]
             cysteines = result["cysteine_analysis"]
+            signal_candidate = result["n_terminal_signal_candidate"]
             st.markdown(f"##### {translate('ui.summary', default='Summary')}")
             metrics = st.columns(4)
             metrics[0].metric(translate("ui.length", default="Length"), f"{result['length']} aa")
@@ -399,7 +400,14 @@ with tool_tabs[3]:
             metrics[0].metric(translate("ui.unique_residues", default="Unique residues"), result["unique_residues"])
             metrics[1].metric(translate("ui.cysteines", default="Cysteines"), cysteines["count"])
             metrics[2].metric(translate("ui.charged_residues", default="Charged residues"), result["charged_residues_count"])
-            metrics[3].metric(translate("ui.instability_index", default="Instability index"), f"{result['instability_index']:.1f}")
+            metrics[3].metric(
+                translate("ui.instability_index", default="Guruprasad instability index"),
+                f"{result['instability_index']:.1f}",
+            )
+            st.caption(translate(
+                "ui.instability_index_help",
+                default="Reference DIWV index (Guruprasad et al., 1990; ExPASy ProtParam). Values above 40 suggest a tendency toward instability.",
+            ))
 
             st.markdown(f"##### {translate('ui.detailed_composition', default='Detailed composition')}")
             composition_rows = []
@@ -418,6 +426,45 @@ with tool_tabs[3]:
                 })
             st.dataframe(composition_rows, width="stretch", hide_index=True)
 
+            st.markdown(f"##### {translate('ui.protein_profiles', default='Sequence-level profiles')}")
+            profile_col1, profile_col2 = st.columns(2)
+            with profile_col1:
+                st.plotly_chart(
+                    viz.plot_hydrophobicity_profile(result["hydrophobicity_profile"]),
+                    width="stretch",
+                )
+                st.caption(result["hydrophobicity_profile"]["note"])
+            with profile_col2:
+                st.plotly_chart(
+                    viz.plot_charge_profile(result["charge_profile"]),
+                    width="stretch",
+                )
+                st.caption(result["charge_profile"]["note"])
+
+            st.markdown(f"##### {translate('ui.cysteine_motifs', default='Cysteine positions and sequence motifs')}")
+            cysteine_rows = [
+                {
+                    "Cysteine": index + 1,
+                    "Position": position,
+                    "Distance to next C": cysteines["distances_between_consecutive"][index] if index < len(cysteines["distances_between_consecutive"]) else "-",
+                }
+                for index, position in enumerate(cysteines["positions"])
+            ]
+            if cysteine_rows:
+                st.dataframe(cysteine_rows, width="stretch", hide_index=True)
+            st.caption(cysteines["note"])
+
+            motif_col1, motif_col2 = st.columns(2)
+            with motif_col1:
+                st.markdown(f"**{translate('ui.glycosylation_candidates', default='N-glycosylation candidates')}**")
+                glycosylation_rows = result["protein_motifs"]["n_glycosylation_candidates"]
+                st.dataframe(glycosylation_rows or [{"position": translate('ui.none_detected', default='None detected')}], width="stretch", hide_index=True)
+            with motif_col2:
+                st.markdown(f"**{translate('ui.phosphorylation_candidates', default='Phosphorylation candidates')}**")
+                phosphorylation_rows = result["protein_motifs"]["phosphorylation_candidates"]
+                st.dataframe(phosphorylation_rows or [{"position": translate('ui.none_detected', default='None detected')}], width="stretch", hide_index=True)
+            st.caption(result["protein_motifs"]["note"])
+
             st.markdown(f"##### {translate('ui.interpretation', default='Interpretation')}")
             interpretation = []
             if result["isoelectric_point"] > 7.5:
@@ -428,6 +475,10 @@ with tool_tabs[3]:
                 interpretation.append(translate("ui.interp_hydrophobic", default="Elevated average hydrophobicity suggests possible hydrophobic regions."))
             if result["aliphatic_index"] > 80:
                 interpretation.append(translate("ui.interp_aliphatic", default="High aliphatic index suggests an aliphatically enriched protein."))
+            if result["instability_index"] > 40:
+                interpretation.append(translate("ui.interp_unstable", default="The reference instability index is above 40, suggesting a tendency toward instability."))
+            else:
+                interpretation.append(translate("ui.interp_stable", default="The reference instability index is at or below 40; this does not establish experimental stability."))
             if cysteines["count"] >= 2:
                 interpretation.append(translate(
                     "ui.interp_cysteines",
@@ -435,6 +486,17 @@ with tool_tabs[3]:
                     count=cysteines["count"],
                     pairs=cysteines["max_possible_disulfide_pairs"],
                 ))
+            if signal_candidate["candidate"]:
+                interpretation.append(translate(
+                    "ui.interp_signal",
+                    default="The N-terminal region is strongly hydrophobic and is compatible with a signal peptide; this heuristic does not predict a cleavage site.",
+                ))
+            glyco_count = len(result["protein_motifs"]["n_glycosylation_candidates"])
+            phospho_count = len(result["protein_motifs"]["phosphorylation_candidates"])
+            if glyco_count:
+                interpretation.append(translate("ui.interp_glycosylation", default="{count} N-glycosylation candidate motif(s) detected; occupancy is not predicted.", count=glyco_count))
+            if phospho_count:
+                interpretation.append(translate("ui.interp_phosphorylation", default="{count} Ser/Thr/Tyr phosphorylation candidate residue(s) detected; modification is not predicted.", count=phospho_count))
             if not interpretation:
                 interpretation.append(translate("ui.interp_none", default="No strongly distinctive biochemical feature was detected from these estimates alone."))
             for line in interpretation:
@@ -444,11 +506,23 @@ with tool_tabs[3]:
             st.plotly_chart(viz.plot_amino_acid_bar(result["amino_acid_distribution"]), width="stretch")
             import json
             import pandas as pd
+            export_result = dict(result)
+            export_result["guruprasad_instability_index"] = export_result.pop("instability_index")
+            export_result.pop("instability_proxy", None)
+            csv_export_rows = [
+                {
+                    "Residue": "Guruprasad Instability Index (DIWV)",
+                    "Count": result["instability_index"],
+                    "Percentage": "",
+                    "Categories": "Reference index; >40 suggests instability",
+                },
+                *composition_rows,
+            ]
             export_col1, export_col2 = st.columns(2)
             with export_col1:
                 st.download_button(
                     translate("ui.export_json", default="Export JSON"),
-                    json.dumps(result, ensure_ascii=False, indent=2),
+                    json.dumps(export_result, ensure_ascii=False, indent=2),
                     file_name="protein_analysis.json",
                     mime="application/json",
                     key="independent_protein_export_json",
@@ -456,7 +530,7 @@ with tool_tabs[3]:
             with export_col2:
                 st.download_button(
                     translate("ui.export_csv", default="Export CSV"),
-                    pd.DataFrame(composition_rows).to_csv(index=False),
+                    pd.DataFrame(csv_export_rows).to_csv(index=False),
                     file_name="protein_composition.csv",
                     mime="text/csv",
                     key="independent_protein_export_csv",

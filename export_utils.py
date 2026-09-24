@@ -111,6 +111,11 @@ def export_results_json(
     
     filepath = config.RESULTS_DIR / filename
     
+    protein_properties = dict(result.get("protein_stats") or {})
+    if "instability_index" in protein_properties:
+        protein_properties["guruprasad_instability_index"] = protein_properties.pop("instability_index")
+    protein_properties.pop("instability_proxy", None)
+
     # Prepare serializable data
     export_data = {
         "timestamp": datetime.now().isoformat(),
@@ -122,7 +127,7 @@ def export_results_json(
         "motifs": result.get("motifs", {}),
         "restriction_sites": result.get("restriction_sites", []),
         "primer_hints": result.get("primer_hints"),
-        "protein_properties": result.get("protein_stats"),
+        "protein_properties": protein_properties,
         "similarity_results": result.get("similarity_results", []),
         "best_match": result.get("best_match"),
         "mutation_report": result.get("mutation_report"),
@@ -185,8 +190,9 @@ def export_results_csv(
                 writer.writerow({"Metric": "Reverse primer Tm (C)", "Value": primer_hints.get("reverse_tm")})
         else:
             protein_stats = result.get("protein_stats") or {}
-            for key in ("gravy", "instability_index", "aliphatic_index"):
-                writer.writerow({"Metric": key.replace("_", " ").title(), "Value": protein_stats.get(key, "N/A")})
+            writer.writerow({"Metric": "GRAVY", "Value": protein_stats.get("gravy", "N/A")})
+            writer.writerow({"Metric": "Guruprasad Instability Index (DIWV)", "Value": protein_stats.get("instability_index", "N/A")})
+            writer.writerow({"Metric": "Aliphatic Index", "Value": protein_stats.get("aliphatic_index", "N/A")})
 
         # Composition counts
         counts = dist.get("counts", {})

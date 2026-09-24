@@ -1071,7 +1071,8 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 st.markdown(f"**Residue diversity:** {len([v for v in dist['counts'].values() if v > 0])} / {len(dist['counts'])}")
                 st.markdown(f"**Most abundant residue:** {max(dist['counts'], key=dist['counts'].get)}")
                 st.markdown(f"**GRAVY:** {protein_stats.get('gravy', 'N/A')}")
-                st.markdown(f"**Instability index:** {protein_stats.get('instability_index', 'N/A')}")
+                st.markdown(f"**Guruprasad instability index:** {protein_stats.get('instability_index', 'N/A')}")
+                st.caption("DIWV reference calculation (Guruprasad et al., 1990; ExPASy ProtParam); values above 40 suggest a tendency toward instability.")
                 st.markdown(f"**Aliphatic index:** {protein_stats.get('aliphatic_index', 'N/A')}")
 
             if motifs:

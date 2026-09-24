@@ -11,6 +11,7 @@ from typing import Optional
 
 import sequence_loader
 from quality_rules import quality_report
+from Bio.SeqUtils.ProtParam import ProteinAnalysis
 
 
 # ─── Codon table (standard genetic code) ──────────────────────────────────────
@@ -42,6 +43,7 @@ CODON_TABLE: dict[str, str] = {
 IUPAC_AMBIGUITY_CODES = set("RYSWKMBDHV")
 VALID_NUCLEOTIDES = set("ATGCN") | IUPAC_AMBIGUITY_CODES
 AMINO_ACIDS = set("ACDEFGHIKLMNPQRSTVWYBXZ*")
+STANDARD_AMINO_ACIDS = set("ACDEFGHIKLMNPQRSTVWY")
 
 BIOCHEMICAL_CATEGORIES: dict[str, set[str]] = {
     "hydrophobic": set("AVILMFWPG"),
@@ -363,12 +365,121 @@ def cysteine_analysis(sequence: str) -> dict[str, object]:
     }
 
 
+def detect_n_terminal_signal_candidate(sequence: str, window: int = 25) -> dict[str, object]:
+    """Flag an N-terminal hydrophobic segment compatible with a signal peptide.
+
+    This is a transparent composition heuristic, not a SignalP prediction: it
+    does not predict a cleavage site, secretion pathway, or topology.
+    """
+    segment = sequence[:window]
+    hydrophobic = set("AVILMFW")
+    fraction = sum(residue in hydrophobic for residue in segment) / len(segment) if segment else 0.0
+    candidate = len(segment) >= 15 and fraction >= 0.56
+    return {
+        "candidate": candidate,
+        "window": window,
+        "segment": segment,
+        "hydrophobic_fraction": round(fraction * 100, 2),
+        "note": (
+            "N-terminal hydrophobic composition is compatible with a signal peptide; "
+            "confirm with SignalP or another dedicated predictor."
+            if candidate else
+            "No strong N-terminal hydrophobic signal candidate was detected by this heuristic."
+        ),
+    }
+
+
+def hydrophobicity_profile(sequence: str, window: int = 19) -> dict[str, object]:
+    """Return a centered Kyte-Doolittle profile for a sliding window."""
+    sequence = sequence.upper()
+    if not sequence or window <= 0 or window > len(sequence):
+        return {"window": window, "points": [], "note": "No complete window is available."}
+    points = []
+    for start in range(len(sequence) - window + 1):
+        segment = sequence[start:start + window]
+        score = calculate_hydrophobicity(segment)
+        points.append({
+            "position": start + 1 + (window - 1) / 2,
+            "start": start + 1,
+            "end": start + window,
+            "score": round(score, 3),
+            "sequence": segment,
+        })
+    return {
+        "window": window,
+        "points": points,
+        "threshold": 1.6,
+        "note": "Positive peaks indicate hydrophobic windows; this is not a transmembrane or signal-peptide prediction.",
+    }
+
+
+def calculate_net_charge(sequence: str, ph: float) -> float:
+    """Estimate net charge at one pH using the module's pKa model."""
+    sequence = sequence.upper()
+    counts = {aa: sequence.count(aa) for aa in RESIDUE_MONOISOTOPIC_MASS}
+    positive = (
+        1 / (1 + 10 ** (ph - PKA_TERMINI["N_term"]))
+        + counts.get("K", 0) * (1 / (1 + 10 ** (ph - PKA_TERMINI["K"])))
+        + counts.get("R", 0) * (1 / (1 + 10 ** (ph - PKA_TERMINI["R"])))
+        + counts.get("H", 0) * (1 / (1 + 10 ** (ph - PKA_TERMINI["H"])))
+    )
+    negative = (
+        1 / (1 + 10 ** (PKA_TERMINI["C_term"] - ph))
+        + counts.get("D", 0) * (1 / (1 + 10 ** (PKA_TERMINI["D"] - ph)))
+        + counts.get("E", 0) * (1 / (1 + 10 ** (PKA_TERMINI["E"] - ph)))
+        + counts.get("C", 0) * (1 / (1 + 10 ** (PKA_TERMINI["C"] - ph)))
+        + counts.get("Y", 0) * (1 / (1 + 10 ** (PKA_TERMINI["Y"] - ph)))
+    )
+    return positive - negative
+
+
+def charge_profile(sequence: str, step: float = 0.5) -> dict[str, object]:
+    """Return estimated net charge across pH 0-14."""
+    if step <= 0:
+        return {"step": step, "points": [], "note": "The pH step must be positive."}
+    points = [
+        {"ph": round(ph, 2), "net_charge": round(calculate_net_charge(sequence, ph), 3)}
+        for index in range(round(14 / step) + 1)
+        for ph in [index * step]
+    ]
+    return {
+        "step": step,
+        "points": points,
+        "isoelectric_point": round(estimate_isoelectric_point(sequence), 2),
+        "note": "Charge values are sequence-based estimates using Henderson-Hasselbalch terms, not experimental measurements.",
+    }
+
+
+def detect_protein_motifs(sequence: str) -> dict[str, object]:
+    """Find sequence motifs compatible with common modification sites."""
+    sequence = sequence.upper()
+    n_glycosylation = [
+        {"position": index + 1, "motif": sequence[index:index + 3], "type": "N-glycosylation candidate"}
+        for index in range(max(0, len(sequence) - 2))
+        if sequence[index] == "N" and sequence[index + 1] != "P" and sequence[index + 2] in "ST"
+    ]
+    phosphorylation = [
+        {"position": index + 1, "residue": residue, "type": "phosphorylation candidate"}
+        for index, residue in enumerate(sequence)
+        if residue in "STY"
+    ]
+    return {
+        "n_glycosylation_candidates": n_glycosylation,
+        "phosphorylation_candidates": phosphorylation,
+        "note": "Motifs indicate sequence compatibility only; occupancy and modification require experimental or specialized predictor confirmation.",
+    }
+
+
 def generate_protein_statistics(sequence: str) -> dict:
     """Compute protein sequence metrics."""
     dist = amino_acid_distribution(sequence)
     props = protein_properties(sequence)
     categories = categorize_amino_acids(sequence)
     cysteines = cysteine_analysis(sequence)
+    signal_candidate = detect_n_terminal_signal_candidate(sequence)
+    hydro_profile = hydrophobicity_profile(sequence)
+    charge_curve = charge_profile(sequence)
+    motifs = detect_protein_motifs(sequence)
     return {
         "length": len(sequence),
         "amino_acid_distribution": dist,
@@ -378,9 +489,14 @@ def generate_protein_statistics(sequence: str) -> dict:
         "hydrophobicity": props["hydrophobicity"],
         "gravy": props["gravy"],
         "instability_index": props["instability_index"],
+        "instability_proxy": props["instability_proxy"],
         "aliphatic_index": props["aliphatic_index"],
         "biochemical_categories": categories,
         "cysteine_analysis": cysteines,
+        "n_terminal_signal_candidate": signal_candidate,
+        "hydrophobicity_profile": hydro_profile,
+        "charge_profile": charge_curve,
+        "protein_motifs": motifs,
         "charged_residues_count": (
             categories["positively_charged"]["count"]
             + categories["negatively_charged"]["count"]
@@ -434,12 +550,26 @@ def protein_properties(sequence: str) -> dict[str, float]:
         "isoelectric_point": round(isoelectric_point, 2),
         "gravy": round(hydrophobicity, 2),
         "instability_index": round(calculate_instability_index(valid_sequence), 2),
+        "instability_proxy": round(calculate_instability_proxy(valid_sequence), 2),
         "aliphatic_index": round(calculate_aliphatic_index(valid_sequence), 2),
     }
 
 
 def calculate_instability_index(sequence: str) -> float:
-    """Approximate instability from mean adjacent-residue hydrophobicity change."""
+    """Return the Guruprasad et al. (1990) DIWV instability index.
+
+    This is the reference calculation used by ExPASy ProtParam via
+    Biopython's ProteinAnalysis implementation. Values above 40 are commonly
+    interpreted as a tendency toward instability.
+    """
+    sequence = "".join(residue for residue in sequence.upper() if residue in STANDARD_AMINO_ACIDS)
+    if not sequence:
+        return 0.0
+    return float(ProteinAnalysis(sequence).instability_index())
+
+
+def calculate_instability_proxy(sequence: str) -> float:
+    """Return the former hydrophobicity-based heuristic for comparison only."""
     if len(sequence) < 2:
         return 0.0
     values = [abs(KYTE_DOOLITTLE_SCALE[a] - KYTE_DOOLITTLE_SCALE[b]) for a, b in zip(sequence, sequence[1:])]
