@@ -347,16 +347,120 @@ with tool_tabs[2]:
 
 with tool_tabs[3]:
     st.markdown(f"#### {translate('ui.protein_biochemical_analysis', default='Protein biochemical analysis')}")
-    protein_input = st.text_area(translate('ui.paste_protein_sequence', default="Paste protein sequence:"), height=120, key="independent_protein_input")
+    demo_protein = (
+        "MAKQVTLSLVVLASLLALSSAGPVSAQNPAEALKAAGCPSAVWKC"
+        "AAAKAGCEAAGLKCLADPKCGAGCKAVCDKAGCDKGSCRKFCS"
+    )
+    import_col, demo_col = st.columns(2)
+    with import_col:
+        uploaded_fasta = st.file_uploader(
+            translate("ui.import_fasta", default="Import a FASTA file"),
+            type=["fasta", "fa", "txt"],
+            key="independent_protein_fasta_upload",
+        )
+    with demo_col:
+        if st.button(translate("ui.load_demo_protein", default="Load a demo protein"), key="independent_protein_demo"):
+            st.session_state["independent_protein_input"] = demo_protein
+
+    if uploaded_fasta is not None:
+        raw_upload = uploaded_fasta.read().decode("utf-8", errors="ignore")
+        header, sequence_from_file = bio.parse_fasta_input(raw_upload)
+        st.session_state["independent_protein_input"] = sequence_from_file
+        if header:
+            st.caption(f"FASTA header: {header}")
+
+    protein_input = st.text_area(
+        translate("ui.paste_protein_sequence", default="Paste protein sequence:"),
+        height=120,
+        key="independent_protein_input",
+    )
+    if protein_input:
+        detected_header, sequence_preview = bio.parse_fasta_input(protein_input)
+        preview_length = len(sequence_preview.replace("\n", "").replace(" ", ""))
+        st.caption(f"{preview_length} {translate('ui.characters', default='characters')}" + (f" - header: {detected_header}" if detected_header else ""))
+
     if st.button(translate('ui.analyze_protein', default="Analyze protein"), key="independent_protein_analyze"):
-        cleaned = bio.clean_sequence(protein_input.strip(), sequence_type="protein")
+        header, sequence_only = bio.parse_fasta_input(protein_input.strip())
+        cleaned = bio.clean_sequence(sequence_only, sequence_type="protein")
         valid, message = bio.validate_sequence(cleaned, sequence_type="protein")
         if not valid:
             st.error(message)
         else:
             result = bio.generate_protein_statistics(cleaned)
-            st.write({"length_aa": result["length"], "molecular_weight": result["molecular_weight"], "isoelectric_point": result["isoelectric_point"], "hydrophobicity": result["hydrophobicity"]})
+            categories = result["biochemical_categories"]
+            cysteines = result["cysteine_analysis"]
+            st.markdown(f"##### {translate('ui.summary', default='Summary')}")
+            metrics = st.columns(4)
+            metrics[0].metric(translate("ui.length", default="Length"), f"{result['length']} aa")
+            metrics[1].metric(translate("ui.molecular_weight", default="Molecular weight"), f"{result['molecular_weight'] / 1000:.1f} kDa")
+            metrics[2].metric(translate("ui.isoelectric_point", default="Estimated pI"), f"{result['isoelectric_point']:.2f}")
+            metrics[3].metric(translate("ui.hydrophobicity", default="Avg. hydrophobicity"), f"{result['hydrophobicity']:.2f}")
+            metrics = st.columns(4)
+            metrics[0].metric(translate("ui.unique_residues", default="Unique residues"), result["unique_residues"])
+            metrics[1].metric(translate("ui.cysteines", default="Cysteines"), cysteines["count"])
+            metrics[2].metric(translate("ui.charged_residues", default="Charged residues"), result["charged_residues_count"])
+            metrics[3].metric(translate("ui.instability_index", default="Instability index"), f"{result['instability_index']:.1f}")
+
+            st.markdown(f"##### {translate('ui.detailed_composition', default='Detailed composition')}")
+            composition_rows = []
+            for amino_acid, count in result["amino_acid_distribution"]["counts"].items():
+                if not count:
+                    continue
+                amino_acid_categories = [
+                    category for category, residues in bio.BIOCHEMICAL_CATEGORIES.items()
+                    if amino_acid in residues
+                ]
+                composition_rows.append({
+                    "Residue": amino_acid,
+                    "Count": count,
+                    "Percentage": result["amino_acid_distribution"]["percentages"][amino_acid],
+                    "Categories": ", ".join(amino_acid_categories),
+                })
+            st.dataframe(composition_rows, width="stretch", hide_index=True)
+
+            st.markdown(f"##### {translate('ui.interpretation', default='Interpretation')}")
+            interpretation = []
+            if result["isoelectric_point"] > 7.5:
+                interpretation.append(translate("ui.interp_basic", default="High estimated pI suggests an overall basic protein."))
+            elif result["isoelectric_point"] < 6.0:
+                interpretation.append(translate("ui.interp_acidic", default="Low estimated pI suggests an overall acidic protein."))
+            if result["hydrophobicity"] > 0.5:
+                interpretation.append(translate("ui.interp_hydrophobic", default="Elevated average hydrophobicity suggests possible hydrophobic regions."))
+            if result["aliphatic_index"] > 80:
+                interpretation.append(translate("ui.interp_aliphatic", default="High aliphatic index suggests an aliphatically enriched protein."))
+            if cysteines["count"] >= 2:
+                interpretation.append(translate(
+                    "ui.interp_cysteines",
+                    default="{count} cysteine(s) detected; at most {pairs} disulfide pair(s) are possible, but bonds are not predicted.",
+                    count=cysteines["count"],
+                    pairs=cysteines["max_possible_disulfide_pairs"],
+                ))
+            if not interpretation:
+                interpretation.append(translate("ui.interp_none", default="No strongly distinctive biochemical feature was detected from these estimates alone."))
+            for line in interpretation:
+                st.markdown(f"- {line}")
+            st.caption(translate("ui.interp_disclaimer", default="These are sequence-based estimates, not experimental measurements."))
+
             st.plotly_chart(viz.plot_amino_acid_bar(result["amino_acid_distribution"]), width="stretch")
+            import json
+            import pandas as pd
+            export_col1, export_col2 = st.columns(2)
+            with export_col1:
+                st.download_button(
+                    translate("ui.export_json", default="Export JSON"),
+                    json.dumps(result, ensure_ascii=False, indent=2),
+                    file_name="protein_analysis.json",
+                    mime="application/json",
+                    key="independent_protein_export_json",
+                )
+            with export_col2:
+                st.download_button(
+                    translate("ui.export_csv", default="Export CSV"),
+                    pd.DataFrame(composition_rows).to_csv(index=False),
+                    file_name="protein_composition.csv",
+                    mime="text/csv",
+                    key="independent_protein_export_csv",
+                )
 
 with tool_tabs[4]:
     tr.render_trait_research_tab("Data/clean/species")

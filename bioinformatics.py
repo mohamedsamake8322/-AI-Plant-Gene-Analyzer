@@ -43,6 +43,16 @@ IUPAC_AMBIGUITY_CODES = set("RYSWKMBDHV")
 VALID_NUCLEOTIDES = set("ATGCN") | IUPAC_AMBIGUITY_CODES
 AMINO_ACIDS = set("ACDEFGHIKLMNPQRSTVWYBXZ*")
 
+BIOCHEMICAL_CATEGORIES: dict[str, set[str]] = {
+    "hydrophobic": set("AVILMFWPG"),
+    "polar": set("STCYNQ"),
+    "positively_charged": set("KRH"),
+    "negatively_charged": set("DE"),
+    "aromatic": set("FWY"),
+    "small": set("AGSCTPND"),
+    "flexible": set("GS"),
+}
+
 
 def detect_sequence_type(sequence: str) -> str:
     """Detect whether a sequence is DNA or protein."""
@@ -61,6 +71,14 @@ def clean_sequence(sequence: str, sequence_type: str = "dna") -> str:
     else:
         cleaned = re.sub(r"[^ATGCNRYSWKMBDHVatgcnryswkmbdhv]", "", joined).upper()
     return cleaned
+
+
+def parse_fasta_input(raw_text: str) -> tuple[str | None, str]:
+    """Return an optional FASTA header and the uncleaned sequence text."""
+    lines = raw_text.strip().splitlines()
+    if lines and lines[0].startswith(">"):
+        return lines[0][1:].strip(), "".join(lines[1:])
+    return None, raw_text.strip()
 
 
 def validate_sequence(
@@ -316,10 +334,41 @@ def amino_acid_distribution(sequence: str) -> dict[str, dict[str, int | float]]:
     }
 
 
+def categorize_amino_acids(sequence: str) -> dict[str, dict[str, int | float]]:
+    """Count residues in standard biochemical categories."""
+    total = len(sequence)
+    return {
+        category: {
+            "count": sum(residue in residues for residue in sequence),
+            "percentage": round(sum(residue in residues for residue in sequence) / total * 100, 2) if total else 0.0,
+        }
+        for category, residues in BIOCHEMICAL_CATEGORIES.items()
+    }
+
+
+def cysteine_analysis(sequence: str) -> dict[str, object]:
+    """Describe cysteine positions without predicting actual disulfide bonds."""
+    positions = [index + 1 for index, residue in enumerate(sequence) if residue == "C"]
+    distances = [right - left for left, right in zip(positions, positions[1:])]
+    return {
+        "count": len(positions),
+        "percentage": round(len(positions) / len(sequence) * 100, 2) if sequence else 0.0,
+        "positions": positions,
+        "distances_between_consecutive": distances,
+        "max_possible_disulfide_pairs": len(positions) // 2,
+        "note": (
+            "This is a maximum pairing count, not a disulfide-bond prediction. "
+            "Actual bonding depends on three-dimensional structure and cellular redox conditions."
+        ),
+    }
+
+
 def generate_protein_statistics(sequence: str) -> dict:
     """Compute protein sequence metrics."""
     dist = amino_acid_distribution(sequence)
     props = protein_properties(sequence)
+    categories = categorize_amino_acids(sequence)
+    cysteines = cysteine_analysis(sequence)
     return {
         "length": len(sequence),
         "amino_acid_distribution": dist,
@@ -327,6 +376,15 @@ def generate_protein_statistics(sequence: str) -> dict:
         "molecular_weight": props["molecular_weight"],
         "isoelectric_point": props["isoelectric_point"],
         "hydrophobicity": props["hydrophobicity"],
+        "gravy": props["gravy"],
+        "instability_index": props["instability_index"],
+        "aliphatic_index": props["aliphatic_index"],
+        "biochemical_categories": categories,
+        "cysteine_analysis": cysteines,
+        "charged_residues_count": (
+            categories["positively_charged"]["count"]
+            + categories["negatively_charged"]["count"]
+        ),
         "sequence_type": "protein",
     }
 
