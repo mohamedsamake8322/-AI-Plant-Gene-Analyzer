@@ -388,6 +388,7 @@ def _resolve_gene_ids_batch(batch: list[str], db: str) -> dict[str, str]:
     if not batch:
         return {}
     try:
+        _rate_limit_acquire()
         handle = Entrez.elink(dbfrom=db, db="gene", id=batch, timeout=NCBI_TIMEOUT)
         linksets = Entrez.read(handle)
         handle.close()
@@ -546,6 +547,7 @@ def fetch_genomic_by_gene(
     for offset in range(0, len(gene_ids), 200):
         batch = gene_ids[offset:offset + 200]
         try:
+            _rate_limit_acquire()
             handle = Entrez.esummary(db="gene", id=",".join(batch), timeout=NCBI_TIMEOUT)
             response = Entrez.read(handle)
             handle.close()
@@ -811,6 +813,7 @@ def fetch_by_term(
     )
     ids = []
     try:
+        _rate_limit_acquire()
         handle = Entrez.esearch(db=db, term=query, retmax=retmax, timeout=NCBI_TIMEOUT)
         res = Entrez.read(handle)
         handle.close()
@@ -840,7 +843,8 @@ def fetch_by_term(
         try:
             txt = _efetch_fasta_batch(batch, db=db, max_retries=3)
             records = parse_fasta_text(txt)
-            time.sleep(NCBI_SLEEP)
+            # (plus de time.sleep(NCBI_SLEEP) ici -- acquire() a deja
+            # cadence l'appel a l'interieur de _efetch_fasta_batch.)
         except Exception as e:
             print(f"Batch fetch failed for {batch[:5]}: {e}. Retrying in smaller chunks.")
             records = []
@@ -849,7 +853,7 @@ def fetch_by_term(
                 try:
                     txt = _efetch_fasta_batch(small_batch, db=db, max_retries=3)
                     records.extend(parse_fasta_text(txt))
-                    time.sleep(NCBI_SLEEP)
+                    # (acquire() deja applique a l'interieur de _efetch_fasta_batch)
                 except Exception as inner_exc:
                     print(f"  Small batch fetch failed for {small_batch[:3]}: {inner_exc}")
 

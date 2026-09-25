@@ -113,11 +113,18 @@ def _env_or_secret(name: str) -> str | None:
 
 
 DATABASE_URL = _env_or_secret("DATABASE_URL")
-DB_HOST = _env_or_secret("DB_HOST")
-DB_PORT = _env_or_secret("DB_PORT")
-DB_NAME = _env_or_secret("DB_NAME")
-DB_USER = _env_or_secret("DB_USER")
-DB_PASSWORD = _env_or_secret("DB_PASSWORD")
+if DATABASE_URL:
+    # DATABASE_URL suffit a lui seul (voir _resolve_database_url) -- pas
+    # besoin de resoudre les variables separees, et surtout pas besoin
+    # du repli Streamlit (qui importerait streamlit pour rien, meme dans
+    # un script en ligne de commande sans rapport avec l'app).
+    DB_HOST = DB_PORT = DB_NAME = DB_USER = DB_PASSWORD = None
+else:
+    DB_HOST = _env_or_secret("DB_HOST")
+    DB_PORT = _env_or_secret("DB_PORT")
+    DB_NAME = _env_or_secret("DB_NAME")
+    DB_USER = _env_or_secret("DB_USER")
+    DB_PASSWORD = _env_or_secret("DB_PASSWORD")
 
 
 def _resolve_database_url() -> str:

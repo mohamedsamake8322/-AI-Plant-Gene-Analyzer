@@ -6,8 +6,13 @@ via st.Page / st.navigation, instead of relying on filenames to derive
 them. Page content lives in views/home.py and views/independent_tools.py.
 """
 
+import sys
+from pathlib import Path
+
 import streamlit as st
 import config
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "1"))
 
 st.set_page_config(
     page_title=config.PAGE_TITLE,
