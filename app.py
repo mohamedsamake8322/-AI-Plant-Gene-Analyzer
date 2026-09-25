@@ -13,6 +13,7 @@ import streamlit as st
 import config
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "1"))
+sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))
 
 st.set_page_config(
     page_title=config.PAGE_TITLE,
