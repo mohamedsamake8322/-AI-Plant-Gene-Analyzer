@@ -510,30 +510,31 @@ def _write_genomic_cache(cache_path: Path, cache: dict[str, dict]) -> None:
 _REFERENCE_ASSEMBLY_CACHE: dict[str, str | None] = {}
 
 
-def _resolve_reference_assembly_name(species: str) -> str | None:
+def _resolve_reference_assembly_accession(species: str) -> str | None:
     """
     Determine the CURRENT RefSeq reference (or representative, as fallback)
-    assembly name for a species, by asking NCBI directly -- never hard-coded,
-    since NCBI periodically replaces which assembly is "the" reference for a
-    species (e.g. rice has had several: Build 4.0, IRGSP-1.0, AGIS1.0...).
+    assembly ACCESSION (e.g. "GCF_034140825.1") for a species, by asking
+    NCBI directly -- never hard-coded, since NCBI periodically replaces
+    which assembly is "the" reference for a species (confirmed in practice:
+    rice's reference moved from IRGSP-1.0 to AGIS1.0 between when this was
+    first written and when it was tested).
 
-    Why esummary + client-side filtering rather than a single esearch filter
-    string: the exact Entrez search-field syntax for "is this the reference
-    assembly" is not reliably documented/confirmed (the same class of risk
-    that previously broke wgs[Filter] combinations elsewhere in this file --
-    an unverified filter name can silently zero out a query instead of
-    erroring). esummary's RefSeq_category field, by contrast, is a plain
-    value ("reference genome" / "representative genome" / "na") we can
-    filter on in Python with certainty.
+    Returns the ACCESSION, not the assembly name: empirically verified
+    (diag_assembly_name.py) that db=gene's "[Assembly Name]" field returns
+    zero results even for a name copied verbatim from esummary, while
+    "[Assembly Accession]" works correctly and yields the expected
+    reduction in gene count (dropping genes from other submitted cultivar
+    assemblies). Filed here as the one confirmed-working field, rather
+    than guessed -- the same discipline as the wgs[Filter] fix earlier.
 
-    Returns None (and callers fall back to an unrestricted Gene search) if
-    no reference/representative assembly can be determined -- this must
-    never hard-fail a whole species collection.
+    Returns None (callers fall back to an unrestricted Gene search) if no
+    reference/representative assembly can be determined -- must never
+    hard-fail a whole species collection.
     """
     if species in _REFERENCE_ASSEMBLY_CACHE:
         return _REFERENCE_ASSEMBLY_CACHE[species]
 
-    assembly_name: str | None = None
+    accession: str | None = None
     try:
         _rate_limit_acquire()
         term = f'"{species}"[Organism] AND latest[filter]'
@@ -555,19 +556,19 @@ def _resolve_reference_assembly_name(species: str) -> str | None:
             representative = next((d for d in docs if d.get("RefSeq_category") == "representative genome"), None)
             chosen = reference or representative
             if chosen:
-                assembly_name = chosen.get("AssemblyName") or None
+                accession = chosen.get("AssemblyAccession") or None
     except Exception as exc:
         print(f"  [assembly lookup] Could not resolve reference assembly for {species}: {exc}")
 
-    if assembly_name:
-        print(f"  [assembly lookup] Reference assembly for {species} : {assembly_name}")
+    if accession:
+        print(f"  [assembly lookup] Reference assembly accession for {species} : {accession}")
     else:
         print(f"  [assembly lookup] No reference/representative assembly found for {species} "
               f"-- Gene search will NOT be restricted to a single assembly (may pull in genes "
               f"from many submitted cultivar assemblies, most without GO annotation).")
 
-    _REFERENCE_ASSEMBLY_CACHE[species] = assembly_name
-    return assembly_name
+    _REFERENCE_ASSEMBLY_CACHE[species] = accession
+    return accession
 
 
 def fetch_genomic_by_gene(
@@ -584,19 +585,19 @@ def fetch_genomic_by_gene(
     each locus. Cached records are reused across interrupted collection runs.
 
     The Gene search is restricted to the species' current reference (or
-    representative) assembly when one can be resolved -- without this, a
-    plain species-name search returns genes from EVERY submitted assembly
-    (often dozens of cultivars for a well-studied crop), the vast majority
-    of which are automated predictions with no GO/UniProt cross-reference
-    at all. Restricting to one well-annotated assembly trades a larger raw
-    gene count for a much higher proportion of genes that actually carry
-    usable annotation -- observed empirically: Oryza sativa's DNA-with-GO
-    ratio was roughly half that of Chenopodium quinoa's despite rice being
-    the better-annotated organism overall, consistent with this dilution.
+    representative) assembly ACCESSION when one can be resolved -- without
+    this, a plain species-name search returns genes from EVERY submitted
+    assembly (often dozens of cultivars for a well-studied crop), the vast
+    majority of which are automated predictions with no GO/UniProt
+    cross-reference at all. Restricting to one well-annotated assembly
+    trades a larger raw gene count for a much higher proportion of genes
+    that actually carry usable annotation -- confirmed empirically for rice
+    (102,125 genes unrestricted vs 39,387 restricted to GCF_034140825.1,
+    a 61% reduction consistent with the DNA-with-GO dilution observed).
     """
-    assembly_name = _resolve_reference_assembly_name(species)
-    if assembly_name:
-        term = f'"{species}"[Organism] AND "{assembly_name}"[Assembly name]'
+    accession = _resolve_reference_assembly_accession(species)
+    if accession:
+        term = f'"{species}"[Organism] AND "{accession}"[Assembly Accession]'
     else:
         term = f'"{species}"[Organism]'
     try:
@@ -609,14 +610,13 @@ def fetch_genomic_by_gene(
         return []
 
     gene_ids = [str(gene_id) for gene_id in result.get("IdList", [])]
-    if not gene_ids and assembly_name:
-        # Defensive fallback: if restricting to the named assembly somehow
-        # yields nothing (e.g. an [Assembly name] value that doesn't match
-        # Gene's indexing for this species), retry unrestricted rather than
-        # returning zero genes for the whole species.
+    if not gene_ids and accession:
+        # Defensive fallback: if restricting to the accession somehow
+        # yields nothing, retry unrestricted rather than returning zero
+        # genes for the whole species.
         print(f"  [assembly lookup] Restricted search for {species} returned 0 genes -- "
               f"retrying without the assembly restriction.")
-        term = f'\"{species}\"[Organism]'
+        term = f'"{species}"[Organism]'
         try:
             _rate_limit_acquire()
             handle = Entrez.esearch(db="gene", term=term, retmax=retmax, timeout=NCBI_TIMEOUT)
