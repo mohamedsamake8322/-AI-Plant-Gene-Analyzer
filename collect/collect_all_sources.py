@@ -19,7 +19,9 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import os
 import sys
+import tempfile
 import time
 import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -199,6 +201,18 @@ def _load_source_checkpoint(path: Path) -> list[dict]:
         return []
 
 
+def _checkpoint_can_be_reused(
+    path: Path,
+    records: list[dict],
+    requested_count: int,
+    reuse_nonempty_checkpoints: bool = False,
+) -> bool:
+    """Reuse a complete-size checkpoint, or any non-empty checkpoint in recovery mode."""
+    return len(records) >= requested_count or (
+        reuse_nonempty_checkpoints and path.exists() and bool(records)
+    )
+
+
 def _merge_source_records(existing: list[dict], incoming: list[dict]) -> list[dict]:
     """Merge source records by gene/accession while preserving first order."""
     merged: dict[str, dict] = {}
@@ -211,6 +225,43 @@ def _merge_source_records(existing: list[dict], incoming: list[dict]) -> list[di
         else:
             merged[key].update({k: v for k, v in record.items() if v not in (None, "", [], {})})
     return list(merged.values())
+
+
+def _accession_key(accession: object) -> str | None:
+    if not accession:
+        return None
+    return str(accession).strip().split(".", 1)[0]
+
+
+def _build_accession_index(records: dict[str, dict]) -> dict[str, str]:
+    """Index top-level and per-sequence accessions to their canonical gene key."""
+    index: dict[str, str] = {}
+    for gene_key, record in records.items():
+        accessions = {record.get("accession"), (record.get("external_links") or {}).get("accession")}
+        for sequence_accessions in (record.get("_source_accessions") or {}).values():
+            accessions.update(sequence_accessions)
+        for accession in accessions:
+            normalized = _accession_key(accession)
+            if normalized:
+                index.setdefault(normalized, gene_key)
+    return index
+
+
+def _build_uniprot_index(records: dict[str, dict]) -> dict[str, str]:
+    """Map UniProt accessions and retained external accession aliases to genes."""
+    index: dict[str, str] = {}
+    for gene_key, record in records.items():
+        links = record.get("external_links") or {}
+        candidates = (
+            gene_key,
+            links.get("accession"),
+            links.get("uniprot_accession"),
+            record.get("uniprot_accession"),
+        )
+        for candidate in candidates:
+            if candidate:
+                index[str(candidate)] = gene_key
+    return index
 
 
 def _completeness_score(nested: dict) -> float:
@@ -246,6 +297,15 @@ def restructure_to_schema(gid: str, flat: dict) -> dict:
     raw_seq = flat.pop("_raw_sequences", {})
     annotations = flat.get("annotations", {}) or {}
     sources_seen: set[str] = set()
+
+    if flat.get("source") == "uniprot" or flat.get("uniprot_accession") or any(
+        annotations.get(key)
+        for key in (
+            "function", "keywords", "keywords_detailed", "subcellular_location",
+            "annotation_score", "protein_existence", "reviewed",
+        )
+    ):
+        sources_seen.add("uniprot")
 
     go_terms = []
     for go in annotations.get("go_terms", []) or []:
@@ -295,9 +355,16 @@ def restructure_to_schema(gid: str, flat: dict) -> dict:
     if mapman_bins:
         sources_seen.add("plaza")
 
+    kegg_pathway_names = {
+        pathway.get("name")
+        for pathway in kegg_pathways
+        if isinstance(pathway, dict) and pathway.get("name")
+    }
     traits = []
     for t in flat.get("traits", []) or []:
         if isinstance(t, str):
+            if t in kegg_pathway_names:
+                continue
             if t.startswith("TF:") or t == "transcription_factor":
                 traits.append({"trait": t, "evidence": "tf annotation", "source": "planttfdb", "retrieved_at": now})
                 sources_seen.add("planttfdb")
@@ -318,11 +385,19 @@ def restructure_to_schema(gid: str, flat: dict) -> dict:
 
     has_seq = bool(raw_seq.get("dna") or raw_seq.get("rna") or raw_seq.get("protein"))
     default_origin = "sequence_backed" if has_seq else "annotation_only"
+    external_links = dict(flat.get("external_links") or {})
+    if flat.get("uniprot_accession"):
+        external_links["uniprot_accession"] = flat["uniprot_accession"]
+    elif flat.get("source") == "uniprot" and external_links.get("accession"):
+        external_links["uniprot_accession"] = external_links["accession"]
+    for sequence_type, accessions in (flat.get("_source_accessions") or {}).items():
+        if accessions:
+            external_links[f"ncbi_{sequence_type}_accessions"] = sorted(set(accessions))
     nested = {
         "gene_id": gid,
         "symbol": flat.get("symbol"),
         "organism": flat.get("organism"),
-        "common_name": flat.get("common_name", ""),
+        "common_name": flat.get("common_name") or flat.get("description", ""),
         # "sequence_backed" (default) = has (or was intended to have) a
         # real DNA/RNA/protein sequence from NCBI/UniProt/etc. "plaza_only"
         # = created purely from PLAZA family/ortholog data because no
@@ -331,7 +406,7 @@ def restructure_to_schema(gid: str, flat: dict) -> dict:
         # ID (PLAZA vs NCBI accession mismatch). See collect_all_sources.py
         # PLAZA block for why this trade-off was made.
         "origin": flat.get("origin", default_origin),
-        "external_links": flat.get("external_links", {}),
+        "external_links": external_links,
         "sequence": {
             "dna": raw_seq.get("dna"),
             "rna": raw_seq.get("rna"),
@@ -343,6 +418,8 @@ def restructure_to_schema(gid: str, flat: dict) -> dict:
             "gc_content": _gc_content(raw_seq.get("dna")),
         },
         "annotation": {
+            **annotations,
+            "protein_name": annotations.get("protein_name") or flat.get("description", ""),
             "go_terms": go_terms,
             "kegg_pathways": kegg_pathways,
             "ko_ids": ko_ids,
@@ -381,6 +458,46 @@ def restructure_to_schema(gid: str, flat: dict) -> dict:
     return nested
 
 
+def _write_species_json_atomic(
+    out_file: Path,
+    metadata: dict,
+    records: dict[str, dict],
+) -> None:
+    """Stream a species file to a sibling temporary file, then atomically replace it."""
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=out_file.parent,
+            prefix=f".{out_file.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary_path = handle.name
+            handle.write('{"metadata":')
+            json.dump(metadata, handle, ensure_ascii=False)
+            handle.write(',"genes":[')
+            first = True
+            for gene_id, record in records.items():
+                if not first:
+                    handle.write(",")
+                json.dump(restructure_to_schema(gene_id, record), handle, ensure_ascii=False)
+                first = False
+            handle.write("]}")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, out_file)
+        temporary_path = None
+    finally:
+        if temporary_path:
+            try:
+                os.unlink(temporary_path)
+            except FileNotFoundError:
+                pass
+
+
 def collect_species(
     plant: dict,
     sources: list[str],
@@ -389,6 +506,7 @@ def collect_species(
     skip_existing: bool = True,
     reviewed_only: bool = False,
     plaza_retmax: int | None = 300,
+    reuse_nonempty_checkpoints: bool = False,
 ) -> dict:
     """
     Collect all data for one species from all requested sources.
@@ -424,13 +542,19 @@ def collect_species(
                 temp_clean = temp_dir / f"ncbi_clean_{seq_type}.json"
                 checkpoint = checkpoint_dir / f"ncbi_{seq_type}.json"
                 cached_recs = _load_source_checkpoint(checkpoint)
-                if len(cached_recs) >= retmax:
+                if _checkpoint_can_be_reused(checkpoint, cached_recs, retmax, reuse_nonempty_checkpoints):
                     recs = cached_recs[:retmax]
                     print(f"  [resume] NCBI {seq_type}: {len(recs)} cached records reused")
                 else:
-                    fresh_recs = cmt.collect_and_clean_type(
-                        name, seq_type, retmax, temp_raw, temp_clean
-                    )
+                    try:
+                        fresh_recs = cmt.collect_and_clean_type(
+                            name, seq_type, retmax, temp_raw, temp_clean,
+                            raise_on_error=True,
+                        )
+                    except Exception as e:
+                        errors.append(f"ncbi_{seq_type}: {e}")
+                        print(f"  [NCBI] {seq_type.upper()} failed; continuing with other sequence types: {e}")
+                        continue
                     recs = _merge_source_records(cached_recs, fresh_recs)
                     _write_json_atomic(checkpoint, recs)
                     print(f"  [checkpoint] NCBI {seq_type}: {len(recs)} records saved")
@@ -460,12 +584,17 @@ def collect_species(
                     # to match against). Preserve it explicitly.
                     entry = all_records.setdefault(gid, {
                         "gene_id": gid,
-                        "accession": r.get("accession"),
+                        "accession": r.get("accession") or (r.get("external_links") or {}).get("accession"),
                         "symbol": r.get("symbol"),
                         "organism": r.get("organism", name),
                         "source": r.get("source", "ncbi"),
                     })
                     entry.setdefault("_raw_sequences", {})[seq_type] = r.get("sequence")
+                    accession = r.get("accession") or (r.get("external_links") or {}).get("accession")
+                    if accession:
+                        accessions = entry.setdefault("_source_accessions", {}).setdefault(seq_type, [])
+                        if accession not in accessions:
+                            accessions.append(accession)
                     ncbi_seen += 1
 
             source_counts["ncbi"] = ncbi_seen
@@ -478,7 +607,7 @@ def collect_species(
             cu = import_local_collect_module("collect_uniprot")
             checkpoint = checkpoint_dir / "uniprot.json"
             cached_recs = _load_source_checkpoint(checkpoint)
-            if len(cached_recs) >= retmax:
+            if _checkpoint_can_be_reused(checkpoint, cached_recs, retmax, reuse_nonempty_checkpoints):
                 recs = cached_recs[:retmax]
                 print(f"  [resume] UniProt: {len(recs)} cached records reused")
             else:
@@ -500,11 +629,7 @@ def collect_species(
             # collecteur"). Build {accession: existing_key} once so a
             # UniProt record can merge into an already-collected NCBI
             # record instead of always creating its own separate key.
-            accession_index: dict[str, str] = {}
-            for key, rec in all_records.items():
-                acc = rec.get("accession")
-                if acc:
-                    accession_index[acc] = key
+            accession_index = _build_accession_index(all_records)
 
             # Fallback: match by normalized gene symbol when no RefSeq
             # cross-reference is available.
@@ -529,8 +654,9 @@ def collect_species(
                 ext = r.get("external_links") or {}
                 target = gid
                 for candidate in (ext.get("refseq_nucleotide"), ext.get("refseq_protein")):
-                    if candidate and candidate in accession_index:
-                        target = accession_index[candidate]
+                    candidate_key = _accession_key(candidate)
+                    if candidate_key and candidate_key in accession_index:
+                        target = accession_index[candidate_key]
                         merged_via_ncbi += 1
                         break
 
@@ -557,9 +683,10 @@ def collect_species(
                     # contribution (GO terms, other xrefs, KEGG gene refs
                     # for the next block, traits) has to be folded in
                     # explicitly rather than relying on setdefault(gid, r).
-                    entry.setdefault("external_links", {}).update(
-                        {k: v for k, v in ext.items() if v}
-                    )
+                    entry_external = entry.setdefault("external_links", {})
+                    entry_external.update({k: v for k, v in ext.items() if v and k != "accession"})
+                    if ext.get("accession"):
+                        entry_external.setdefault("uniprot_accession", ext["accession"])
                     if r.get("annotations"):
                         entry.setdefault("annotations", {}).update(r["annotations"])
                     if r.get("traits"):
@@ -582,7 +709,7 @@ def collect_species(
             ck = import_local_collect_module("collect_kegg")
             checkpoint = checkpoint_dir / "kegg.json"
             cached_recs = _load_source_checkpoint(checkpoint)
-            if len(cached_recs) >= retmax:
+            if _checkpoint_can_be_reused(checkpoint, cached_recs, retmax, reuse_nonempty_checkpoints):
                 recs = cached_recs[:retmax]
                 print(f"  [resume] KEGG: {len(recs)} cached records reused")
             else:
@@ -642,7 +769,7 @@ def collect_species(
             ptf = import_local_collect_module("collect_planttfdb")
             checkpoint = checkpoint_dir / "planttfdb.json"
             cached_recs = _load_source_checkpoint(checkpoint)
-            if len(cached_recs) >= retmax:
+            if _checkpoint_can_be_reused(checkpoint, cached_recs, retmax, reuse_nonempty_checkpoints):
                 recs = cached_recs[:retmax]
                 print(f"  [resume] PlantTFDB: {len(recs)} cached records reused")
             else:
@@ -683,7 +810,11 @@ def collect_species(
             checkpoint = checkpoint_dir / "plaza.json"
             cached_recs = _load_source_checkpoint(checkpoint)
             unlimited_plaza = plaza_retmax in (None, 0)
-            if cached_recs and (unlimited_plaza or len(cached_recs) >= plaza_retmax):
+            if cached_recs and (
+                unlimited_plaza
+                or len(cached_recs) >= plaza_retmax
+                or reuse_nonempty_checkpoints
+            ):
                 recs = cached_recs if unlimited_plaza else cached_recs[:plaza_retmax]
                 print(f"  [resume] PLAZA: {len(recs)} cached records reused")
             else:
@@ -702,12 +833,7 @@ def collect_species(
             # IS their gene_id (all_records key) directly, and is also
             # duplicated (nested) under external_links.accession. Both are
             # indexed here; a record's own key is the reliable one.
-            uniprot_index: dict[str, str] = {}
-            for gid, rec in all_records.items():
-                uniprot_index[gid] = gid
-                nested = (rec.get("external_links") or {}).get("accession")
-                if nested:
-                    uniprot_index[nested] = gid
+            uniprot_index = _build_uniprot_index(all_records)
 
             # Strategy 2 (fallback): normalized gene symbol match.
             norm_index = {_norm(gid): gid for gid in all_records}
@@ -833,23 +959,17 @@ def collect_species(
             errors.append(f"pubmed: {e}")
 
     # ── Restructure + write output ──────────────────────────────────────────
-    nested_genes = [restructure_to_schema(gid, rec) for gid, rec in all_records.items()]
-
-    out_data = {
-        "metadata": {
-            "generated_at": datetime.utcnow().isoformat() + "Z",
-            "plant": name,
-            "common_name": plant.get("common", ""),
-            "category": plant.get("category", ""),
-            "sources": sources,
-            "source_counts": source_counts,
-            "count": len(nested_genes),
-            "errors": errors,
-        },
-        "genes": nested_genes,
+    output_metadata = {
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "plant": name,
+        "common_name": plant.get("common", ""),
+        "category": plant.get("category", ""),
+        "sources": sources,
+        "source_counts": source_counts,
+        "count": len(all_records),
+        "errors": errors,
     }
-    with out_file.open("w", encoding="utf-8") as f:
-         json.dump(out_data, f, ensure_ascii=False, indent=2)
+    _write_species_json_atomic(out_file, output_metadata, all_records)
 
     status = "ok" if not errors else "partial"
     return {
@@ -1012,6 +1132,11 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--skip-existing", action="store_true", default=True,
                         help="Skip species already collected (default: True)")
     parser.add_argument("--force", action="store_true", help="Re-collect even if output exists")
+    parser.add_argument(
+        "--reuse-nonempty-checkpoints",
+        action="store_true",
+        help="Recovery only: reuse any non-empty source checkpoint as complete, even below retmax.",
+    )
 
     # Output
     parser.add_argument("--out-dir", default=str(ROOT / "data" / "clean" / "species"),
@@ -1103,7 +1228,10 @@ def main(argv: list[str] | None = None) -> None:
         # Sequential (safer for debugging)
         for plant in plants:
             print(f"\n🌱 [{plant['name']}] Starting collection...")
-            result = collect_species(plant, sources, args.retmax, out_dir, skip_existing, args.reviewed_only, args.plaza_retmax)
+            result = collect_species(
+                plant, sources, args.retmax, out_dir, skip_existing,
+                args.reviewed_only, args.plaza_retmax, args.reuse_nonempty_checkpoints,
+            )
             results.append(result)
             _print_result(result)
     else:
@@ -1113,7 +1241,11 @@ def main(argv: list[str] | None = None) -> None:
 
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures = {
-                executor.submit(collect_species, plant, sources, args.retmax, out_dir, skip_existing, args.reviewed_only, args.plaza_retmax): plant
+                executor.submit(
+                    collect_species, plant, sources, args.retmax, out_dir,
+                    skip_existing, args.reviewed_only, args.plaza_retmax,
+                    args.reuse_nonempty_checkpoints,
+                ): plant
                 for plant in plants
             }
             for future in as_completed(futures):

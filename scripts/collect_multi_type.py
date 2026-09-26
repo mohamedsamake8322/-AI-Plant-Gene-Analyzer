@@ -32,12 +32,13 @@ def collect_and_clean_type(
     temp_raw: Path,
     temp_clean: Path,
     max_length: int | None = None,
+    raise_on_error: bool = False,
 ) -> list[dict]:
     """Collect one sequence type and return cleaned records.
 
-    Returns an empty list (instead of raising) if this particular sequence
-    type fails -- a problem collecting, say, protein sequences shouldn't
-    throw away DNA/RNA records already gathered for the same species.
+    Returns an empty list on failure for legacy callers. The multi-source
+    collector can set ``raise_on_error=True`` so it can record the failure
+    per sequence type without aborting other NCBI modalities.
 
     IMPORTANT: a plain species-name term search on NCBI's "nucleotide" db
     (used for seq_type="dna", where mrna_only=False) returns EVERYTHING
@@ -111,6 +112,8 @@ def collect_and_clean_type(
         pipeline_module.main(pipeline_argv)
     except Exception as e:
         print(f"  ✗ {seq_type.upper()} collection failed for '{plant_term}': {e}")
+        if raise_on_error:
+            raise RuntimeError(f"NCBI {seq_type} collection failed for '{plant_term}'") from e
         return []
 
     if temp_clean.exists():

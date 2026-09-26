@@ -17,7 +17,8 @@ PLANTTFDB_DL  = "http://planttfdb.gao-lab.org/download"
 # PlantTFDB species abbreviations
 SPECIES_MAP: dict[str, str] = {
     "arabidopsis thaliana": "Ath",
-    "oryza sativa": "Osa",
+    "oryza sativa subsp. indica": "Osi",
+    "oryza sativa subsp. japonica": "Osj",
     "zea mays": "Zma",
     "glycine max": "Gma",
     "solanum lycopersicum": "Sly",
@@ -76,6 +77,15 @@ def fetch_planttfdb(species: str, retmax: int = 300) -> list[dict]:
         List of normalized gene records with TF annotations
     """
     key = species.lower()
+    if key == "oryza sativa":
+        # PlantTFDB v5 publishes rice TFs as indica (Osi) and japonica (Osj).
+        # The former generic Osa core download path now returns 404; Osa is
+        # used by the separate extended repository for O. sativa f. spontanea.
+        records = []
+        for sp_code in ("Osi", "Osj"):
+            records.extend(_fetch_via_download(sp_code, species, retmax))
+        return records[:retmax]
+
     sp_code = SPECIES_MAP.get(key)
     is_extended = False
     if not sp_code:

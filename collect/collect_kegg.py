@@ -92,7 +92,7 @@ def _get_gene_list(org_code: str, limit: int) -> list[str]:
         return gene_ids
     except requests.RequestException as e:
         print(f"  [KEGG] Failed to get gene list: {e}")
-        return []
+        raise RuntimeError(f"KEGG gene-list request failed for {org_code}") from e
 
 
 def _fetch_gene_entry(org_code: str, gene_id: str, species: str) -> dict | None:
@@ -240,12 +240,9 @@ def _parse_kegg_flat(text: str, gene_id: str, org_code: str, species: str) -> di
             "sequence_available": bool(dna_sequence or protein_sequence),
         },
         "external_links": external,
-        # NOTE: this is a placeholder, not real phenotype data -- it just
-        # echoes the first 5 pathway names so the field isn't empty. Real
-        # trait data (verse/lodging, drought, etc.) needs the separate
-        # manually-curated, PubMed-sourced trait table mentioned elsewhere
-        # in this pipeline. Don't treat this as ground truth.
-        "traits": [p["name"] for p in pathways[:5]],
+        # KEGG pathways are kept in the dedicated `pathways` field; they are
+        # not phenotypic traits and must not be promoted as such downstream.
+        "traits": [],
         "expression_profiles": [],
         "publications": [],
     }

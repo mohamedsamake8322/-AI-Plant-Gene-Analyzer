@@ -64,11 +64,80 @@ def fetch_genes(conn) -> list[dict]:
         return [dict(row) for row in cur.fetchall()]
 
 
+def _normalize_dna_sequence(sequence: str) -> str:
+    return "".join(str(sequence).split()).upper()
+
+
+def deduplicate_by_sequence(genes: list[dict]) -> tuple[list[dict], dict[str, int]]:
+    """Collapse exact DNA duplicates and union their GO annotations.
+
+    A class is then counted once per distinct DNA sequence, not once for
+    every database record or accession carrying that same sequence.
+    Original gene IDs and organisms are retained for traceability.
+    """
+    groups: dict[str, dict] = {}
+    duplicates = 0
+    for gene in genes:
+        sequence = _normalize_dna_sequence(gene.get("sequence") or "")
+        if not sequence:
+            continue
+        digest = hashlib.sha256(sequence.encode("ascii", errors="strict")).hexdigest()
+        group = groups.get(digest)
+        if group is not None and group["sequence"] != sequence:
+            raise RuntimeError(f"SHA-256 collision while deduplicating sequence hash {digest}")
+        if group is None:
+            group = {
+                **gene,
+                "sequence": sequence,
+                "gene_ids": set(),
+                "organisms": set(),
+                "_go_terms": {},
+                "sequence_sha256": digest,
+            }
+            groups[digest] = group
+        else:
+            duplicates += 1
+
+        gene_id = gene.get("gene_id")
+        organism = gene.get("organism")
+        if gene_id:
+            group["gene_ids"].add(str(gene_id))
+        if organism:
+            group["organisms"].add(str(organism))
+        for term in gene.get("go_terms") or []:
+            if not isinstance(term, dict):
+                continue
+            term_id = term.get("id") or term.get("go_id")
+            if not term_id:
+                continue
+            term_key = json.dumps(term, sort_keys=True, ensure_ascii=False)
+            group["_go_terms"][term_key] = term
+
+    unique_genes = []
+    for group in groups.values():
+        gene_ids = sorted(group.pop("gene_ids"))
+        organisms = sorted(group.pop("organisms"))
+        group["_go_terms"] = group.pop("_go_terms")
+        group["gene_ids"] = gene_ids
+        group["organisms"] = organisms
+        group["gene_id"] = gene_ids[0] if gene_ids else group.get("gene_id")
+        group["organism"] = organisms[0] if len(organisms) == 1 else None
+        group["go_terms"] = list(group.pop("_go_terms").values())
+        unique_genes.append(group)
+
+    return unique_genes, {
+        "input_records": len(genes),
+        "unique_sequences": len(unique_genes),
+        "duplicate_records_collapsed": duplicates,
+    }
+
+
 def select_label_classes(
     genes: list[dict],
     max_classes: int,
     min_frequency_ratio: float,
     aspect_filter: set[str] | None,
+    min_examples_per_class: int | None = None,
 ) -> list[dict]:
     """
     Choisit dynamiquement les GO terms retenus comme classes d'entrainement.
@@ -85,7 +154,13 @@ def select_label_classes(
       que les GO terms de cet aspect.
     """
     n_genes = len(genes)
-    min_count = max(10, math.ceil(min_frequency_ratio * n_genes))
+    if min_examples_per_class is not None and min_examples_per_class < 1:
+        raise ValueError("min_examples_per_class must be at least 1")
+    min_count = (
+        min_examples_per_class
+        if min_examples_per_class is not None
+        else max(10, math.ceil(min_frequency_ratio * n_genes))
+    )
 
     counter: Counter[str] = Counter()
     id_to_name: dict[str, str] = {}
@@ -109,8 +184,12 @@ def select_label_classes(
     selected = eligible[:max_classes]
 
     print(f"Genes ADN exploitables    : {n_genes}")
-    print(f"Seuil minimal calcule     : {min_count} occurrences "
-          f"({min_frequency_ratio*100:.2f}% de {n_genes})")
+    threshold_description = (
+        f"{min_count} occurrences (seuil absolu explicite)"
+        if min_examples_per_class is not None
+        else f"{min_count} occurrences ({min_frequency_ratio*100:.2f}% de {n_genes})"
+    )
+    print(f"Seuil minimal calcule     : {threshold_description}")
     print(f"Classes eligibles (>=seuil) : {len(eligible)}")
     print(f"Classes retenues (plafond)  : {len(selected)}")
     if len(eligible) > max_classes:
@@ -137,9 +216,12 @@ def build_dataset(genes: list[dict], label_classes: list[dict]) -> list[dict]:
 
         dataset.append({
             "gene_id": g["gene_id"],
-            "organism": g["organism"],
+            "gene_ids": g.get("gene_ids", [g["gene_id"]]),
+            "organisms": g.get("organisms", [g.get("organism")]),
+            "organism": g.get("organism"),
             "symbol": g.get("symbol"),
             "sequence": g["sequence"],
+            "sequence_sha256": g.get("sequence_sha256"),
             "sequence_type": g["sequence_type"],
             "labels": sorted(gene_go_ids),  # GO IDs, pas les noms
         })
@@ -162,6 +244,15 @@ def main() -> None:
                    help="Plafond du nombre de classes GO retenues")
     p.add_argument("--min-frequency-ratio", type=float, default=0.005,
                    help="Seuil relatif (proportion des genes ADN) pour retenir un GO term")
+    p.add_argument(
+        "--min-examples-per-class",
+        type=int,
+        default=None,
+        help=(
+            "Seuil absolu par classe après déduplication exacte des séquences ADN. "
+            "S'il est fourni, il remplace --min-frequency-ratio. Exemples : 5 ou 50."
+        ),
+    )
     p.add_argument("--aspect", nargs="*", default=None,
                    choices=["molecular_function", "biological_process", "cellular_component"],
                    help="Restreindre aux aspects GO donnes (ex: --aspect biological_process)")
@@ -170,13 +261,21 @@ def main() -> None:
 
     conn = psycopg2.connect(args.dsn)
     try:
-        genes = fetch_genes(conn)
+        source_genes = fetch_genes(conn)
     finally:
         conn.close()
 
+        genes, deduplication = deduplicate_by_sequence(source_genes)
+        print(
+            f"Dedup ADN exact           : {deduplication['input_records']} records -> "
+            f"{deduplication['unique_sequences']} séquences uniques "
+            f"({deduplication['duplicate_records_collapsed']} doublons regroupés)"
+        )
+
     aspect_filter = set(args.aspect) if args.aspect else None
     label_classes = select_label_classes(
-        genes, args.max_classes, args.min_frequency_ratio, aspect_filter,
+            genes, args.max_classes, args.min_frequency_ratio, aspect_filter,
+            min_examples_per_class=args.min_examples_per_class,
     )
     dataset = build_dataset(genes, label_classes)
 
@@ -187,11 +286,13 @@ def main() -> None:
             "metadata": {
                 "extracted_at": datetime.now(timezone.utc).isoformat(),
                 "dataset_version": _classes_hash(label_classes),
-                "total_dna_genes_source": len(genes),
+                "total_dna_gene_records_source": len(source_genes),
+                "sequence_deduplication": deduplication,
                 "label_classes": label_classes,  # [{"id", "name", "count"}, ...]
                 "n_classes": len(label_classes),
                 "aspect_filter": sorted(aspect_filter) if aspect_filter else None,
                 "min_frequency_ratio": args.min_frequency_ratio,
+                "min_examples_per_class": args.min_examples_per_class,
                 "max_classes": args.max_classes,
             },
             "genes": dataset,

@@ -507,6 +507,69 @@ def _write_genomic_cache(cache_path: Path, cache: dict[str, dict]) -> None:
                 pass
 
 
+_REFERENCE_ASSEMBLY_CACHE: dict[str, str | None] = {}
+
+
+def _resolve_reference_assembly_name(species: str) -> str | None:
+    """
+    Determine the CURRENT RefSeq reference (or representative, as fallback)
+    assembly name for a species, by asking NCBI directly -- never hard-coded,
+    since NCBI periodically replaces which assembly is "the" reference for a
+    species (e.g. rice has had several: Build 4.0, IRGSP-1.0, AGIS1.0...).
+
+    Why esummary + client-side filtering rather than a single esearch filter
+    string: the exact Entrez search-field syntax for "is this the reference
+    assembly" is not reliably documented/confirmed (the same class of risk
+    that previously broke wgs[Filter] combinations elsewhere in this file --
+    an unverified filter name can silently zero out a query instead of
+    erroring). esummary's RefSeq_category field, by contrast, is a plain
+    value ("reference genome" / "representative genome" / "na") we can
+    filter on in Python with certainty.
+
+    Returns None (and callers fall back to an unrestricted Gene search) if
+    no reference/representative assembly can be determined -- this must
+    never hard-fail a whole species collection.
+    """
+    if species in _REFERENCE_ASSEMBLY_CACHE:
+        return _REFERENCE_ASSEMBLY_CACHE[species]
+
+    assembly_name: str | None = None
+    try:
+        _rate_limit_acquire()
+        term = f'"{species}"[Organism] AND latest[filter]'
+        handle = Entrez.esearch(db="assembly", term=term, retmax=200, timeout=NCBI_TIMEOUT)
+        result = Entrez.read(handle)
+        handle.close()
+        assembly_ids = result.get("IdList", [])
+
+        if assembly_ids:
+            _rate_limit_acquire()
+            handle = Entrez.esummary(db="assembly", id=",".join(assembly_ids), timeout=NCBI_TIMEOUT)
+            summaries = Entrez.read(handle)
+            handle.close()
+            docs = summaries.get("DocumentSummarySet", {}).get("DocumentSummary", [])
+
+            # Prefer an explicit "reference genome"; accept "representative
+            # genome" only if no true reference is flagged for this species.
+            reference = next((d for d in docs if d.get("RefSeq_category") == "reference genome"), None)
+            representative = next((d for d in docs if d.get("RefSeq_category") == "representative genome"), None)
+            chosen = reference or representative
+            if chosen:
+                assembly_name = chosen.get("AssemblyName") or None
+    except Exception as exc:
+        print(f"  [assembly lookup] Could not resolve reference assembly for {species}: {exc}")
+
+    if assembly_name:
+        print(f"  [assembly lookup] Reference assembly for {species} : {assembly_name}")
+    else:
+        print(f"  [assembly lookup] No reference/representative assembly found for {species} "
+              f"-- Gene search will NOT be restricted to a single assembly (may pull in genes "
+              f"from many submitted cultivar assemblies, most without GO annotation).")
+
+    _REFERENCE_ASSEMBLY_CACHE[species] = assembly_name
+    return assembly_name
+
+
 def fetch_genomic_by_gene(
     species: str,
     retmax: int = 300,
@@ -519,8 +582,23 @@ def fetch_genomic_by_gene(
     coordinates on a chromosome/scaffold, not as a standalone accession. This
     function resolves Gene IDs and GenomicInfo in batches, then efetches only
     each locus. Cached records are reused across interrupted collection runs.
+
+    The Gene search is restricted to the species' current reference (or
+    representative) assembly when one can be resolved -- without this, a
+    plain species-name search returns genes from EVERY submitted assembly
+    (often dozens of cultivars for a well-studied crop), the vast majority
+    of which are automated predictions with no GO/UniProt cross-reference
+    at all. Restricting to one well-annotated assembly trades a larger raw
+    gene count for a much higher proportion of genes that actually carry
+    usable annotation -- observed empirically: Oryza sativa's DNA-with-GO
+    ratio was roughly half that of Chenopodium quinoa's despite rice being
+    the better-annotated organism overall, consistent with this dilution.
     """
-    term = f'"{species}"[Organism]'
+    assembly_name = _resolve_reference_assembly_name(species)
+    if assembly_name:
+        term = f'"{species}"[Organism] AND "{assembly_name}"[Assembly name]'
+    else:
+        term = f'"{species}"[Organism]'
     try:
         _rate_limit_acquire()
         handle = Entrez.esearch(db="gene", term=term, retmax=retmax, timeout=NCBI_TIMEOUT)
@@ -531,6 +609,24 @@ def fetch_genomic_by_gene(
         return []
 
     gene_ids = [str(gene_id) for gene_id in result.get("IdList", [])]
+    if not gene_ids and assembly_name:
+        # Defensive fallback: if restricting to the named assembly somehow
+        # yields nothing (e.g. an [Assembly name] value that doesn't match
+        # Gene's indexing for this species), retry unrestricted rather than
+        # returning zero genes for the whole species.
+        print(f"  [assembly lookup] Restricted search for {species} returned 0 genes -- "
+              f"retrying without the assembly restriction.")
+        term = f'\"{species}\"[Organism]'
+        try:
+            _rate_limit_acquire()
+            handle = Entrez.esearch(db="gene", term=term, retmax=retmax, timeout=NCBI_TIMEOUT)
+            result = Entrez.read(handle)
+            handle.close()
+            gene_ids = [str(gene_id) for gene_id in result.get("IdList", [])]
+        except Exception as exc:
+            print(f"Gene search failed for {species}: {exc}")
+            return []
+
     if not gene_ids:
         print(f"No Gene records for {species}")
         return []
