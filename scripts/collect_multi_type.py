@@ -107,6 +107,8 @@ def collect_and_clean_type(
     ]
     if mrna_only:
         pipeline_argv.append("--mrna-only")
+    if raise_on_error:
+        pipeline_argv.append("--fail-on-ncbi-error")
 
     try:
         pipeline_module.main(pipeline_argv)

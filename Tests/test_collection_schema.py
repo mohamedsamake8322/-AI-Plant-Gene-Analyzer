@@ -3,7 +3,15 @@ import json
 import pytest
 
 from collect import collect_all_sources
-from collect.collect_all_sources import _build_accession_index, _build_uniprot_index, restructure_to_schema
+from collect.collect_all_sources import (
+    _build_accession_index,
+    _build_uniprot_index,
+    _accept_ncbi_record,
+    _preflight_quality_gate,
+    _source_quality_report,
+    restructure_to_schema,
+)
+from scripts.collect_ncbi import make_record_from_fasta
 from collect.collect_kegg import _parse_kegg_flat
 
 
@@ -43,6 +51,51 @@ def test_restructure_preserves_uniprot_functional_annotations():
     assert record["annotation"]["protein_existence"] == "Evidence at protein level"
     assert record["annotation"]["reviewed"] is True
     assert record["annotation"]["go_terms"][0]["id"] == "GO:0000001"
+
+
+def test_ncbi_records_keep_sequence_origin_and_evidence():
+    genomic = make_record_from_fasta(
+        "NC_000001.1 Arabidopsis thaliana locus",
+        "ATGC",
+        resolved_gene_id="1",
+        organism="Arabidopsis thaliana",
+    )
+    transcript = make_record_from_fasta(
+        "NM_000001.1 Arabidopsis thaliana transcript",
+        "ATGC",
+        organism="Arabidopsis thaliana",
+    )
+
+    assert genomic["sequence_origin"] == "genomic_locus"
+    assert genomic["evidence_code"] == "NCBI_GENE_LINK"
+    assert transcript["sequence_origin"] == "transcript_only"
+
+
+def test_source_quality_report_explains_zero_and_failure():
+    report = _source_quality_report(
+        ["ncbi", "kegg", "ensembl"],
+        {"ncbi": 3, "kegg": 0},
+        ["kegg: request failed"],
+    )
+
+    assert report["ncbi"]["status"] == "success"
+    assert report["kegg"]["status"] == "request_failed"
+    assert report["ensembl"]["status"] == "unsupported"
+    assert report["ncbi"]["records_accepted"] == 3
+
+
+def test_preflight_keeps_sequence_types_separate():
+    gate = _preflight_quality_gate({
+        "g1": {"_raw_sequences": {"dna": "ATGC", "protein": "MPEP"}},
+    })
+
+    assert gate["passed"] is True
+    assert gate["sequence_records_by_type"] == {"dna": 1, "rna": 0, "protein": 1}
+
+
+def test_ncbi_accession_only_dna_is_not_treated_as_gene_locus():
+    record = make_record_from_fasta("AB123456.1 plant sequence", "ATGC")
+    assert not _accept_ncbi_record(record, "dna")
 
 
 def test_accession_index_matches_versioned_nucleotide_cross_references():

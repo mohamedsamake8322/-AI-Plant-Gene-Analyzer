@@ -282,6 +282,68 @@ def _completeness_score(nested: dict) -> float:
     return round(sum(checks) / len(checks), 2)
 
 
+def _source_quality_report(
+    sources: list[str], source_counts: dict[str, int], errors: list[str]
+) -> dict[str, dict]:
+    """Return an explicit outcome for every requested source."""
+    report: dict[str, dict] = {}
+    for source in sources:
+        source_errors = [
+            error for error in errors
+            if error.startswith(f"{source}:") or error.startswith(f"{source}_")
+        ]
+        fetched = source_counts.get(f"{source}_fetched", source_counts.get(source, 0))
+        merged = source_counts.get(f"{source}_merged", source_counts.get(source, 0))
+        rejected = source_counts.get(f"{source}_rejected", 0)
+        if source == "ensembl":
+            status = "unsupported"
+            reason = "bulk-per-species implementation is a stub"
+        elif source_errors:
+            status = "partial" if fetched else "request_failed"
+            reason = "; ".join(source_errors)
+        elif not fetched:
+            status = "no_match"
+            reason = "source returned no usable records"
+        else:
+            status = "success"
+            reason = ""
+        report[source] = {
+            "status": status,
+            "records_fetched": fetched,
+            "records_accepted": source_counts.get(f"{source}_accepted", fetched - rejected),
+            "records_merged": merged,
+            "records_rejected": rejected,
+            "reason": reason,
+        }
+    return report
+
+
+def _preflight_quality_gate(records: dict[str, dict]) -> dict:
+    """Summarize sequence separation before records are serialized."""
+    sequence_counts = {kind: 0 for kind in ("dna", "rna", "protein")}
+    mixed_sequence_records = 0
+    for record in records.values():
+        raw = record.get("_raw_sequences") or {}
+        present = [kind for kind in sequence_counts if raw.get(kind)]
+        for kind in present:
+            sequence_counts[kind] += 1
+        mixed_sequence_records += len(present) > 1
+    return {
+        "passed": True,
+        "sequence_types_separated": True,
+        "sequence_records_by_type": sequence_counts,
+        "mixed_sequence_records": mixed_sequence_records,
+        "rule": "DNA, RNA, and protein remain separate fields under sequence",
+    }
+
+
+def _accept_ncbi_record(record: dict, sequence_type: str) -> bool:
+    """Require a GeneID link for genomic DNA records before storage."""
+    if sequence_type != "dna":
+        return True
+    return str(record.get("gene_id", "")).startswith("GeneID:")
+
+
 def restructure_to_schema(gid: str, flat: dict) -> dict:
     """
     Turn one flat, source-merged gene record into the nested schema:
@@ -406,6 +468,14 @@ def restructure_to_schema(gid: str, flat: dict) -> dict:
         # ID (PLAZA vs NCBI accession mismatch). See collect_all_sources.py
         # PLAZA block for why this trade-off was made.
         "origin": flat.get("origin", default_origin),
+        "sequence_origin": flat.get("sequence_origin") or (
+            "genomic_locus" if raw_seq.get("dna") else
+            "transcript_only" if raw_seq.get("rna") else
+            "protein" if raw_seq.get("protein") else "annotation_only"
+        ),
+        "evidence_code": flat.get("evidence_code") or (
+            "GO_ANNOTATION" if go_terms else "SEQUENCE_ONLY"
+        ),
         "external_links": external_links,
         "sequence": {
             "dna": raw_seq.get("dna"),
@@ -507,6 +577,7 @@ def collect_species(
     reviewed_only: bool = False,
     plaza_retmax: int | None = 300,
     reuse_nonempty_checkpoints: bool = False,
+    quality_gate_mode: str = "report",
 ) -> dict:
     """
     Collect all data for one species from all requested sources.
@@ -558,9 +629,14 @@ def collect_species(
                     recs = _merge_source_records(cached_recs, fresh_recs)
                     _write_json_atomic(checkpoint, recs)
                     print(f"  [checkpoint] NCBI {seq_type}: {len(recs)} records saved")
+                source_counts["ncbi_fetched"] = source_counts.get("ncbi_fetched", 0) + len(recs)
                 for r in recs:
                     gid = r.get("gene_id") or r.get("symbol")
                     if not gid:
+                        source_counts["ncbi_rejected"] = source_counts.get("ncbi_rejected", 0) + 1
+                        continue
+                    if not _accept_ncbi_record(r, seq_type):
+                        source_counts["ncbi_rejected"] = source_counts.get("ncbi_rejected", 0) + 1
                         continue
                     # BUGFIX: this used to be `if gid not in all_records:
                     # all_records[gid] = r`, which only kept the FIRST
@@ -588,7 +664,11 @@ def collect_species(
                         "symbol": r.get("symbol"),
                         "organism": r.get("organism", name),
                         "source": r.get("source", "ncbi"),
+                        "sequence_origin": r.get("sequence_origin"),
+                        "evidence_code": r.get("evidence_code"),
                     })
+                    entry.setdefault("sequence_origin", r.get("sequence_origin"))
+                    entry.setdefault("evidence_code", r.get("evidence_code"))
                     entry.setdefault("_raw_sequences", {})[seq_type] = r.get("sequence")
                     accession = r.get("accession") or (r.get("external_links") or {}).get("accession")
                     if accession:
@@ -596,8 +676,10 @@ def collect_species(
                         if accession not in accessions:
                             accessions.append(accession)
                     ncbi_seen += 1
+                    source_counts["ncbi_accepted"] = source_counts.get("ncbi_accepted", 0) + 1
 
             source_counts["ncbi"] = ncbi_seen
+            source_counts["ncbi_merged"] = ncbi_seen
         except Exception as e:
             errors.append(f"ncbi: {e}")
 
@@ -698,6 +780,9 @@ def collect_species(
                     # block below, and useful for the app/API either way.
                     entry.setdefault("uniprot_accession", gid)
             source_counts["uniprot"] = len(all_records) - before
+            source_counts["uniprot_fetched"] = len(recs)
+            source_counts["uniprot_merged"] = len(all_records) - before
+            source_counts["uniprot_accepted"] = len(recs)
             source_counts["uniprot_merged_via_ncbi"] = merged_via_ncbi
             source_counts["uniprot_merged_via_symbol"] = merged_via_symbol
         except Exception as e:
@@ -759,6 +844,9 @@ def collect_species(
                     if seqs.get("protein"):
                         raw.setdefault("protein", seqs["protein"])
             source_counts["kegg"] = len(all_records) - before
+            source_counts["kegg_fetched"] = len(recs)
+            source_counts["kegg_merged"] = len(all_records) - before
+            source_counts["kegg_accepted"] = len(recs)
             source_counts["kegg_merged_via_uniprot"] = merged_via_uniprot
         except Exception as e:
             errors.append(f"kegg: {e}")
@@ -966,17 +1054,34 @@ def collect_species(
         "category": plant.get("category", ""),
         "sources": sources,
         "source_counts": source_counts,
+        "source_quality": _source_quality_report(sources, source_counts, errors),
+        "quality_gate": _preflight_quality_gate(all_records),
         "count": len(all_records),
         "errors": errors,
     }
+    source_failures = [
+        source for source, result in output_metadata["source_quality"].items()
+        if result["status"] != "success"
+    ]
+    output_metadata["quality_gate"]["source_failures"] = source_failures
+    output_metadata["quality_gate"]["passed"] = not source_failures
+    if quality_gate_mode == "strict" and source_failures:
+        errors.append(
+            "quality_gate: strict mode rejected sources: " + ", ".join(source_failures)
+        )
+        output_metadata["errors"] = errors
     _write_species_json_atomic(out_file, output_metadata, all_records)
 
     status = "ok" if not errors else "partial"
+    if quality_gate_mode == "strict" and source_failures:
+        status = "error"
     return {
         "plant": name,
         "status": status,
         "count": len(all_records),
         "source_counts": source_counts,
+        "source_quality": output_metadata["source_quality"],
+        "quality_gate": output_metadata["quality_gate"],
         "errors": errors,
         "file": str(out_file),
     }
@@ -1137,6 +1242,12 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Recovery only: reuse any non-empty source checkpoint as complete, even below retmax.",
     )
+    parser.add_argument(
+        "--quality-gate",
+        choices=["report", "strict"],
+        default="report",
+        help="report keeps collecting with diagnostics; strict marks any non-success source as failed.",
+    )
 
     # Output
     parser.add_argument("--out-dir", default=str(ROOT / "data" / "clean" / "species"),
@@ -1231,6 +1342,7 @@ def main(argv: list[str] | None = None) -> None:
             result = collect_species(
                 plant, sources, args.retmax, out_dir, skip_existing,
                 args.reviewed_only, args.plaza_retmax, args.reuse_nonempty_checkpoints,
+                args.quality_gate,
             )
             results.append(result)
             _print_result(result)
@@ -1245,6 +1357,7 @@ def main(argv: list[str] | None = None) -> None:
                     collect_species, plant, sources, args.retmax, out_dir,
                     skip_existing, args.reviewed_only, args.plaza_retmax,
                     args.reuse_nonempty_checkpoints,
+                    args.quality_gate,
                 ): plant
                 for plant in plants
             }

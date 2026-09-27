@@ -72,6 +72,8 @@ def build_collect_args(args: argparse.Namespace, output_path: Path) -> list[str]
         collect_args += ["--max-length", str(args.max_length)]
     if args.mrna_only:
         collect_args.append("--mrna-only")
+    if args.fail_on_ncbi_error:
+        collect_args.append("--fail-on-ncbi-error")
     if not args.plants_only:
         collect_args.append("--no-plants-only")
     if args.max_data:
@@ -115,6 +117,10 @@ def main(argv: list[str] | None = None) -> None:
         ),
     )
     parser.add_argument("--mrna-only", action="store_true", help="Restrict NCBI search to mRNA sequences")
+    parser.add_argument(
+        "--fail-on-ncbi-error", action="store_true",
+        help="Fail instead of returning an empty result when the NCBI request errors.",
+    )
     parser.add_argument(
         "--plants-only", dest="plants_only", action="store_true", default=True,
         help="Restrict GEO/NCBI results to plant organisms (default: on)",

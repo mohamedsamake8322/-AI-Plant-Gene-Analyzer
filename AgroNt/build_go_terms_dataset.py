@@ -117,7 +117,6 @@ def deduplicate_by_sequence(genes: list[dict]) -> tuple[list[dict], dict[str, in
     for group in groups.values():
         gene_ids = sorted(group.pop("gene_ids"))
         organisms = sorted(group.pop("organisms"))
-        group["_go_terms"] = group.pop("_go_terms")
         group["gene_ids"] = gene_ids
         group["organisms"] = organisms
         group["gene_id"] = gene_ids[0] if gene_ids else group.get("gene_id")
@@ -145,9 +144,8 @@ def select_label_classes(
     frequence decroissante -- l'ID est la cle stable, le nom n'est la que
     pour la lisibilite humaine (rapports, logs, UI).
 
-    - min_frequency_ratio : seuil relatif au nombre TOTAL de genes ADN du
-      run (pas un compte absolu fige) -- s'adapte automatiquement si la
-      base grossit.
+    - min_frequency_ratio : seuil relatif au nombre de séquences ADN uniques
+      portant un GO après la déduplication exacte.
     - max_classes : plafond dur, pour eviter l'explosion du nombre de
       classes quand le volume de genes augmente fortement.
     - aspect_filter : si fourni (ex. {"biological_process"}), ne garde
@@ -265,19 +263,25 @@ def main() -> None:
     finally:
         conn.close()
 
-        genes, deduplication = deduplicate_by_sequence(source_genes)
-        print(
-            f"Dedup ADN exact           : {deduplication['input_records']} records -> "
-            f"{deduplication['unique_sequences']} séquences uniques "
-            f"({deduplication['duplicate_records_collapsed']} doublons regroupés)"
-        )
+    genes, deduplication = deduplicate_by_sequence(source_genes)
+    print(
+        f"Dedup ADN exact           : {deduplication['input_records']} records -> "
+        f"{deduplication['unique_sequences']} séquences uniques "
+        f"({deduplication['duplicate_records_collapsed']} doublons regroupés)"
+    )
 
     aspect_filter = set(args.aspect) if args.aspect else None
     label_classes = select_label_classes(
-            genes, args.max_classes, args.min_frequency_ratio, aspect_filter,
-            min_examples_per_class=args.min_examples_per_class,
+        genes, args.max_classes, args.min_frequency_ratio, aspect_filter,
+        min_examples_per_class=args.min_examples_per_class,
     )
     dataset = build_dataset(genes, label_classes)
+
+    resolved_min_examples = (
+        args.min_examples_per_class
+        if args.min_examples_per_class is not None
+        else max(10, math.ceil(args.min_frequency_ratio * len(genes)))
+    )
 
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -286,7 +290,7 @@ def main() -> None:
             "metadata": {
                 "extracted_at": datetime.now(timezone.utc).isoformat(),
                 "dataset_version": _classes_hash(label_classes),
-                "total_dna_gene_records_source": len(source_genes),
+                "dna_go_records_before_dedup": deduplication["input_records"],
                 "sequence_deduplication": deduplication,
                 "label_classes": label_classes,  # [{"id", "name", "count"}, ...]
                 "n_classes": len(label_classes),
@@ -294,6 +298,14 @@ def main() -> None:
                 "min_frequency_ratio": args.min_frequency_ratio,
                 "min_examples_per_class": args.min_examples_per_class,
                 "max_classes": args.max_classes,
+                "quality_policy": {
+                    "sequence_unit": "unique_exact_dna_sequence",
+                    "minimum_examples_per_class": resolved_min_examples,
+                    "classes_selected": len(label_classes),
+                    "classes_below_minimum_excluded": True,
+                    "class_cap_applied": len(label_classes) >= args.max_classes,
+                    "duplicate_sequences_counted_once": True,
+                },
             },
             "genes": dataset,
         }, ensure_ascii=False, indent=2),

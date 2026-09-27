@@ -11,6 +11,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -58,6 +59,7 @@ def analyze_file(path: Path) -> dict[str, Any]:
     nucleotide_accessions = {"dna": set(), "rna": set()}
     dna_gene_ids: set[str] = set()
     unlabeled_go_xrefs: list[set[str]] = []
+    go_labels_by_dna_hash: dict[str, set[str]] = {}
 
     with path.open("rb") as handle:
         for record in ijson.items(handle, "genes.item"):
@@ -89,6 +91,11 @@ def analyze_file(path: Path) -> dict[str, Any]:
             if not terms:
                 continue
             counts["records_with_go"] += 1
+            if has_dna:
+                sequence = "".join(str((record.get("sequence") or {}).get("dna") or "").split()).upper()
+                sequence_hash = hashlib.sha256(sequence.encode("ascii", errors="strict")).hexdigest()
+                labels = go_labels_by_dna_hash.setdefault(sequence_hash, set())
+                labels.update(str(term.get("id") or term.get("go_id")) for term in terms)
             sources = {str(source) for source in (record.get("sources_summary") or [])}
             if has_dna:
                 group = "go_with_dna"
@@ -113,6 +120,12 @@ def analyze_file(path: Path) -> dict[str, Any]:
     xref_count = sum(bool(refs) for refs in unlabeled_go_xrefs)
     xref_matches_dna = sum(bool(refs & nucleotide_accessions["dna"]) for refs in unlabeled_go_xrefs)
     xref_matches_rna = sum(bool(refs & nucleotide_accessions["rna"]) for refs in unlabeled_go_xrefs)
+    unique_sequence_class_counts = Counter(
+        label
+        for labels in go_labels_by_dna_hash.values()
+        for label in labels
+    )
+    unique_support_values = list(unique_sequence_class_counts.values())
     result = {
         "species_file": str(path),
         "records": dict(counts),
@@ -128,6 +141,18 @@ def analyze_file(path: Path) -> dict[str, Any]:
         "dna_records_with_gene_id": len(dna_gene_ids),
         "dna_records_with_accession": len(nucleotide_accessions["dna"]),
         "rna_records_with_accession": len(nucleotide_accessions["rna"]),
+        "exact_sequence_deduplication": {
+            "dna_sequences_with_go_before_dedup": counts["go_with_dna"],
+            "unique_dna_sequences_with_go": len(go_labels_by_dna_hash),
+            "duplicate_dna_records_with_go_collapsed": max(
+                0, counts["go_with_dna"] - len(go_labels_by_dna_hash)
+            ),
+            "go_classes_after_sequence_dedup": len(unique_sequence_class_counts),
+            "classes_with_at_least_5_unique_dna_sequences": sum(value >= 5 for value in unique_support_values),
+            "classes_with_at_least_20_unique_dna_sequences": sum(value >= 20 for value in unique_support_values),
+            "classes_with_at_least_50_unique_dna_sequences": sum(value >= 50 for value in unique_support_values),
+            "classes_with_at_least_100_unique_dna_sequences": sum(value >= 100 for value in unique_support_values),
+        },
     }
     return result
 
@@ -143,6 +168,7 @@ def main() -> int:
             print(f"{key}: {value}")
         for key, value in result["cross_reference_recovery"].items():
             print(f"{key}: {value}")
+        print(f"exact_sequence_deduplication: {result['exact_sequence_deduplication']}")
         print("GO evidence groups:")
         for group, codes in result["go_evidence_codes"].items():
             print(f"  {group}: {codes}")

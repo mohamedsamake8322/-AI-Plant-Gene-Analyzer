@@ -92,7 +92,7 @@ def collect_atlas_data(term: str | None, gene: str | None, species: str, size: i
     return records
 
 
-def collect_ncbi_data(accessions: list[str] | None, term: str | None, db: str, retmax: int, organism: str | None, plants_only: bool, max_length: int | None, mrna_only: bool) -> list[dict]:
+def collect_ncbi_data(accessions: list[str] | None, term: str | None, db: str, retmax: int, organism: str | None, plants_only: bool, max_length: int | None, mrna_only: bool, raise_on_error: bool = False) -> list[dict]:
     # fetch_fasta_by_accession() returns (header, seq) pairs.
     # fetch_by_term() now returns (header, seq, resolved_gene_id) triples
     # (see collect_ncbi.py -- resolved_gene_id is the shared Entrez GeneID
@@ -126,10 +126,13 @@ def collect_ncbi_data(accessions: list[str] | None, term: str | None, db: str, r
                     organism=organism,
                     max_length=max_length,
                     mrna_only=mrna_only,
+                    raise_on_error=raise_on_error,
                 )
             )
         except Exception as exc:
             logger.warning("NCBI search failed for term %r: %s", term, exc)
+            if raise_on_error:
+                raise RuntimeError(f"NCBI search failed for {term!r}") from exc
     # BUG FIX: `organism` was available right here (it's this function's
     # own parameter, threaded through from --plant via run_pipeline.py)
     # but was never passed down to make_record_from_fasta() -- which then
@@ -228,6 +231,10 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--max-data", action="store_true", help="Use broader API result windows for GEO/Atlas/NCBI without changing other behavior")
     parser.add_argument("--mrna-only", action="store_true", help="Restrict NCBI search to mRNA sequences")
     parser.add_argument(
+        "--fail-on-ncbi-error", action="store_true",
+        help="Fail instead of returning an empty result when the NCBI request errors.",
+    )
+    parser.add_argument(
         "--plants-only", dest="plants_only", action="store_true", default=True,
         help="Restrict GEO/NCBI results to plant organisms (default: on)",
     )
@@ -251,7 +258,11 @@ def main(argv: list[str] | None = None) -> None:
     geo_records = collect_geo_data(args.geo_term, args.geo_accession, args.organism, retmax, args.plants_only)
     ensembl_records = collect_ensembl_data(args.ensembl_symbol, args.ensembl_id, args.ensembl_species, args.ensembl_seq_type)
     atlas_records = collect_atlas_data(args.atlas_term, args.atlas_gene, args.atlas_species, size)
-    ncbi_records = collect_ncbi_data(args.ncbi_accession, args.ncbi_term, args.ncbi_db, retmax, args.organism, args.plants_only, max_length, args.mrna_only)
+    ncbi_records = collect_ncbi_data(
+        args.ncbi_accession, args.ncbi_term, args.ncbi_db, retmax,
+        args.organism, args.plants_only, max_length, args.mrna_only,
+        raise_on_error=args.fail_on_ncbi_error,
+    )
 
     combined = {
         "metadata": {

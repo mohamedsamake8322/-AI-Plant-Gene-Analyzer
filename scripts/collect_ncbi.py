@@ -754,6 +754,12 @@ def make_record_from_fasta(
     external_links = {}
     if resolved_gene_id:
         external_links["ncbi_gene"] = f"https://www.ncbi.nlm.nih.gov/gene/{resolved_gene_id}"
+    if db in ("nucleotide", "nuccore"):
+        sequence_origin = "genomic_locus" if resolved_gene_id else "transcript_only"
+        evidence_code = "NCBI_GENE_LINK" if resolved_gene_id else "NCBI_ACCESSION_ONLY"
+    else:
+        sequence_origin = "protein"
+        evidence_code = "NCBI_PROTEIN_RECORD"
     rec = {
         "gene_id": gene_id,
         "accession": accession,
@@ -762,6 +768,8 @@ def make_record_from_fasta(
         "traits": [],
         "sequence": seq.upper().replace(" ", ""),
         "sequence_type": "dna" if db in ("nucleotide", "nuccore") else "protein",
+        "sequence_origin": sequence_origin,
+        "evidence_code": evidence_code,
         "description": header,
         "external_links": external_links,
         "expression_profiles": [],
@@ -884,6 +892,7 @@ def fetch_by_term(
     organism: str | None = None,
     max_length: int | None = DEFAULT_MAX_LENGTH,
     mrna_only: bool = False,
+    raise_on_error: bool = False,
 ) -> list:
     """
     Returns a list of (header, seq, resolved_gene_id) triples -- NOTE the
@@ -916,6 +925,8 @@ def fetch_by_term(
         ids = res.get("IdList", [])
     except Exception as e:
         print(f"Search failed: {e}")
+        if raise_on_error:
+            raise RuntimeError(f"NCBI search failed for {query}") from e
         return []
     if not ids:
         print(f"No results for: {query}")

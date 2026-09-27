@@ -278,6 +278,8 @@ def create_tables() -> None:
                     -- WHERE origin = 'sequence_backed'; relations/orthologs
                     -- queries can use any of the three.
                     origin TEXT DEFAULT 'sequence_backed',
+                    sequence_origin TEXT,
+                    evidence_code TEXT,
                     -- Orthologs and PLAZA family IDs live here, in their
                     -- own queryable column (previously would only have
                     -- lived inside the now-removed `record` JSONB blob).
@@ -289,6 +291,8 @@ def create_tables() -> None:
             # against an existing (pre-refactor) table backfills these new
             # columns instead of requiring a fresh table.
             cur.execute("ALTER TABLE genes ADD COLUMN IF NOT EXISTS origin TEXT DEFAULT 'sequence_backed';")
+            cur.execute("ALTER TABLE genes ADD COLUMN IF NOT EXISTS sequence_origin TEXT;")
+            cur.execute("ALTER TABLE genes ADD COLUMN IF NOT EXISTS evidence_code TEXT;")
             cur.execute("ALTER TABLE genes ADD COLUMN IF NOT EXISTS relations JSONB DEFAULT '{}'::jsonb;")
             # BIGINT keeps the same representation safe for protein k-mers
             # too; DNA k=12 values still fit comfortably within 32 bits.
@@ -353,13 +357,14 @@ _UPSERT_SQL = sql.SQL(
         description, source, source_url, external_links,
         expression_profiles, pathways, publications,
         annotations, traits, length, date_added, sequence_hash,
-        origin, relations, kmer_hashes
+        origin, sequence_origin, evidence_code, relations, kmer_hashes
     ) VALUES (
         %(gene_id)s, %(symbol)s, %(organism)s, %(sequence)s, %(sequence_type)s,
         %(description)s, %(source)s, %(source_url)s, %(external_links)s,
         %(expression_profiles)s, %(pathways)s, %(publications)s,
         %(annotations)s, %(traits)s, %(length)s, %(date_added)s, %(sequence_hash)s,
-        %(origin)s, %(relations)s, %(kmer_hashes)s
+        %(origin)s, %(sequence_origin)s, %(evidence_code)s,
+        %(relations)s, %(kmer_hashes)s
     )
     ON CONFLICT (COALESCE(gene_id, symbol))
     DO UPDATE SET
@@ -411,6 +416,8 @@ _UPSERT_SQL = sql.SQL(
         length = COALESCE(NULLIF(EXCLUDED.length, 0), genes.length),
         date_added = EXCLUDED.date_added,
         sequence_hash = COALESCE(NULLIF(EXCLUDED.sequence_hash, ''), genes.sequence_hash),
+        sequence_origin = COALESCE(NULLIF(EXCLUDED.sequence_origin, ''), genes.sequence_origin),
+        evidence_code = COALESCE(NULLIF(EXCLUDED.evidence_code, ''), genes.evidence_code),
         kmer_hashes = COALESCE(EXCLUDED.kmer_hashes, genes.kmer_hashes),
         -- Never downgrade a gene's origin when a later pass touches the
         -- same key (shouldn't normally happen given how plaza_only keys
@@ -620,6 +627,8 @@ def _record_to_params(record: dict) -> dict:
         # 2026-08-22). "annotation_only" is the safe, non-optimistic default
         # when origin is unexpectedly absent.
         "origin": record.get("origin", "annotation_only"),
+        "sequence_origin": record.get("sequence_origin"),
+        "evidence_code": record.get("evidence_code"),
         "length": record.get("length") or (len(sequence) if sequence else None),
         # Always timestamp the upsert at load time. The collector records do
         # not consistently carry a top-level date_added field.
