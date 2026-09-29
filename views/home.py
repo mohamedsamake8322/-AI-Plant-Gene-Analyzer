@@ -1261,6 +1261,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             "High identity with high coverage supports a full-length match; high local identity with low coverage may indicate a conserved domain only."
         )
 
+        skipped_reason = result.get("similarity_skipped_reason")
         similarity_source = result.get("similarity_search_source", "local_database")
         similarity_candidate_count = result.get("similarity_candidate_count")
         similarity_candidate_pool_count = result.get("similarity_candidate_pool_count")
@@ -1271,17 +1272,18 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
         info_lines = [f"**Search mode:** `{similarity_search_mode}`"]
         if similarity_source:
             info_lines.append(f"**Source:** `{similarity_source}`")
-        if similarity_candidate_count is not None:
+        if similarity_candidate_count is not None and not skipped_reason:
             info_lines.append(f"**Candidates evaluated:** `{similarity_candidate_count}`")
         if similarity_candidate_pool_count is not None:
             if similarity_candidate_pool_requested is not None and similarity_candidate_pool_requested > similarity_candidate_pool_count:
                 info_lines.append(
-                    f"**Candidate pool:** `{similarity_candidate_pool_count}` (reduced from `{similarity_candidate_pool_requested}` by length/alignment budget)"
+                    f"**Candidate pool found:** `{similarity_candidate_pool_count}` (reduced from `{similarity_candidate_pool_requested}` by length/alignment budget)"
                 )
             else:
-                info_lines.append(f"**Candidate pool:** `{similarity_candidate_pool_count}`")
+                info_lines.append(f"**Candidate pool found:** `{similarity_candidate_pool_count}`")
         if similarity_elapsed_seconds is not None:
-            info_lines.append(f"**Similarity workflow time:** `{similarity_elapsed_seconds:.3f} s`")
+            elapsed_label = "Candidate selection time" if skipped_reason else "Similarity workflow time"
+            info_lines.append(f"**{elapsed_label}:** `{similarity_elapsed_seconds:.3f} s`")
         if similarity_prefiltered_count:
             info_lines.append(f"**Skipped by prefilter:** `{similarity_prefiltered_count}`")
         if info_lines:
@@ -1293,11 +1295,11 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 "similarity matches involving these regions may not reflect true homology."
             )
 
-        skipped_reason = result.get("similarity_skipped_reason")
         if skipped_reason == "sequence_too_long":
             st.warning(
-                "Similarity search was not run because the sequence exceeds the alignment length threshold. "
-                "This is not the same as no matches being found."
+                f"Similarity alignment was not run: this sequence has {len(sequence):,} bp, "
+                f"above the {config.MAX_ALIGNMENT_SEQUENCE_LENGTH:,} bp safety threshold. Candidate selection may still have run, "
+                "but no identity score was calculated. Use a shorter region for full alignment."
             )
         elif skipped_reason == "alignment_cost_too_high":
             st.warning(

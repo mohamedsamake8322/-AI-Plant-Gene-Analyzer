@@ -757,14 +757,10 @@ def plot_gc_sliding_window(sequence: str, window: int = 20) -> go.Figure:
     fig.add_hline(
         y=50,
         line=dict(color=AMBER, dash="dash", width=1),
-        annotation_text="50% reference",
-        annotation_position="top left",
     )
     fig.add_hline(
         y=overall_gc,
         line=dict(color=SLATE, dash="dot", width=1),
-        annotation_text=f"Gene mean: {overall_gc:.1f}%",
-        annotation_position="bottom left",
     )
 
     layout = _base_layout(f"GC Content Profile (window = {window} bp)")
@@ -847,8 +843,15 @@ def plot_msa_table(aligned_sequences: list, labels: list | None = None) -> go.Fi
         return go.Figure()
 
     align_len = len(aligned_sequences[0])
-    # Normalize sequences to same length
-    rows = [list(s.ljust(align_len, '-')) for s in aligned_sequences]
+    # Normalize sequences to same length and add a representative consensus row.
+    sequence_rows = [list(s.ljust(align_len, '-')) for s in aligned_sequences]
+    consensus_row = []
+    for column_index in range(align_len):
+        column = [row[column_index] for row in sequence_rows]
+        counts = {base: column.count(base) for base in set(column) if base != '-'}
+        consensus_row.append(max(counts, key=counts.get) if counts else '-')
+    rows = [consensus_row] + sequence_rows
+    display_labels = ["Consensus"] + (labels or [f"Seq {i+1}" for i in range(len(sequence_rows))])
 
     # Build color map per cell
     fill_colors = []
@@ -881,7 +884,7 @@ def plot_msa_table(aligned_sequences: list, labels: list | None = None) -> go.Fi
                     height=header_row_height,
                 ),
                 cells=dict(
-                    values=[labels or [f"Seq {i+1}" for i in range(len(rows))]] + cell_values,
+                    values=[display_labels] + cell_values,
                     # Keep row labels on a light surface: the nucleotide cells
                     # use a dark-text palette, while the old dark label column
                     # made names such as Query and A0A... nearly invisible.

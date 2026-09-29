@@ -8,11 +8,13 @@ analysis is in progress.
 """
 
 import os
+import subprocess
 import streamlit as st
 
 import bioinformatics as bio
 import alignment_engine as aln
 import alignment_exports as align_export
+import external_tools
 import visualization as viz
 import trait_research as tr
 import config
@@ -77,6 +79,12 @@ with tool_tabs[0]:
         )
     msa_input = st.text_area(translate('ui.msa_input_hint', default="Paste multiple FASTA sequences or one per line:"), height=160, key="independent_msa_input")
     msa_type = st.selectbox("MSA sequence type", ["Auto", "DNA", "Protein"], key="independent_msa_type")
+    msa_engine = st.selectbox(
+        "MSA engine",
+        ["Internal Star MSA", "MAFFT", "MUSCLE", "ClustalW"],
+        key="independent_msa_engine",
+        help="External engines run in WSL2. The internal engine remains available as a local fallback.",
+    )
     msa_reference = st.number_input("Star-MSA reference sequence", min_value=1, value=1, step=1, key="independent_msa_reference")
     msa_matrix = st.selectbox(
         "Protein substitution matrix",
@@ -115,13 +123,29 @@ with tool_tabs[0]:
                 elif estimated_cells > config.MAX_ALIGNMENT_CELL_BUDGET:
                     st.error("This MSA exceeds the configured alignment budget. Use fewer or shorter sequences.")
                 else:
-                    result = star_alignment(
-                        ordered_sequences,
-                        seq_type=seq_type,
-                        gap_open=msa_gap_open,
-                        gap_extend=msa_gap_extend,
-                        matrix_name=msa_matrix if seq_type == "protein" else "default",
-                    )
+                    if msa_engine == "Internal Star MSA":
+                        result = star_alignment(
+                            ordered_sequences,
+                            seq_type=seq_type,
+                            gap_open=msa_gap_open,
+                            gap_extend=msa_gap_extend,
+                            matrix_name=msa_matrix if seq_type == "protein" else "default",
+                        )
+                    else:
+                        try:
+                            if not external_tools.tool_status().get(msa_engine, False):
+                                raise RuntimeError(f"{msa_engine} is not available in WSL2.")
+                            result = external_tools.run_external_msa(
+                                ordered_sequences,
+                                [record.get("header", f"Seq{i + 1}") for i, record in enumerate(records)],
+                                msa_engine,
+                            )
+                            result["num_sequences"] = len(result["aligned_sequences"])
+                            result["alignment_length"] = len(result["aligned_sequences"][0])
+                            result["conservation_score"] = aln.consensus_profile(result["aligned_sequences"])["conservation_score"]
+                        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
+                            st.error(f"{msa_engine} failed: {error}")
+                            st.stop()
                     st.warning(
                         f"Star MSA uses sequence {msa_reference} as its reference. "
                         "Changing the reference can change gap placement and conservation."
@@ -309,11 +333,71 @@ with tool_tabs[2]:
         st.info("Compute a distance matrix first, then use 'Use this matrix to build the tree'.")
     phylogeny_input = st.text_area(translate('ui.phylogeny_input_hint', default="Paste sequences for phylogeny (FASTA or lines):"), height=160, key="independent_phylogeny_input")
     phylogeny_method = st.selectbox(translate('ui.tree_algorithm', default="Tree algorithm"), ["upgma", "neighbor_joining"], key="independent_phylogeny_method")
+    phylogeny_engine = st.selectbox(
+        "Phylogeny engine",
+        ["Internal distance tree", "IQ-TREE (ModelFinder + bootstrap)"],
+        key="independent_phylogeny_engine",
+    )
+    bootstrap_replicates = st.select_slider(
+        "Bootstrap replicates",
+        options=[1000, 2000, 5000],
+        value=1000,
+        key="independent_bootstrap_replicates",
+    )
     if st.button(translate('ui.build_tree', default="Build Tree"), key="independent_build_tree"):
         from sequence_loader import parse_fasta
         from core_engines.distance_engine import distance_matrix
         from core_engines.phylogeny_engine import upgma, neighbor_joining
         import numpy as np
+
+        if phylogeny_engine == "IQ-TREE (ModelFinder + bootstrap)":
+            if linked_result and st.session_state.get("independent_phylogeny_matrix_ready"):
+                iq_sequences = st.session_state.get("independent_distance_sequences", [])
+            else:
+                iq_records = parse_fasta(phylogeny_input)
+                iq_sequences = [
+                    {"name": record.get("header", f"Seq{i + 1}"), "sequence": record["sequence"]}
+                    for i, record in enumerate(iq_records)
+                ]
+            if len(iq_sequences) < 3:
+                st.warning("IQ-TREE requires at least three sequences.")
+            else:
+                iq_names = [item["name"] for item in iq_sequences]
+                try:
+                    with st.spinner("MAFFT alignment and IQ-TREE model selection in progress..."):
+                        iq_msa = external_tools.run_external_msa(
+                            [item["sequence"] for item in iq_sequences],
+                            iq_names,
+                            "MAFFT",
+                        )
+                        iq_result = external_tools.run_iqtree(
+                            iq_msa["aligned_sequences"],
+                            iq_names,
+                            bootstrap=bootstrap_replicates,
+                        )
+                    st.success(
+                        f"IQ-TREE complete — model: {iq_result['model']} — "
+                        f"bootstrap: {iq_result['bootstrap']}"
+                    )
+                    st.code(iq_result["newick"], language="text")
+                    st.download_button(
+                        "Download IQ-TREE Newick",
+                        iq_result["newick"],
+                        file_name="iqtree_bootstrap.treefile",
+                        mime="text/plain",
+                        key="independent_iqtree_newick_download",
+                    )
+                    st.download_button(
+                        "Download IQ-TREE report",
+                        iq_result["report"],
+                        file_name="iqtree_model_report.txt",
+                        mime="text/plain",
+                        key="independent_iqtree_report_download",
+                    )
+                except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
+                    st.error(f"IQ-TREE failed: {error}")
+            st.stop()
+
         if linked_result and st.session_state.get("independent_phylogeny_matrix_ready"):
             distances = linked_result
             names = st.session_state["independent_distance_names"]

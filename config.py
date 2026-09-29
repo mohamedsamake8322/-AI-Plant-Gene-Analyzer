@@ -56,7 +56,7 @@ LENGTH_RATIO_PREFILTER = 3.0
 # sequences; true long-sequence alignment (whole loci, chromosomes) needs a
 # different algorithm (BLAST-style seed-and-extend heuristic, already on
 # the project roadmap) rather than a bigger cap on this exact DP.
-MAX_ALIGNMENT_SEQUENCE_LENGTH = 15_000  # bp / aa; DP kernels are Numba-accelerated when available
+MAX_ALIGNMENT_SEQUENCE_LENGTH = 20_000  # bp / aa; DP kernels are Numba-accelerated when available
 # The alignment cost grows with query length multiplied by every candidate
 # length, not with the query length alone. Keep a process-level budget so a
 # large candidate pool cannot turn one Streamlit request into a long batch.

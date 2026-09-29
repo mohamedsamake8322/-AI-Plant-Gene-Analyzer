@@ -14,3 +14,6 @@ xlsxwriter>=3.1.2
 python-dotenv>=1.0.0
 psycopg[binary]>=3.1.0
 psycopg_pool>=1.0.0
+
+# External bioinformatics engines are installed as Ubuntu/WSL2 binaries,
+# not through pip: mafft, muscle, clustalw, and iqtree2.

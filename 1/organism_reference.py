@@ -8,8 +8,26 @@ def get_organism_reference(
     fetcher=None,
 ) -> dict:
     """Normalize organism reference data and its standard fallback message."""
-    if not organism or fetcher is None:
-        return {"available": False, "value": None, "n": 0, "fallback_reason": f"No organism reference available for {metric}."}
+    if not organism:
+        return {
+            "available": False,
+            "value": None,
+            "n": 0,
+            "fallback_reason": (
+                f"No organism metadata was provided for {metric}; "
+                "species comparison is unavailable."
+            ),
+        }
+    if fetcher is None:
+        return {
+            "available": False,
+            "value": None,
+            "n": 0,
+            "fallback_reason": (
+                f"The organism reference provider is unavailable for {metric}; "
+                "species comparison is unavailable."
+            ),
+        }
     try:
         raw = fetcher(organism) or {}
     except Exception:

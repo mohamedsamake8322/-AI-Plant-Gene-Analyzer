@@ -814,3 +814,42 @@ ValueError: Sequence is empty.
 2026-09-29 09:45:56,312 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 1 candidates for top_n=3
 2026-09-29 09:45:58,116 - __main__ - INFO - Analysis session state saved
 2026-09-29 09:53:47,589 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 10:17:00,437 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 10:17:18,818 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 10:17:26,116 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 10:17:26,235 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-09-29 10:17:26,589 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 1 candidates for top_n=3
+2026-09-29 10:17:27,553 - __main__ - INFO - Analysis session state saved
+2026-09-29 10:18:11,212 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 10:18:23,602 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 10:18:36,836 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 10:18:37,007 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-09-29 10:18:37,485 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 1 candidates for top_n=3
+2026-09-29 10:18:37,492 - __main__ - INFO - Analysis session state saved
+2026-09-29 10:39:45,025 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 10:41:03,164 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 10:41:06,606 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 10:41:06,720 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-09-29 10:41:07,279 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 1 candidates for top_n=3
+2026-09-29 10:41:07,292 - __main__ - INFO - Analysis session state saved
+2026-09-29 11:42:24,114 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 11:42:24,114 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 11:42:25,675 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 11:42:25,675 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 11:45:19,412 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 11:45:19,412 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 11:46:08,078 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 11:46:08,078 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 11:46:08,204 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-09-29 11:46:08,204 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-09-29 11:46:08,774 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 1 candidates for top_n=3
+2026-09-29 11:46:08,774 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 1 candidates for top_n=3
+2026-09-29 11:46:42,648 - __main__ - INFO - Analysis session state saved
+2026-09-29 11:46:42,648 - __main__ - INFO - Analysis session state saved
+2026-09-29 14:00:16,479 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 14:00:22,943 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 14:00:23,085 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 14:00:23,111 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-09-29 14:00:23,448 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 45 candidates for top_n=3
+2026-09-29 14:00:24,526 - __main__ - INFO - Analysis session state saved
+2026-09-29 14:45:00,146 - __main__ - INFO - CSS loaded successfully from style.css

@@ -79,11 +79,38 @@ Les pourcentages, scores et graphiques sont vrais comme resultats mathematiques 
 - coloration ADN/proteine plus detaillee.
 - conservation visuelle avancee et scores par colonne.
 
+## Moteurs externes installés
+
+Les moteurs externes sont installés dans Ubuntu sous WSL2 :
+
+```bash
+sudo apt-get update
+sudo apt-get install -y mafft muscle clustalw iqtree
+```
+
+L’application Windows les appelle via `wsl.exe` et `external_tools.py`.
+Les arguments sont transmis sans `shell=True`; les fichiers temporaires sont
+convertis en chemins `/mnt/<lecteur>/...`, puis supprimés automatiquement.
+
+Dans l’onglet **Independent Tools** :
+
+- **MAFFT**, **MUSCLE** et **ClustalW** sont disponibles dans le sélecteur MSA ;
+- le moteur interne Star MSA reste le fallback local ;
+- **IQ-TREE (ModelFinder + bootstrap)** aligne d’abord avec MAFFT, sélectionne
+	le modèle avec `-m MFP`, puis construit l’arbre avec `-B` ;
+- IQ-TREE exige au minimum 1000 réplications pour son bootstrap ultrarapide ;
+- le Newick et le rapport du modèle sont téléchargeables.
+
+Ces outils ne sont pas des modèles de machine learning : MAFFT, MUSCLE et
+ClustalW sont des algorithmes d’alignement ; IQ-TREE réalise une inférence
+phylogénétique statistique, une sélection de modèle et un bootstrap.
+
 ## Phase 3 restante
 
 - sites variables et informatifs pour la phylogenie ;
 - rapport de reproductibilite enrichi avec version applicative ;
-- MAFFT, MUSCLE ou Clustal Omega en integration optionnelle.
+- amélioration de l’affichage des scores de bootstrap sur les branches ;
+- comparaison graphique entre l’arbre interne et l’arbre IQ-TREE.
 
 MAFFT et MUSCLE sont des binaires externes. Leur integration devra gerer la disponibilite du binaire, les sous-processus, les erreurs, les versions et les differences Windows/Linux. Ils ne doivent pas etre ajoutes comme une simple dependance Python sans strategie de deploiement.
 
