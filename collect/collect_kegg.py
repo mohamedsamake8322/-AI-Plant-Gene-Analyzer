@@ -76,23 +76,41 @@ def fetch_kegg(species: str, retmax: int = 300) -> list[dict]:
     return records
 
 
-def _get_gene_list(org_code: str, limit: int) -> list[str]:
-    """Retrieve list of gene IDs for an organism."""
-    try:
-        resp = rq.get(f"{KEGG_BASE}/list/{org_code}", timeout=30)
-        # resp.raise_for_status() done in request_utils
-        gene_ids = []
-        for line in resp.text.strip().splitlines():
-            parts = line.split("\t")
-            if parts:
-                gene_id = parts[0].split(":")[1] if ":" in parts[0] else parts[0]
-                gene_ids.append(gene_id)
-                if len(gene_ids) >= limit:
-                    break
-        return gene_ids
-    except requests.RequestException as e:
-        print(f"  [KEGG] Failed to get gene list: {e}")
-        raise RuntimeError(f"KEGG gene-list request failed for {org_code}") from e
+def _get_gene_list(org_code: str, limit: int, max_retries: int = 3) -> list[str]:
+    """
+    Retrieve list of gene IDs for an organism.
+
+    Le timeout et le retry sont plus genereux ici que pour les autres
+    appels KEGG : /list/{org_code} renvoie la liste COMPLETE des genes de
+    l'organisme en une seule reponse texte, et cette reponse peut etre
+    tres volumineuse pour un genome bien annote (des dizaines de milliers
+    de lignes pour le mais, contre beaucoup moins pour le riz ou le
+    quinoa) -- un simple timeout de 30s, sans retry, faisait echouer
+    TOUTE la collecte KEGG de l'espece des qu'un telechargement etait un
+    peu plus lent que d'habitude.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            resp = rq.get(f"{KEGG_BASE}/list/{org_code}", timeout=120)
+            gene_ids = []
+            for line in resp.text.strip().splitlines():
+                parts = line.split("\t")
+                if parts:
+                    gene_id = parts[0].split(":")[1] if ":" in parts[0] else parts[0]
+                    gene_ids.append(gene_id)
+                    if len(gene_ids) >= limit:
+                        break
+            return gene_ids
+        except requests.RequestException as e:
+            last_exc = e
+            wait = 2 ** attempt  # 2s, 4s, 8s
+            print(f"  [KEGG] Gene-list request failed for {org_code} "
+                  f"(tentative {attempt}/{max_retries}): {e} -- nouvel essai dans {wait}s...")
+            time.sleep(wait)
+
+    print(f"  [KEGG] Failed to get gene list after {max_retries} tentatives: {last_exc}")
+    raise RuntimeError(f"KEGG gene-list request failed for {org_code}") from last_exc
 
 
 def _fetch_gene_entry(org_code: str, gene_id: str, species: str) -> dict | None:

@@ -34,6 +34,7 @@ SPECIES_MAP: dict[str, str] = {
     "prunus persica": "Ppe",
     "citrus sinensis": "Csi",
     "triticum aestivum": "Tae",
+    "nicotiana tabacum": "Nta",
 }
 
 # Extended TF repository species (PlantTFDB v5.0 extended dataset).

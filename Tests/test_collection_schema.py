@@ -13,6 +13,7 @@ from collect.collect_all_sources import (
 )
 from scripts.collect_ncbi import make_record_from_fasta
 from collect.collect_kegg import _parse_kegg_flat
+from collect.collect_planttfdb import SPECIES_MAP
 
 
 def test_restructure_preserves_uniprot_functional_annotations():
@@ -96,6 +97,10 @@ def test_preflight_keeps_sequence_types_separate():
 def test_ncbi_accession_only_dna_is_not_treated_as_gene_locus():
     record = make_record_from_fasta("AB123456.1 plant sequence", "ATGC")
     assert not _accept_ncbi_record(record, "dna")
+
+
+def test_nicotiana_has_a_planttfdb_species_mapping():
+    assert SPECIES_MAP["nicotiana tabacum"] == "Nta"
 
 
 def test_accession_index_matches_versioned_nucleotide_cross_references():

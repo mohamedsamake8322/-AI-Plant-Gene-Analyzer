@@ -977,6 +977,9 @@ def collect_species(
                             "mapman": list(r.get("mapman", [])),
                         }
                         created_plaza_only += 1
+            source_counts["plaza_fetched"] = len(recs)
+            source_counts["plaza_accepted"] = len(recs)
+            source_counts["plaza_merged"] = matched
             source_counts["plaza"] = matched
             source_counts["plaza_via_uniprot"] = matched_via_uniprot
             source_counts["plaza_only_records_created"] = created_plaza_only
@@ -1072,7 +1075,7 @@ def collect_species(
         output_metadata["errors"] = errors
     _write_species_json_atomic(out_file, output_metadata, all_records)
 
-    status = "ok" if not errors else "partial"
+    status = "ok" if not errors and not source_failures else "partial"
     if quality_gate_mode == "strict" and source_failures:
         status = "error"
     return {
