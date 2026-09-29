@@ -436,6 +436,20 @@ with st.sidebar:
         step=5,
         help=translate('ui.window_size_help', default="Window size (bp) for the GC content profile chart."),
     )
+    skew_window_size = st.slider(
+        translate(
+            'ui.skew_window_size',
+            default="Sliding window (GC / AT skew)",
+        ),
+        min_value=config.MIN_SKEW_WINDOW_SIZE,
+        max_value=config.MAX_SKEW_WINDOW_SIZE,
+        value=config.DEFAULT_SKEW_WINDOW_SIZE,
+        step=config.SKEW_WINDOW_STEP,
+        help=translate(
+            'ui.skew_window_size_help',
+            default="Larger windows smooth local noise and make broad compositional asymmetry easier to read.",
+        ),
+    )
 
     st.markdown("#### 🔤 Traduction")
     reading_frame = st.selectbox(
@@ -1113,9 +1127,13 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 viz.plot_gc_sliding_window(sequence, window=window_size),
                 width='stretch',
             )
-            skew_profile = bio.gc_skew_profile(sequence, window=window_size)
+            effective_skew_window = min(skew_window_size, len(sequence))
+            skew_profile = bio.gc_skew_profile(sequence, window=effective_skew_window)
             if skew_profile:
-                st.plotly_chart(viz.plot_gc_skew_profile(skew_profile), width='stretch')
+                st.plotly_chart(
+                    viz.plot_gc_skew_profile(skew_profile, window=effective_skew_window),
+                    width='stretch',
+                )
 
             methylation = result.get("methylation_context") or {}
             st.markdown("#### Cytosine Methylation Context (plant-specific)")
@@ -1237,6 +1255,11 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
     # ── Tab 2: Similarity ──────────────────────────────────────────────────────
     with tabs[1]:
         st.markdown("#### Database Similarity Search")
+        st.caption(
+            "Global similarity is end-to-end identity and determines the ranking. "
+            "Local coverage is the fraction of the query represented by the best local alignment. "
+            "High identity with high coverage supports a full-length match; high local identity with low coverage may indicate a conserved domain only."
+        )
 
         similarity_source = result.get("similarity_search_source", "local_database")
         similarity_candidate_count = result.get("similarity_candidate_count")

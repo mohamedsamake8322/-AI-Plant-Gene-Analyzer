@@ -784,3 +784,33 @@ ValueError: frame must be one of 1, 2, 3, -1, -2, or -3 (signed reading frame).
 2026-09-27 20:55:59,454 - __main__ - INFO - Starting analysis for record 1/1: QV058468.1
 2026-09-27 20:56:00,111 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 45 candidates for top_n=3
 2026-09-27 20:56:08,562 - __main__ - INFO - Analysis session state saved
+2026-09-29 09:39:12,718 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 09:39:50,331 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 09:39:50,331 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 09:40:10,278 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 09:40:25,572 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 09:40:25,609 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-09-29 09:40:27,971 - __main__ - INFO - find_similar_genes: k-mer prefilter returned no candidates — falling back to a length-range lookup
+2026-09-29 09:40:28,200 - __main__ - WARNING - No candidate genes found for record 1 (database search returned no results)
+2026-09-29 09:40:28,209 - __main__ - ERROR - Unexpected error during analysis
+Traceback (most recent call last):
+  File "C:\Downloads\IA\views\home.py", line 751, in <module>
+    analyzed_result = _cached_analyze(
+  File "C:\Downloads\IA\.venv\lib\site-packages\streamlit\runtime\caching\cache_utils.py", line 280, in __call__
+    return self._get_or_create_cached_value(args, kwargs, spinner_message)
+  File "C:\Downloads\IA\.venv\lib\site-packages\streamlit\runtime\caching\cache_utils.py", line 325, in _get_or_create_cached_value
+    return self._handle_cache_miss(cache, value_key, func_args, func_kwargs)
+  File "C:\Downloads\IA\.venv\lib\site-packages\streamlit\runtime\caching\cache_utils.py", line 384, in _handle_cache_miss
+    computed_value = self._info.func(*func_args, **func_kwargs)
+  File "C:\Downloads\IA\views\home.py", line 227, in _cached_analyze
+    return pipeline.analyze_sequence_record(
+  File "C:\Downloads\IA\pipeline.py", line 86, in analyze_sequence_record
+    raise ValueError(validation_msg)
+ValueError: Sequence is empty.
+2026-09-29 09:41:57,694 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 09:45:45,196 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 09:45:55,515 - __main__ - INFO - CSS loaded successfully from style.css
+2026-09-29 09:45:55,727 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-09-29 09:45:56,312 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 1 candidates for top_n=3
+2026-09-29 09:45:58,116 - __main__ - INFO - Analysis session state saved
+2026-09-29 09:53:47,589 - __main__ - INFO - CSS loaded successfully from style.css

@@ -106,7 +106,7 @@ def analyze_sequence_record(
         orfs = stats["orfs"]
         methylation_context = bio.cytosine_methylation_context(sequence)
         low_complexity = bio.detect_low_complexity_regions(sequence)
-        skew_profile = bio.gc_skew_profile(sequence, window=config.DEFAULT_WINDOW_SIZE)
+        skew_profile = bio.gc_skew_profile(sequence, window=config.DEFAULT_SKEW_WINDOW_SIZE)
         frames_summary = bio.all_frames_summary(sequence)
         quality = stats["quality"]
         restriction_sites = bio.find_restriction_sites(sequence)

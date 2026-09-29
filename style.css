@@ -243,6 +243,8 @@ h2, h3, h4, h5, h6 {
 }
 
 [data-testid="metric-container"]:hover {
+    border-color: rgba(184, 135, 59, 0.5);
+}
 
 [data-testid="stMetricValue"] {
     color: #B8873B !important;

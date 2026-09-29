@@ -224,7 +224,7 @@ def detect_low_complexity_regions(
 
 
 def gc_skew_profile(sequence: str, window: int = 20) -> list[dict[str, object]]:
-    """Return GC and AT skew values for the same sliding-window stride."""
+    """Return GC and AT skew values for a sliding window."""
     if len(sequence) < window or window <= 0:
         return []
     stride = max(1, window // 4)

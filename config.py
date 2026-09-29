@@ -93,10 +93,14 @@ MUTATION_RATE_LOW = 2.0
 # similarity confidence bands above.
 MIN_MUTATION_REFERENCE_IDENTITY = 85.0
 
-# Window size for sliding window similarity
+# Window sizes for composition profiles
 DEFAULT_WINDOW_SIZE = 30
 MIN_WINDOW_SIZE = 5
 MAX_WINDOW_SIZE = 60
+DEFAULT_SKEW_WINDOW_SIZE = 500
+MIN_SKEW_WINDOW_SIZE = 50
+MAX_SKEW_WINDOW_SIZE = 1000
+SKEW_WINDOW_STEP = 50
 
 # Reading frames
 READING_FRAMES = [1, 2, 3, -1, -2, -3]

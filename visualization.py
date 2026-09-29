@@ -363,8 +363,8 @@ def plot_similarity_scores(similarity_results: list[dict]) -> go.Figure:
             ),
         )
     )
-    layout = _base_layout("Database Similarity Scores")
-    layout["xaxis"]["title"] = "Similarity (%)"
+    layout = _base_layout("Global Identity Scores (ranking)")
+    layout["xaxis"]["title"] = "Global identity (%)"
     layout["xaxis"]["range"] = [0, max(100, max(scores, default=0) + 8)]
     layout["xaxis"]["ticksuffix"] = "%"
     layout["yaxis"]["title"] = "Gene"
@@ -753,7 +753,19 @@ def plot_gc_sliding_window(sequence: str, window: int = 20) -> go.Figure:
         )
     )
 
-    fig.add_hline(y=50, line=dict(color=AMBER, dash="dash", width=1))
+    overall_gc = (sequence.count("G") + sequence.count("C")) / len(sequence) * 100
+    fig.add_hline(
+        y=50,
+        line=dict(color=AMBER, dash="dash", width=1),
+        annotation_text="50% reference",
+        annotation_position="top left",
+    )
+    fig.add_hline(
+        y=overall_gc,
+        line=dict(color=SLATE, dash="dot", width=1),
+        annotation_text=f"Gene mean: {overall_gc:.1f}%",
+        annotation_position="bottom left",
+    )
 
     layout = _base_layout(f"GC Content Profile (window = {window} bp)")
     layout["xaxis"]["title"] = "Position (bp)"
@@ -763,20 +775,20 @@ def plot_gc_sliding_window(sequence: str, window: int = 20) -> go.Figure:
     fig.update_layout(
         **layout,
         height=320,
-        annotations=[
-            dict(
-                text="Shaded bands are reference ranges, not a pass/fail score.",
-                x=0.5, y=1.12,
-                xref="paper", yref="paper",
-                showarrow=False,
-                font=dict(size=10, color=SLATE),
-            )
-        ],
+    )
+    fig.add_annotation(
+        text="Dashed: 50% reference · dotted: gene mean. Shaded bands are reference ranges, not a pass/fail score.",
+        x=0.5,
+        y=1.12,
+        xref="paper",
+        yref="paper",
+        showarrow=False,
+        font=dict(size=10, color=SLATE),
     )
     return fig
 
 
-def plot_gc_skew_profile(profile: list[dict]) -> go.Figure:
+def plot_gc_skew_profile(profile: list[dict], window: int | None = None) -> go.Figure:
     """Plot GC and AT skew values around the zero reference line."""
     fig = go.Figure()
     positions = [item["position"] for item in profile]
@@ -797,11 +809,28 @@ def plot_gc_skew_profile(profile: list[dict]) -> go.Figure:
         connectgaps=False,
     ))
     fig.add_hline(y=0, line=dict(color=SLATE, dash="dash", width=1))
-    layout = _base_layout("GC / AT Skew Profile")
+    title = "GC / AT Skew Profile"
+    if window is not None:
+        title += f" (window = {window} bp)"
+    layout = _base_layout(title)
     layout["xaxis"]["title"] = "Position (bp)"
     layout["yaxis"]["title"] = "Skew"
     layout["yaxis"]["range"] = [-1, 1]
-    fig.update_layout(**layout, height=300)
+    fig.update_layout(
+        **layout,
+        height=300,
+        annotations=[
+            dict(
+                text="Positive GC skew: G > C · Positive AT skew: A > T",
+                x=0.5,
+                y=1.12,
+                xref="paper",
+                yref="paper",
+                showarrow=False,
+                font=dict(size=10, color=SLATE),
+            )
+        ],
+    )
     return fig
 
 
