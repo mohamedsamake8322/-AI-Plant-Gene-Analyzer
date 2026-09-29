@@ -745,7 +745,7 @@ def consensus_profile(aligned_sequences: List[str]) -> Dict:
             "consensus": consensus_char,
             "conservation_percent": conservation,
             "counts": counts,
-            "variable": len(counts) > 1,
+            "variable": len(set(column)) > 1,
         }
         columns.append(row)
         if row["variable"]:

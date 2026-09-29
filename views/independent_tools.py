@@ -146,10 +146,11 @@ with tool_tabs[0]:
                         except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
                             st.error(f"{msa_engine} failed: {error}")
                             st.stop()
-                    st.warning(
-                        f"Star MSA uses sequence {msa_reference} as its reference. "
-                        "Changing the reference can change gap placement and conservation."
-                    )
+                    if msa_engine == "Internal Star MSA":
+                        st.warning(
+                            f"Star MSA uses sequence {msa_reference} as its reference. "
+                            "Changing the reference can change gap placement and conservation."
+                        )
                     st.success(
                         f"MSA complete — {result.get('num_sequences')} sequences, "
                         f"{result.get('alignment_length')} aligned columns, "
@@ -169,7 +170,33 @@ with tool_tabs[0]:
                             + ". Conservation and gap placement may be less reliable there."
                         )
                     aligned_sequences = result.get("aligned_sequences", [])
-                    st.plotly_chart(viz.plot_msa_table(aligned_sequences, labels=labels), width="stretch")
+                    alignment_length = result.get("alignment_length", len(aligned_sequences[0]) if aligned_sequences else 1)
+                    window_start = st.number_input(
+                        "MEGA-like alignment view: start column",
+                        min_value=1,
+                        max_value=max(1, alignment_length),
+                        value=1,
+                        step=1,
+                        key="independent_msa_window_start",
+                    )
+                    window_width = st.slider(
+                        "Visible alignment columns",
+                        20,
+                        min(200, max(20, alignment_length)),
+                        min(60, max(20, alignment_length)),
+                        key="independent_msa_window_width",
+                    )
+                    window_end = min(alignment_length, window_start + window_width - 1)
+                    visible_sequences = [sequence[window_start - 1:window_end] for sequence in aligned_sequences]
+                    st.caption(
+                        f"Showing aligned columns {window_start}–{window_end} of {alignment_length}. "
+                        "The complete alignment remains available in the exports below."
+                    )
+                    st.plotly_chart(
+                        viz.plot_msa_table(visible_sequences, labels=labels),
+                        width="stretch",
+                        key="independent_msa_window_plot",
+                    )
                     profile = aln.consensus_profile(aligned_sequences)
                     st.markdown("**Consensus sequence**")
                     st.code(profile["consensus"], language=None)
@@ -178,16 +205,6 @@ with tool_tabs[0]:
                         f"Variable columns: {len(variable_positions)} | "
                         f"Fully conserved columns: {profile['conservation_score']:.1f}%"
                     )
-                    window_start = st.number_input(
-                        "MSA display window start",
-                        min_value=1,
-                        max_value=max(1, result.get("alignment_length", 1)),
-                        value=1,
-                        step=1,
-                        key="independent_msa_window_start",
-                    )
-                    window_width = st.slider("MSA display window width", 20, 200, 60, key="independent_msa_window_width")
-                    window_end = window_start + window_width - 1
                     st.dataframe(
                         [
                             {"Sequence": label, "Aligned sequence": sequence[window_start - 1:window_end]}
