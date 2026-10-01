@@ -344,23 +344,30 @@ with tool_tabs[2]:
     st.markdown(f"#### {translate('ui.phylogeny_title', default='Build Phylogenetic Tree')}")
     linked_result = st.session_state.get("independent_distance_result")
     linked_method = st.session_state.get("independent_distance_method_used")
+    phylogeny_input = st.text_area(translate('ui.phylogeny_input_hint', default="Paste sequences for phylogeny (FASTA or lines):"), height=160, key="independent_phylogeny_input")
     if linked_result and st.session_state.get("independent_phylogeny_matrix_ready"):
         st.success(f"Using the linked {linked_method} distance matrix from Distance Matrix.")
-    else:
-        st.info("Compute a distance matrix first, then use 'Use this matrix to build the tree'.")
-    phylogeny_input = st.text_area(translate('ui.phylogeny_input_hint', default="Paste sequences for phylogeny (FASTA or lines):"), height=160, key="independent_phylogeny_input")
-    phylogeny_method = st.selectbox(translate('ui.tree_algorithm', default="Tree algorithm"), ["upgma", "neighbor_joining"], key="independent_phylogeny_method")
+    elif not phylogeny_input.strip():
+        st.info("Paste FASTA sequences above or link a distance matrix from the Distance Matrix tab.")
     phylogeny_engine = st.selectbox(
         "Phylogeny engine",
         ["Internal distance tree", "IQ-TREE (ModelFinder + bootstrap)"],
         key="independent_phylogeny_engine",
     )
-    bootstrap_replicates = st.select_slider(
-        "Bootstrap replicates",
-        options=[1000, 2000, 5000],
-        value=1000,
-        key="independent_bootstrap_replicates",
+    phylogeny_method = st.selectbox(
+        translate('ui.tree_algorithm', default="Tree algorithm"),
+        ["upgma", "neighbor_joining"],
+        key="independent_phylogeny_method",
+        disabled=phylogeny_engine != "Internal distance tree",
     )
+    bootstrap_replicates = 1000
+    if phylogeny_engine == "IQ-TREE (ModelFinder + bootstrap)":
+        bootstrap_replicates = st.select_slider(
+            "Bootstrap replicates",
+            options=[1000, 2000, 5000],
+            value=1000,
+            key="independent_bootstrap_replicates",
+        )
     if st.button(translate('ui.build_tree', default="Build Tree"), key="independent_build_tree"):
         from sequence_loader import parse_fasta
         from core_engines.distance_engine import distance_matrix
@@ -379,34 +386,54 @@ with tool_tabs[2]:
             if len(iq_sequences) < 3:
                 st.warning("IQ-TREE requires at least three sequences.")
             else:
-                iq_names = [item["name"] for item in iq_sequences]
+                iq_ids = [f"S{index + 1:04d}" for index in range(len(iq_sequences))]
+                labels_by_id = {
+                    sequence_id: item["name"]
+                    for sequence_id, item in zip(iq_ids, iq_sequences)
+                }
                 try:
                     with st.spinner("MAFFT alignment and IQ-TREE model selection in progress..."):
                         iq_msa = external_tools.run_external_msa(
                             [item["sequence"] for item in iq_sequences],
-                            iq_names,
+                            iq_ids,
                             "MAFFT",
                         )
                         iq_result = external_tools.run_iqtree(
                             iq_msa["aligned_sequences"],
-                            iq_names,
+                            iq_msa["labels"],
                             bootstrap=bootstrap_replicates,
                         )
+                    exported_newick = external_tools.restore_newick_labels(
+                        iq_result["newick"],
+                        labels_by_id,
+                    )
+                    exported_report = external_tools.restore_iqtree_report_labels(
+                        iq_result["report"],
+                        labels_by_id,
+                    )
                     st.success(
                         f"IQ-TREE complete — model: {iq_result['model']} — "
-                        f"bootstrap: {iq_result['bootstrap']}"
+                        f"UFBoot: {iq_result['bootstrap']} replicates"
                     )
-                    st.code(iq_result["newick"], language="text")
+                    st.plotly_chart(
+                        viz.plot_newick_tree(exported_newick, support_label="UFBoot"),
+                        width="stretch",
+                    )
+                    st.caption(
+                        "IQ-TREE estimates an unrooted tree; this display is midpoint-rooted for layout only. "
+                        "Support values are ultrafast bootstrap (UFBoot)."
+                    )
+                    st.code(exported_newick, language="text")
                     st.download_button(
                         "Download IQ-TREE Newick",
-                        iq_result["newick"],
+                        exported_newick,
                         file_name="iqtree_bootstrap.treefile",
                         mime="text/plain",
                         key="independent_iqtree_newick_download",
                     )
                     st.download_button(
                         "Download IQ-TREE report",
-                        iq_result["report"],
+                        exported_report,
                         file_name="iqtree_model_report.txt",
                         mime="text/plain",
                         key="independent_iqtree_report_download",
@@ -436,8 +463,15 @@ with tool_tabs[2]:
                 "tree_type": tree.get("tree_type"),
             })
             if phylogeny_method == "upgma" and tree.get("dendrogram_data"):
-                st.plotly_chart(viz.plot_dendrogram(tree["dendrogram_data"], labels=names), width="stretch")
-                st.caption("Legend: leaves are sequences; branch height represents the distance used by UPGMA. This is a clustering result, not a proof of ancestry.")
+                st.plotly_chart(
+                    viz.plot_dendrogram(
+                        tree["dendrogram_data"],
+                        labels=names,
+                        method=distances.get("method", ""),
+                    ),
+                    width="stretch",
+                )
+                st.caption("Leaves follow the clustering order; node heights are half the pairwise merge distance. This is a clustering result, not a proof of ancestry.")
             elif phylogeny_method == "neighbor_joining":
                 st.warning("Neighbor-Joining is an additive, unrooted method; the displayed root is only a layout anchor.")
                 st.plotly_chart(viz.plot_neighbor_joining(tree.get("edges", []), names), width="stretch")

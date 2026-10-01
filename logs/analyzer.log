@@ -862,3 +862,5 @@ ValueError: Sequence is empty.
 2026-09-29 20:16:50,061 - __main__ - INFO - Starting analysis for record 1/1: cqi:110688118 | organism=Chenopodium quinoa
 2026-09-29 20:16:50,304 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 45 candidates for top_n=3
 2026-09-29 20:16:52,742 - __main__ - INFO - Analysis session state saved
+2026-09-30 21:18:06,642 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-01 06:56:49,684 - __main__ - INFO - CSS loaded successfully from style.css

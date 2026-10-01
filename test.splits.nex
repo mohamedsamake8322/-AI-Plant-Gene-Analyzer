@@ -1,0 +1,24 @@
+#nexus
+
+BEGIN Taxa;
+DIMENSIONS ntax=4;
+TAXLABELS
+[1] 'A_110688118'
+[2] 'B_110684354'
+[3] 'C_A_plus15subs'
+[4] 'D_B_plus15subs'
+;
+END; [Taxa]
+
+BEGIN Splits;
+DIMENSIONS ntax=4 nsplits=5;
+FORMAT labels=no weights=yes confidences=no intervals=no;
+MATRIX
+	100	 2,
+	100	 4,
+	100	 1 3,
+	100	 3,
+	100	 1,
+;
+END; [Splits]
+

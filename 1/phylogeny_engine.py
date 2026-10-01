@@ -94,91 +94,65 @@ def neighbor_joining(distance_matrix: np.ndarray, names: List[str]) -> Dict:
     Returns:
         Dict with tree structure and branch lengths
     """
-    n = len(names)
-    
-    # Ensure symmetric distance matrix
-    dm = distance_matrix.copy()
-    dm = (dm + dm.T) / 2  # Make symmetric
-    
-    # Track which nodes are active
-    active_nodes = list(range(n))
-    node_names = names.copy()
-    node_counter = n
-    
-    # Store tree edges
+    dm = np.asarray(distance_matrix, dtype=float)
+    if dm.ndim != 2 or dm.shape[0] != dm.shape[1] or dm.shape[0] != len(names):
+        raise ValueError("Distance matrix must be square and match the number of names.")
+    if len(names) < 2:
+        raise ValueError("At least two sequences are required for Neighbor-Joining.")
+
+    dm = (dm + dm.T) / 2
+    np.fill_diagonal(dm, 0.0)
+    active_nodes = list(range(len(names)))
+    node_names = list(names)
     edges = []
-    
+
     while len(active_nodes) > 2:
-        # Calculate net divergence (u values)
-        u = np.zeros(len(active_nodes))
-        for i in range(len(active_nodes)):
-            u[i] = dm[active_nodes[i], :].sum() / (len(active_nodes) - 2)
-        
-        # Find pair with minimum distance (corrected)
-        min_dist = float('inf')
-        min_i, min_j = 0, 1
-        
-        for i in range(len(active_nodes)):
-            for j in range(i+1, len(active_nodes)):
-                corrected_dist = dm[active_nodes[i], active_nodes[j]] - u[i] - u[j]
-                if corrected_dist < min_dist:
-                    min_dist = corrected_dist
-                    min_i, min_j = i, j
-        
-        # Calculate branch lengths
-        branch_i = 0.5 * (dm[active_nodes[min_i], active_nodes[min_j]] + u[min_i] - u[min_j])
-        branch_j = dm[active_nodes[min_i], active_nodes[min_j]] - branch_i
-        
-        # Record edges
+        active_count = len(active_nodes)
+        row_sums = {
+            node: sum(dm[node, other] for other in active_nodes)
+            for node in active_nodes
+        }
+        min_pair = min(
+            ((i, j) for index, i in enumerate(active_nodes) for j in active_nodes[index + 1:]),
+            key=lambda pair: (active_count - 2) * dm[pair[0], pair[1]]
+            - row_sums[pair[0]] - row_sums[pair[1]],
+        )
+        node_i, node_j = min_pair
+        pair_distance = dm[node_i, node_j]
+        branch_i = 0.5 * pair_distance + (
+            row_sums[node_i] - row_sums[node_j]
+        ) / (2 * (active_count - 2))
+        branch_j = pair_distance - branch_i
+
+        parent_name = f"Node_{len(node_names)}"
         edges.append({
-            "parent": f"Node_{node_counter}",
-            "child_1": node_names[active_nodes[min_i]],
-            "child_2": node_names[active_nodes[min_j]],
-            "branch_1": round(branch_i, 4),
-            "branch_2": round(branch_j, 4),
+            "parent": parent_name,
+            "child_1": node_names[node_i],
+            "child_2": node_names[node_j],
+            "branch_1": float(branch_i),
+            "branch_2": float(branch_j),
         })
-        
-        # Create new node and update distance matrix
-        new_idx = max(active_nodes) + 1
-        node_names.append(f"Node_{node_counter}")
-        node_counter += 1
-        
-        # Calculate distances from new node to all remaining
-        new_dm_row = []
-        for k in range(len(active_nodes)):
-            if k != min_i and k != min_j:
-                new_dist = 0.5 * (
-                    dm[active_nodes[min_i], active_nodes[k]] +
-                    dm[active_nodes[min_j], active_nodes[k]] -
-                    dm[active_nodes[min_i], active_nodes[min_j]]
-                )
-                new_dm_row.append(new_dist)
-        
-        # Update active nodes and distance matrix
-        new_active = [active_nodes[k] for k in range(len(active_nodes)) if k != min_i and k != min_j]
-        new_active.append(new_idx)
-        
-        old_size = len(dm)
-        new_dm = np.zeros((old_size + 1, old_size + 1))
-        new_dm[:old_size, :old_size] = dm
-        
-        dm_idx = 0
-        for k in range(len(active_nodes)):
-            if k != min_i and k != min_j:
-                new_dm[new_idx, active_nodes[k]] = new_dm_row[dm_idx]
-                new_dm[active_nodes[k], new_idx] = new_dm_row[dm_idx]
-                dm_idx += 1
-        
-        dm = new_dm
-        active_nodes = new_active
-    
-    # Final distance between last two nodes
+
+        remaining = [node for node in active_nodes if node not in (node_i, node_j)]
+        new_idx = len(dm)
+        expanded = np.zeros((new_idx + 1, new_idx + 1), dtype=float)
+        expanded[:new_idx, :new_idx] = dm
+        for node in remaining:
+            new_distance = 0.5 * (dm[node_i, node] + dm[node_j, node] - pair_distance)
+            expanded[new_idx, node] = new_distance
+            expanded[node, new_idx] = new_distance
+
+        dm = expanded
+        active_nodes = remaining + [new_idx]
+        node_names.append(parent_name)
+
+    final_distance = dm[active_nodes[0], active_nodes[1]]
     final_edge = {
         "parent": "Root",
         "child_1": node_names[active_nodes[0]],
         "child_2": node_names[active_nodes[1]],
-        "branch_1": round(dm[active_nodes[0], active_nodes[1]] / 2, 4),
-        "branch_2": round(dm[active_nodes[0], active_nodes[1]] / 2, 4),
+        "branch_1": float(final_distance / 2),
+        "branch_2": float(final_distance / 2),
     }
     edges.append(final_edge)
     
@@ -207,13 +181,20 @@ def linkage_to_newick(linkage_matrix: np.ndarray, labels: List[str]) -> str:
         branch_length = None if parent_height is None else max(parent_height - node.dist, 0.0) / 2
         if node.is_leaf():
             suffix = "" if branch_length is None else f":{branch_length:.6f}"
-            return f"{labels[node.id]}{suffix}"
+            return f"{_format_newick_label(labels[node.id])}{suffix}"
         left = _node_to_newick(node.get_left(), node.dist)
         right = _node_to_newick(node.get_right(), node.dist)
         subtree = f"({left},{right})"
         return subtree if branch_length is None else f"{subtree}:{branch_length:.6f}"
 
     return _node_to_newick(tree) + ";"
+
+
+def _format_newick_label(label: str) -> str:
+    """Quote labels that Newick parsers could split or normalize."""
+    if not label or any(char.isspace() or char in "_():,;[]'" for char in label):
+        return "'" + label.replace("'", "''") + "'"
+    return label
 
 
 def nj_edges_to_newick(edges: List[Dict]) -> str:
@@ -236,7 +217,7 @@ def nj_edges_to_newick(edges: List[Dict]) -> str:
 
     def _render(node: str) -> str:
         if node not in children:
-            return node
+            return _format_newick_label(node)
         parts = [_render(child) + f":{length:.6f}" for child, length in children[node]]
         return f"({','.join(parts)})"
 

@@ -11,7 +11,10 @@ import re
 import shlex
 import subprocess
 import tempfile
+from io import StringIO
 from pathlib import Path
+
+from Bio import Phylo
 
 
 WSL_DISTRIBUTION = "Ubuntu"
@@ -90,6 +93,38 @@ def _parse_fasta(text: str) -> tuple[list[str], list[str]]:
         labels.append(current_label)
         sequences.append("".join(chunks))
     return labels, sequences
+
+
+def restore_newick_labels(newick: str, labels_by_id: dict[str, str]) -> str:
+    """Replace temporary tool-safe leaf IDs with original FASTA headers."""
+    tree = Phylo.read(StringIO(newick.strip()), "newick")
+    unknown_ids = [
+        clade.name for clade in tree.get_terminals()
+        if clade.name not in labels_by_id
+    ]
+    if unknown_ids:
+        raise RuntimeError(f"IQ-TREE returned unknown sequence IDs: {', '.join(unknown_ids)}")
+
+    for clade in tree.get_terminals():
+        clade.name = labels_by_id[clade.name]
+
+    output = StringIO()
+    Phylo.write(
+        tree,
+        output,
+        "newick",
+        format_branch_length="%1.10f",
+        format_confidence="%1.0f",
+    )
+    serialized = output.getvalue().strip()
+    return re.sub(r":0(?:\.0+)?;$", ";", serialized)
+
+
+def restore_iqtree_report_labels(report: str, labels_by_id: dict[str, str]) -> str:
+    """Restore temporary sequence IDs in the human-readable IQ-TREE report."""
+    for sequence_id, label in labels_by_id.items():
+        report = re.sub(rf"\b{re.escape(sequence_id)}\b", lambda _: label, report)
+    return report
 
 
 def run_external_msa(

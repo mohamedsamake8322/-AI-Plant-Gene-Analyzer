@@ -13,6 +13,9 @@ defined locally below.
 """
 
 import re
+from io import StringIO
+
+from Bio import Phylo
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -913,7 +916,11 @@ def plot_msa_table(aligned_sequences: list, labels: list | None = None) -> go.Fi
 
 
 # ─── Dendrogram from scipy dendrogram-data ──────────────────────────────────
-def plot_dendrogram(dendro: dict, labels: list | None = None) -> go.Figure:
+def plot_dendrogram(
+    dendro: dict,
+    labels: list | None = None,
+    method: str = "",
+) -> go.Figure:
     """
     Build a simple interactive tree diagram from scipy-style dendrogram data.
 
@@ -927,6 +934,7 @@ def plot_dendrogram(dendro: dict, labels: list | None = None) -> go.Figure:
     icoord = dendro.get('icoord', [])
     dcoord = dendro.get('dcoord', [])
     color_list = dendro.get('color_list', [])
+    leaf_indices = dendro.get('leaves', [])
 
     fig = go.Figure()
     node_points = set()
@@ -934,7 +942,7 @@ def plot_dendrogram(dendro: dict, labels: list | None = None) -> go.Figure:
 
     for xs, ys, col in zip(icoord, dcoord, color_list if color_list else [TEAL] * len(icoord)):
         xs = list(xs)
-        ys = list(ys)
+        ys = [float(y) / 2 for y in ys]
         for x, y in zip(xs, ys):
             node_points.add((x, y))
             if y == 0:
@@ -952,7 +960,7 @@ def plot_dendrogram(dendro: dict, labels: list | None = None) -> go.Figure:
         )
 
     internal_nodes = sorted({(x, y) for x, y in node_points if y != 0}, key=lambda p: (p[1], p[0]))
-    leaves = sorted({(x, y) for x, y in node_points if y == 0}, key=lambda p: p[0])
+    leaf_nodes = sorted({(x, y) for x, y in node_points if y == 0}, key=lambda p: p[0])
 
     if internal_nodes:
         fig.add_trace(
@@ -966,11 +974,11 @@ def plot_dendrogram(dendro: dict, labels: list | None = None) -> go.Figure:
             )
         )
 
-    if leaves:
+    if leaf_nodes:
         fig.add_trace(
             go.Scatter(
-                x=[x for x, _ in leaves],
-                y=[y for _, y in leaves],
+                x=[x for x, _ in leaf_nodes],
+                y=[y for _, y in leaf_nodes],
                 mode='markers',
                 marker=dict(size=10, color=MINT, symbol='circle'),
                 hoverinfo='none',
@@ -980,13 +988,17 @@ def plot_dendrogram(dendro: dict, labels: list | None = None) -> go.Figure:
         )
 
     leaf_x_unique = sorted(set(leaf_x))
-    if labels and len(labels) == len(leaf_x_unique):
+    ordered_labels = labels
+    if labels and leaf_indices and len(labels) == len(leaf_indices):
+        ordered_labels = [labels[index] for index in leaf_indices]
+
+    if ordered_labels and len(ordered_labels) == len(leaf_x_unique):
         fig.add_trace(
             go.Scatter(
                 x=leaf_x_unique,
                 y=[0] * len(leaf_x_unique),
                 mode='text',
-                text=labels,
+                text=ordered_labels,
                 textposition='bottom center',
                 textfont=dict(color=THEME["font_color"], size=11),
                 hoverinfo='skip',
@@ -996,9 +1008,130 @@ def plot_dendrogram(dendro: dict, labels: list | None = None) -> go.Figure:
 
     fig.update_layout(**_base_layout("Phylogenetic Tree"), height=420)
     fig.update_xaxes(showticklabels=False, zeroline=False, showgrid=False)
-    fig.update_yaxes(title="Distance", zeroline=False, showgrid=True)
+    axis_title = "Evolutionary height (substitutions per site)"
+    if method:
+        axis_title += f" ({method})"
+    fig.update_yaxes(title=axis_title, zeroline=False, showgrid=True)
     fig.add_trace(_legend_only_placeholder("Branch = distance", CYAN, mode="lines"))
     fig.add_trace(_legend_only_placeholder("Leaf = sequence", MINT, mode="markers"))
+    return fig
+
+
+def plot_newick_tree(newick: str, support_label: str = "UFBoot") -> go.Figure:
+    """Render a midpoint-rooted Newick tree for display, preserving its topology."""
+    tree = Phylo.read(StringIO(newick.strip()), "newick")
+    tree.root_at_midpoint()
+    terminals = tree.get_terminals()
+    if len(terminals) < 2:
+        raise ValueError("A phylogenetic tree must contain at least two sequences.")
+
+    y_positions: dict[int, float] = {
+        id(clade): float(index)
+        for index, clade in enumerate(reversed(terminals))
+    }
+    x_positions = {id(tree.root): 0.0}
+
+    def assign_y_positions(clade) -> float:
+        if clade.is_terminal():
+            return y_positions[id(clade)]
+        child_y = [assign_y_positions(child) for child in clade.clades]
+        y_positions[id(clade)] = sum(child_y) / len(child_y)
+        return y_positions[id(clade)]
+
+    def assign_x_positions(clade) -> None:
+        for child in clade.clades:
+            branch_length = max(0.0, float(child.branch_length or 0.0))
+            x_positions[id(child)] = x_positions[id(clade)] + branch_length
+            assign_x_positions(child)
+
+    assign_y_positions(tree.root)
+    assign_x_positions(tree.root)
+
+    branch_x: list[float | None] = []
+    branch_y: list[float | None] = []
+    hover_text: list[str | None] = []
+    support_x: list[float] = []
+    support_y: list[float] = []
+    support_text: list[str] = []
+
+    for clade in tree.find_clades(order="preorder"):
+        if not clade.clades:
+            continue
+        child_y = [y_positions[id(child)] for child in clade.clades]
+        branch_x.extend([x_positions[id(clade)], x_positions[id(clade)], None])
+        branch_y.extend([min(child_y), max(child_y), None])
+        hover_text.extend([None, None, None])
+
+        for child in clade.clades:
+            length = max(0.0, float(child.branch_length or 0.0))
+            label = child.name or "Sequence"
+            branch_x.extend([x_positions[id(clade)], x_positions[id(child)], None])
+            branch_y.extend([y_positions[id(child)], y_positions[id(child)], None])
+            branch_hover = f"{label}<br>Branch length: {length:.6g}"
+            if child.confidence is not None:
+                branch_hover += f"<br>Support: {child.confidence:g}"
+            hover_text.extend([branch_hover, branch_hover, None])
+
+        if clade.confidence is not None:
+            support_x.append(x_positions[id(clade)])
+            support_y.append(y_positions[id(clade)])
+            support_text.append(f"{support_label} {clade.confidence:g}")
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=branch_x,
+        y=branch_y,
+        customdata=hover_text,
+        mode="lines",
+        line=dict(color=CYAN, width=2),
+        hovertemplate="%{customdata}<extra></extra>",
+        name="Branches",
+        connectgaps=False,
+    ))
+    fig.add_trace(go.Scatter(
+        x=[x_positions[id(clade)] for clade in terminals],
+        y=[y_positions[id(clade)] for clade in terminals],
+        mode="markers+text",
+        marker=dict(size=8, color=MINT),
+        text=[clade.name or "Unnamed" for clade in terminals],
+        textposition="middle right",
+        textfont=dict(color=THEME["font_color"], size=11),
+        cliponaxis=False,
+        hovertemplate="%{text}<extra></extra>",
+        name="Sequences",
+    ))
+    if support_text:
+        fig.add_trace(go.Scatter(
+            x=support_x,
+            y=[value + 0.3 for value in support_y],
+            mode="text",
+            text=support_text,
+            textposition="top center",
+            textfont=dict(color=AMBER, size=10),
+            hoverinfo="skip",
+            showlegend=False,
+        ))
+
+    max_x = max(x_positions.values())
+    layout = _base_layout("IQ-TREE Phylogeny")
+    layout.update(
+        height=max(420, 64 * len(terminals)),
+        margin=dict(l=30, r=120, t=60, b=45),
+        showlegend=False,
+    )
+    fig.update_layout(**layout)
+    fig.update_xaxes(
+        title="Branch length (substitutions per site)",
+        range=[0, max_x + max(max_x * 0.12, 0.01)],
+        zeroline=False,
+    )
+    fig.update_yaxes(
+        showticklabels=False,
+        title=None,
+        showgrid=False,
+        zeroline=False,
+        range=[-0.5, len(terminals) - 0.5 + 0.35],
+    )
     return fig
 
 
@@ -1032,14 +1165,14 @@ def plot_distance_heatmap(distance_matrix: list[list[float]], labels: list[str],
 
 
 def plot_neighbor_joining(edges: list[dict], labels: list[str]) -> go.Figure:
-    """Render a simple interactive rectangular tree from NJ edge records."""
+    """Render a rectangular Neighbor-Joining tree with signed branch lengths."""
     children = {edge["parent"]: (edge["child_1"], edge["child_2"]) for edge in edges}
     lengths = {
-        (edge["parent"], edge["child_1"]): max(0.0, float(edge["branch_1"]))
+        (edge["parent"], edge["child_1"]): float(edge["branch_1"])
         for edge in edges
     }
     lengths.update({
-        (edge["parent"], edge["child_2"]): max(0.0, float(edge["branch_2"]))
+        (edge["parent"], edge["child_2"]): float(edge["branch_2"])
         for edge in edges
     })
     root = edges[-1]["parent"] if edges else ""
@@ -1072,16 +1205,25 @@ def plot_neighbor_joining(edges: list[dict], labels: list[str]) -> go.Figure:
     if root:
         assign_x(root, 0.0)
     fig = go.Figure()
+    branch_x: list[float | None] = []
+    branch_y: list[float | None] = []
     for parent, (child_1, child_2) in children.items():
         parent_x = x_positions.get(parent, 0.0)
-        fig.add_trace(go.Scatter(
-            x=[parent_x, x_positions.get(child_1, parent_x), None, parent_x, x_positions.get(child_2, parent_x)],
-            y=[y_positions[parent], y_positions[child_1], None, y_positions[parent], y_positions[child_2]],
-            mode="lines",
-            line=dict(color=CYAN, width=2),
-            hoverinfo="none",
-            showlegend=False,
-        ))
+        child_y = [y_positions[child_1], y_positions[child_2]]
+        branch_x.extend([parent_x, parent_x, None])
+        branch_y.extend([min(child_y), max(child_y), None])
+        for child in (child_1, child_2):
+            branch_x.extend([parent_x, x_positions.get(child, parent_x), None])
+            branch_y.extend([y_positions[child], y_positions[child], None])
+    fig.add_trace(go.Scatter(
+        x=branch_x,
+        y=branch_y,
+        mode="lines",
+        line=dict(color=CYAN, width=2),
+        hoverinfo="none",
+        showlegend=False,
+        connectgaps=False,
+    ))
     fig.add_trace(go.Scatter(
         x=[x_positions.get(label, 0.0) for label in leaf_order],
         y=[y_positions.get(label, 0.0) for label in leaf_order],
@@ -1094,8 +1236,18 @@ def plot_neighbor_joining(edges: list[dict], labels: list[str]) -> go.Figure:
     ))
     fig.add_trace(_legend_only_placeholder("Branch = evolutionary distance", CYAN, mode="lines"))
     fig.add_trace(_legend_only_placeholder("Dot = sequence", MINT, mode="markers"))
-    fig.update_layout(**_base_layout("Neighbor-Joining tree (unrooted method, display rooted for readability)"))
-    fig.update_xaxes(title="Branch length", showgrid=True, zeroline=True)
+    x_values = list(x_positions.values()) or [0.0]
+    padding = max((max(x_values) - min(x_values)) * 0.05, 0.001)
+    fig.update_layout(
+        **_base_layout("Neighbor-Joining tree (unrooted; root is a display anchor)"),
+        height=max(420, 64 * len(leaf_order)),
+    )
+    fig.update_xaxes(
+        title="Branch length (substitutions per site)",
+        range=[min(x_values) - padding, max(x_values) + padding],
+        showgrid=True,
+        zeroline=True,
+    )
     fig.update_yaxes(showticklabels=False, showgrid=False, zeroline=False)
     return fig
 

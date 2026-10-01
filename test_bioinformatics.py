@@ -9,10 +9,30 @@ import pytest
 import bioinformatics as bio
 import sequence_loader as loader
 import visualization as viz
+import external_tools
+import numpy as np
+import phylogeny_engine as phylo
+from Bio import Phylo
+from io import StringIO
 
 
 class TestVisualizationRenderingRegression:
     """Ensure Plotly figures keep valid coordinate arrays after the legend-only fix."""
+
+    def test_upgma_plot_uses_cluster_leaf_order_and_evolutionary_heights(self):
+        dendro = {
+            "icoord": [[5, 5, 15, 15], [25, 25, 35, 35], [10, 10, 30, 30]],
+            "dcoord": [[0, 0.0246, 0.0246, 0], [0, 0.0246, 0.0246, 0], [0.0246, 0.0745, 0.0745, 0.0246]],
+            "leaves": [0, 2, 1, 3],
+            "color_list": ["#00d9a3", "#00d9a3", "#00d9a3"],
+        }
+
+        fig = viz.plot_dendrogram(dendro, labels=["A", "B", "C", "D"], method="K2P")
+
+        label_trace = next(trace for trace in fig.data if getattr(trace, "mode", "") == "text")
+        assert list(label_trace.text) == ["A", "C", "B", "D"]
+        assert max(value for trace in fig.data for value in (trace.y or []) if value is not None) == pytest.approx(0.03725)
+        assert "K2P" in fig.layout.yaxis.title.text
 
     def test_plot_tree_figures_do_not_emit_none_coordinates(self):
         dendro = {
@@ -25,8 +45,12 @@ class TestVisualizationRenderingRegression:
             [{"parent": "Root", "child_1": "A", "child_2": "B", "branch_1": 1.0, "branch_2": 1.0}],
             ["A", "B"],
         )
+        newick_fig = viz.plot_newick_tree("((A:0.1,B:0.2)95:0.3,(C:0.15,D:0.25)88:0.35);")
 
-        for fig in (dendro_fig, nj_fig):
+        assert any("A" in (trace.text or []) for trace in newick_fig.data if hasattr(trace, "text"))
+        assert len(newick_fig.data) == 3
+
+        for fig in (dendro_fig, nj_fig, newick_fig):
             for trace in fig.data:
                 if getattr(trace, "visible", None) == "legendonly":
                     assert list(getattr(trace, "x", [])) == [], "Legend-only trace should be empty"
@@ -36,6 +60,88 @@ class TestVisualizationRenderingRegression:
                         assert any(v is not None for v in trace.x), "Data trace has no valid x coordinates"
                     if hasattr(trace, "y"):
                         assert any(v is not None for v in trace.y), "Data trace has no valid y coordinates"
+
+    def test_iqtree_midpoint_plot_and_restored_labels(self):
+        original_header = "cqi:110688118 | organism=Chenopodium quinoa"
+        original_headers = {
+            "S0001": original_header,
+            "S0002": "cqi:110684354 | organism=Chenopodium quinoa",
+            "S0003": "test copy (A+15) | organism=Chenopodium quinoa",
+            "S0004": "test copy (B+15) | organism=Chenopodium quinoa",
+        }
+        iqtree_newick = "(S0001:0.0000025118,(S0002:0.0000020379,S0004:0.0246483335)100:0.0501366272,S0003:0.0246269447);"
+
+        restored = external_tools.restore_newick_labels(
+            iqtree_newick,
+            original_headers,
+        )
+        restored_report = external_tools.restore_iqtree_report_labels(
+            "S0001\tS0002\nS00010 should not match S0001",
+            {"S0001": original_header, "S0002": "B_110684354"},
+        )
+        fig = viz.plot_newick_tree(restored)
+
+        terminal_labels = list(fig.data[1].text)
+        assert set(terminal_labels) == set(original_headers.values())
+        assert any("UFBoot 100" in label for label in fig.data[2].text)
+        assert "cqi:110688118" in restored
+        assert "test copy (A+15) | organism=Chenopodium quinoa" in restored
+        assert "test copy (B+15) | organism=Chenopodium quinoa" in restored
+        assert not restored.endswith(":0.0000000000;")
+        assert original_header in restored_report
+        assert "S0002" not in restored_report
+        assert "S00010" in restored_report
+
+    def test_neighbor_joining_keeps_precision_and_expected_terminal_branches(self):
+        distances = np.array([
+            [0.0, 0.050281, 0.024641, 0.074886],
+            [0.050281, 0.0, 0.076584, 0.024635],
+            [0.024641, 0.076584, 0.0, 0.096626],
+            [0.074886, 0.024635, 0.096626, 0.0],
+        ])
+        names = ["A", "B", "C", "D"]
+
+        tree = phylo.neighbor_joining(distances, names)
+        terminal_branches = {
+            child: edge[f"branch_{child_index}"]
+            for edge in tree["edges"]
+            for child_index, child in ((1, edge["child_1"]), (2, edge["child_2"]))
+            if child in names
+        }
+        root_edge = tree["edges"][-1]
+        fig = viz.plot_neighbor_joining(tree["edges"], names)
+        tree_trace = next(trace for trace in fig.data if trace.mode == "lines")
+        horizontal_segments = [
+            (x1, x2, y1, y2)
+            for x1, x2, y1, y2 in zip(tree_trace.x, tree_trace.x[1:], tree_trace.y, tree_trace.y[1:])
+            if x1 is not None and x2 is not None and y1 is not None and y2 is not None
+        ]
+
+        assert terminal_branches["A"] == pytest.approx(0.00030975)
+        assert terminal_branches["C"] == pytest.approx(0.02433125)
+        assert terminal_branches["B"] == pytest.approx(0.00115575)
+        assert terminal_branches["D"] == pytest.approx(0.02347925)
+        assert root_edge["branch_1"] + root_edge["branch_2"] == pytest.approx(0.04995625)
+        assert any(x1 != x2 and y1 == y2 for x1, x2, y1, y2 in horizontal_segments)
+
+    def test_neighbor_joining_newick_preserves_real_fasta_headers(self):
+        names = [
+            "cqi:110688118 | organism=Chenopodium quinoa",
+            "cqi:110684354 | organism=Chenopodium quinoa",
+            "test copy (A+15) | organism=Chenopodium quinoa",
+            "test copy (B+15) | organism=Chenopodium quinoa",
+        ]
+        distances = np.array([
+            [0.0, 0.050281, 0.024641, 0.074886],
+            [0.050281, 0.0, 0.076584, 0.024635],
+            [0.024641, 0.076584, 0.0, 0.096626],
+            [0.074886, 0.024635, 0.096626, 0.0],
+        ])
+
+        tree = phylo.neighbor_joining(distances, names)
+        parsed = Phylo.read(StringIO(tree["newick"]), "newick")
+
+        assert {leaf.name for leaf in parsed.get_terminals()} == set(names)
 
 
 class TestSequenceCleaning:
