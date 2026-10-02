@@ -12,10 +12,13 @@ for chart-specific meaning (e.g. "high similarity" vs "low similarity") are
 defined locally below.
 """
 
+import html
 import re
+import textwrap
 from io import StringIO
 
 from Bio import Phylo
+from Bio.Phylo.Newick import Clade, Tree
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -42,6 +45,20 @@ THEME = dict(
 
 # ─── Color palette ─────────────────────────────────────────────────────────────
 NUCLEOTIDE_COLORS: dict[str, str] = config.NUCLEOTIDE_COLORS
+
+
+def _wrap_tree_label(label: str, width: int = 22) -> str:
+    """Wrap long sequence headers for plots while retaining their full text."""
+    return "<br>".join(
+        html.escape(line, quote=False)
+        for line in textwrap.wrap(label, width=width, break_long_words=True, break_on_hyphens=False)
+    )
+
+
+def _display_tree_label(label: str) -> str:
+    """Use the distinct FASTA identifier as the visible tip label."""
+    identifier = label.split(" | ", 1)[0]
+    return _wrap_tree_label(identifier)
 
 
 def _base_layout(title: str = "") -> dict:
@@ -998,15 +1015,19 @@ def plot_dendrogram(
                 x=leaf_x_unique,
                 y=[0] * len(leaf_x_unique),
                 mode='text',
-                text=ordered_labels,
+                text=[_display_tree_label(label) for label in ordered_labels],
+                customdata=ordered_labels,
                 textposition='bottom center',
-                textfont=dict(color=THEME["font_color"], size=11),
-                hoverinfo='skip',
+                textfont=dict(color=THEME["font_color"], size=10),
+                cliponaxis=False,
+                hovertemplate="%{customdata}<extra></extra>",
                 showlegend=False,
             )
         )
 
-    fig.update_layout(**_base_layout("Phylogenetic Tree"), height=420)
+    layout = _base_layout("Phylogenetic Tree")
+    layout.update(height=460, margin=dict(l=40, r=40, t=60, b=115))
+    fig.update_layout(**layout)
     fig.update_xaxes(showticklabels=False, zeroline=False, showgrid=False)
     axis_title = "Evolutionary height (substitutions per site)"
     if method:
@@ -1017,10 +1038,26 @@ def plot_dendrogram(
     return fig
 
 
-def plot_newick_tree(newick: str, support_label: str = "UFBoot") -> go.Figure:
+def plot_newick_tree(
+    newick: str,
+    support_label: str | None = "UFBoot",
+    title: str = "IQ-TREE Phylogeny",
+    leaf_order: list[str] | None = None,
+) -> go.Figure:
     """Render a midpoint-rooted Newick tree for display, preserving its topology."""
     tree = Phylo.read(StringIO(newick.strip()), "newick")
     tree.root_at_midpoint()
+    if leaf_order:
+        order_by_label = {label: index for index, label in enumerate(leaf_order)}
+
+        def orient_clades(clade) -> int:
+            if clade.is_terminal():
+                return order_by_label.get(clade.name, len(order_by_label))
+            child_ranks = [(orient_clades(child), child) for child in clade.clades]
+            clade.clades = [child for _, child in sorted(child_ranks, key=lambda item: item[0])]
+            return min((rank for rank, _ in child_ranks), default=len(order_by_label))
+
+        orient_clades(tree.root)
     terminals = tree.get_terminals()
     if len(terminals) < 2:
         raise ValueError("A phylogenetic tree must contain at least two sequences.")
@@ -1040,7 +1077,7 @@ def plot_newick_tree(newick: str, support_label: str = "UFBoot") -> go.Figure:
 
     def assign_x_positions(clade) -> None:
         for child in clade.clades:
-            branch_length = max(0.0, float(child.branch_length or 0.0))
+            branch_length = float(child.branch_length or 0.0)
             x_positions[id(child)] = x_positions[id(clade)] + branch_length
             assign_x_positions(child)
 
@@ -1072,7 +1109,7 @@ def plot_newick_tree(newick: str, support_label: str = "UFBoot") -> go.Figure:
                 branch_hover += f"<br>Support: {child.confidence:g}"
             hover_text.extend([branch_hover, branch_hover, None])
 
-        if clade.confidence is not None:
+        if support_label and clade.confidence is not None:
             support_x.append(x_positions[id(clade)])
             support_y.append(y_positions[id(clade)])
             support_text.append(f"{support_label} {clade.confidence:g}")
@@ -1093,36 +1130,46 @@ def plot_newick_tree(newick: str, support_label: str = "UFBoot") -> go.Figure:
         y=[y_positions[id(clade)] for clade in terminals],
         mode="markers+text",
         marker=dict(size=8, color=MINT),
-        text=[clade.name or "Unnamed" for clade in terminals],
+        text=[_display_tree_label(clade.name or "Unnamed") for clade in terminals],
+        customdata=[clade.name or "Unnamed" for clade in terminals],
         textposition="middle right",
-        textfont=dict(color=THEME["font_color"], size=11),
+        textfont=dict(color=THEME["font_color"], size=10),
         cliponaxis=False,
-        hovertemplate="%{text}<extra></extra>",
+        hovertemplate="%{customdata}<extra></extra>",
         name="Sequences",
     ))
-    if support_text:
-        fig.add_trace(go.Scatter(
-            x=support_x,
-            y=[value + 0.3 for value in support_y],
-            mode="text",
-            text=support_text,
-            textposition="top center",
-            textfont=dict(color=AMBER, size=10),
-            hoverinfo="skip",
-            showlegend=False,
-        ))
-
+    x_min = min(x_positions.values())
     max_x = max(x_positions.values())
-    layout = _base_layout("IQ-TREE Phylogeny")
+    x_padding = max((max_x - x_min) * 0.3, 0.005)
+    support_annotations = [
+        dict(
+            x=x + x_padding * 0.08,
+            y=y + 0.45,
+            xref="x",
+            yref="y",
+            text=label,
+            showarrow=False,
+            xanchor="left",
+            yanchor="bottom",
+            bgcolor=THEME["plot_bg"],
+            bordercolor=THEME["grid_color"],
+            borderwidth=1,
+            borderpad=3,
+            font=dict(color=AMBER, size=10),
+        )
+        for x, y, label in zip(support_x, support_y, support_text)
+    ]
+    layout = _base_layout(title)
     layout.update(
         height=max(420, 64 * len(terminals)),
-        margin=dict(l=30, r=120, t=60, b=45),
+        margin=dict(l=30, r=220, t=60, b=45),
         showlegend=False,
+        annotations=support_annotations,
     )
     fig.update_layout(**layout)
     fig.update_xaxes(
         title="Branch length (substitutions per site)",
-        range=[0, max_x + max(max_x * 0.12, 0.01)],
+        range=[x_min - x_padding, max_x + x_padding],
         zeroline=False,
     )
     fig.update_yaxes(
@@ -1130,7 +1177,7 @@ def plot_newick_tree(newick: str, support_label: str = "UFBoot") -> go.Figure:
         title=None,
         showgrid=False,
         zeroline=False,
-        range=[-0.5, len(terminals) - 0.5 + 0.35],
+        range=[-0.5, len(terminals) - 0.5 + 0.65],
     )
     return fig
 
@@ -1165,91 +1212,41 @@ def plot_distance_heatmap(distance_matrix: list[list[float]], labels: list[str],
 
 
 def plot_neighbor_joining(edges: list[dict], labels: list[str]) -> go.Figure:
-    """Render a rectangular Neighbor-Joining tree with signed branch lengths."""
-    children = {edge["parent"]: (edge["child_1"], edge["child_2"]) for edge in edges}
-    lengths = {
-        (edge["parent"], edge["child_1"]): float(edge["branch_1"])
-        for edge in edges
-    }
-    lengths.update({
-        (edge["parent"], edge["child_2"]): float(edge["branch_2"])
-        for edge in edges
-    })
-    root = edges[-1]["parent"] if edges else ""
-    leaf_order = [label for label in labels if label]
-    y_positions = {label: index for index, label in enumerate(reversed(leaf_order))}
-    next_y = len(y_positions)
+    """Render NJ with the shared topology-aware midpoint layout."""
+    if not edges:
+        return go.Figure()
 
-    def assign_y(node: str) -> float:
-        nonlocal next_y
-        if node in y_positions:
-            return y_positions[node]
-        child_1, child_2 = children[node]
-        y_positions[node] = (assign_y(child_1) + assign_y(child_2)) / 2
-        next_y += 1
-        return y_positions[node]
+    children: dict[str, list[tuple[str, float]]] = {}
+    for edge in edges:
+        parent = edge["parent"]
+        children.setdefault(parent, []).extend([
+            (edge["child_1"], float(edge["branch_1"])),
+            (edge["child_2"], float(edge["branch_2"])),
+        ])
+    root = edges[-1]["parent"]
 
-    if root:
-        assign_y(root)
-    x_positions = {root: 0.0}
+    def build_clade(node: str, branch_length: float | None = None) -> Clade:
+        node_children = children.get(node, [])
+        return Clade(
+            branch_length=branch_length,
+            name=None if node_children else node,
+            clades=[build_clade(child, length) for child, length in node_children],
+        )
 
-    def assign_x(node: str, x: float) -> None:
-        if node not in children:
-            return
-        child_1, child_2 = children[node]
-        for child in (child_1, child_2):
-            child_x = x + lengths.get((node, child), 0.0)
-            x_positions[child] = child_x
-            assign_x(child, child_x)
-
-    if root:
-        assign_x(root, 0.0)
-    fig = go.Figure()
-    branch_x: list[float | None] = []
-    branch_y: list[float | None] = []
-    for parent, (child_1, child_2) in children.items():
-        parent_x = x_positions.get(parent, 0.0)
-        child_y = [y_positions[child_1], y_positions[child_2]]
-        branch_x.extend([parent_x, parent_x, None])
-        branch_y.extend([min(child_y), max(child_y), None])
-        for child in (child_1, child_2):
-            branch_x.extend([parent_x, x_positions.get(child, parent_x), None])
-            branch_y.extend([y_positions[child], y_positions[child], None])
-    fig.add_trace(go.Scatter(
-        x=branch_x,
-        y=branch_y,
-        mode="lines",
-        line=dict(color=CYAN, width=2),
-        hoverinfo="none",
-        showlegend=False,
-        connectgaps=False,
-    ))
-    fig.add_trace(go.Scatter(
-        x=[x_positions.get(label, 0.0) for label in leaf_order],
-        y=[y_positions.get(label, 0.0) for label in leaf_order],
-        text=leaf_order,
-        mode="markers+text",
-        textposition="middle right",
-        marker=dict(size=9, color=MINT),
-        hovertemplate="Sequence: %{text}<extra></extra>",
-        showlegend=False,
-    ))
-    fig.add_trace(_legend_only_placeholder("Branch = evolutionary distance", CYAN, mode="lines"))
-    fig.add_trace(_legend_only_placeholder("Dot = sequence", MINT, mode="markers"))
-    x_values = list(x_positions.values()) or [0.0]
-    padding = max((max(x_values) - min(x_values)) * 0.05, 0.001)
-    fig.update_layout(
-        **_base_layout("Neighbor-Joining tree (unrooted; root is a display anchor)"),
-        height=max(420, 64 * len(leaf_order)),
+    tree = Tree(root=build_clade(root))
+    output = StringIO()
+    Phylo.write(
+        tree,
+        output,
+        "newick",
+        format_branch_length="%1.10f",
     )
-    fig.update_xaxes(
-        title="Branch length (substitutions per site)",
-        range=[min(x_values) - padding, max(x_values) + padding],
-        showgrid=True,
-        zeroline=True,
+    return plot_newick_tree(
+        output.getvalue(),
+        support_label=None,
+        title="Neighbor-Joining tree (unrooted; midpoint-rooted for display)",
+        leaf_order=labels,
     )
-    fig.update_yaxes(showticklabels=False, showgrid=False, zeroline=False)
-    return fig
 
 
 # ─── Enhanced Similarity Analysis (Phases 1-5) ────────────────────────────────

@@ -354,12 +354,13 @@ with tool_tabs[2]:
         ["Internal distance tree", "IQ-TREE (ModelFinder + bootstrap)"],
         key="independent_phylogeny_engine",
     )
-    phylogeny_method = st.selectbox(
-        translate('ui.tree_algorithm', default="Tree algorithm"),
-        ["upgma", "neighbor_joining"],
-        key="independent_phylogeny_method",
-        disabled=phylogeny_engine != "Internal distance tree",
-    )
+    phylogeny_method = "upgma"
+    if phylogeny_engine == "Internal distance tree":
+        phylogeny_method = st.selectbox(
+            translate('ui.tree_algorithm', default="Tree algorithm"),
+            ["upgma", "neighbor_joining"],
+            key="independent_phylogeny_method",
+        )
     bootstrap_replicates = 1000
     if phylogeny_engine == "IQ-TREE (ModelFinder + bootstrap)":
         bootstrap_replicates = st.select_slider(
@@ -368,6 +369,12 @@ with tool_tabs[2]:
             value=1000,
             key="independent_bootstrap_replicates",
         )
+    tree_theme = st.radio(
+        "Tree appearance",
+        ["Dark", "Light"],
+        horizontal=True,
+        key="independent_tree_theme",
+    ).lower()
     if st.button(translate('ui.build_tree', default="Build Tree"), key="independent_build_tree"):
         from sequence_loader import parse_fasta
         from core_engines.distance_engine import distance_matrix
@@ -415,13 +422,20 @@ with tool_tabs[2]:
                         f"IQ-TREE complete — model: {iq_result['model']} — "
                         f"UFBoot: {iq_result['bootstrap']} replicates"
                     )
-                    st.plotly_chart(
-                        viz.plot_newick_tree(exported_newick, support_label="UFBoot"),
-                        width="stretch",
-                    )
-                    st.caption(
-                        "IQ-TREE estimates an unrooted tree; this display is midpoint-rooted for layout only. "
-                        "Support values are ultrafast bootstrap (UFBoot)."
+                    from phylo_view import render_phylo_result
+
+                    render_phylo_result(
+                        exported_newick,
+                        method="iqtree",
+                        meta={
+                            "model": iq_result["model"],
+                            "bootstrap": iq_result["bootstrap"],
+                            "n_sites": len(iq_msa["aligned_sequences"][0]),
+                            "aligner": "MAFFT (--auto)",
+                            "engine": "IQ-TREE 2",
+                        },
+                        theme=tree_theme,
+                        key="independent_iqtree",
                     )
                     st.code(exported_newick, language="text")
                     st.download_button(
@@ -457,25 +471,23 @@ with tool_tabs[2]:
         if distances:
             builder = upgma if phylogeny_method == "upgma" else neighbor_joining
             tree = builder(np.array(distances["distance_matrix"]), names)
-            st.write("**Tree metadata**", {
-                "algorithm": tree.get("algorithm"),
-                "distance_method": distances.get("method"),
-                "tree_type": tree.get("tree_type"),
-            })
-            if phylogeny_method == "upgma" and tree.get("dendrogram_data"):
-                st.plotly_chart(
-                    viz.plot_dendrogram(
-                        tree["dendrogram_data"],
-                        labels=names,
-                        method=distances.get("method", ""),
-                    ),
-                    width="stretch",
-                )
-                st.caption("Leaves follow the clustering order; node heights are half the pairwise merge distance. This is a clustering result, not a proof of ancestry.")
-            elif phylogeny_method == "neighbor_joining":
-                st.warning("Neighbor-Joining is an additive, unrooted method; the displayed root is only a layout anchor.")
-                st.plotly_chart(viz.plot_neighbor_joining(tree.get("edges", []), names), width="stretch")
-                st.caption("Legend: dots are sequences and horizontal branch length represents model distance. The display anchor is not a biological root.")
+            from phylo_view import render_phylo_result
+
+            aligned_sequences = distances.get("aligned_sequences", [])
+            render_phylo_result(
+                tree["newick"],
+                method="upgma" if phylogeny_method == "upgma" else "nj",
+                meta={
+                    "distance_method": distances.get("method", "kimura"),
+                    "n_sites": len(aligned_sequences[0]) if aligned_sequences else None,
+                    "aligner": distances.get("alignment_method"),
+                    "engine": tree.get("algorithm"),
+                },
+                theme=tree_theme,
+                dist_names=names,
+                dist_matrix=distances["distance_matrix"],
+                key=f"independent_{phylogeny_method}",
+            )
             if tree.get("newick"):
                 st.code(tree["newick"])
                 st.download_button("Download Newick", tree["newick"], file_name="phylogeny_tree.nwk", mime="text/plain", key="independent_newick_download")

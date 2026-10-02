@@ -864,3 +864,24 @@ ValueError: Sequence is empty.
 2026-09-29 20:16:52,742 - __main__ - INFO - Analysis session state saved
 2026-09-30 21:18:06,642 - __main__ - INFO - CSS loaded successfully from style.css
 2026-10-01 06:56:49,684 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-01 12:16:44,095 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-01 20:51:53,562 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-01 21:29:07,123 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-01 21:30:22,124 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-01 21:30:22,415 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-01 21:30:22,622 - __main__ - INFO - Starting analysis for record 1/1: cqi:110688118 | organism=Chenopodium quinoa
+2026-10-01 21:30:23,281 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 45 candidates for top_n=3
+2026-10-01 21:30:32,819 - __main__ - INFO - Analysis session state saved
+2026-10-01 21:30:53,435 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-01 21:30:57,180 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-01 21:31:07,149 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-01 21:31:10,276 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-01 21:31:10,319 - __main__ - INFO - Starting analysis for record 1/1: cqi:110688118 | organism=Chenopodium quinoa
+2026-10-01 21:31:10,802 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 45 candidates for top_n=3
+2026-10-01 21:31:10,804 - __main__ - INFO - Analysis session state saved
+2026-10-01 21:39:35,906 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-01 21:39:55,227 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-01 21:39:55,526 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-01 21:39:55,568 - __main__ - INFO - Starting analysis for record 1/1: cqi:110688118 | organism=Chenopodium quinoa
+2026-10-01 21:39:55,970 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 45 candidates for top_n=3
+2026-10-01 21:39:55,973 - __main__ - INFO - Analysis session state saved

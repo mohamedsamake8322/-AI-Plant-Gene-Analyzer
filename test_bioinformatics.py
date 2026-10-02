@@ -14,6 +14,8 @@ import numpy as np
 import phylogeny_engine as phylo
 from Bio import Phylo
 from io import StringIO
+from unittest.mock import MagicMock, patch
+import phylo_view
 
 
 class TestVisualizationRenderingRegression:
@@ -31,6 +33,7 @@ class TestVisualizationRenderingRegression:
 
         label_trace = next(trace for trace in fig.data if getattr(trace, "mode", "") == "text")
         assert list(label_trace.text) == ["A", "C", "B", "D"]
+        assert list(label_trace.customdata) == ["A", "C", "B", "D"]
         assert max(value for trace in fig.data for value in (trace.y or []) if value is not None) == pytest.approx(0.03725)
         assert "K2P" in fig.layout.yaxis.title.text
 
@@ -48,7 +51,7 @@ class TestVisualizationRenderingRegression:
         newick_fig = viz.plot_newick_tree("((A:0.1,B:0.2)95:0.3,(C:0.15,D:0.25)88:0.35);")
 
         assert any("A" in (trace.text or []) for trace in newick_fig.data if hasattr(trace, "text"))
-        assert len(newick_fig.data) == 3
+        assert len(newick_fig.data) == 2
 
         for fig in (dendro_fig, nj_fig, newick_fig):
             for trace in fig.data:
@@ -81,9 +84,16 @@ class TestVisualizationRenderingRegression:
         )
         fig = viz.plot_newick_tree(restored)
 
-        terminal_labels = list(fig.data[1].text)
-        assert set(terminal_labels) == set(original_headers.values())
-        assert any("UFBoot 100" in label for label in fig.data[2].text)
+        terminal_trace = fig.data[1]
+        assert set(terminal_trace.customdata) == set(original_headers.values())
+        assert set(terminal_trace.text) == {
+            "cqi:110688118",
+            "cqi:110684354",
+            "test copy (A+15)",
+            "test copy (B+15)",
+        }
+        support_annotation = next(annotation for annotation in fig.layout.annotations if annotation.text == "UFBoot 100")
+        assert support_annotation.bgcolor
         assert "cqi:110688118" in restored
         assert "test copy (A+15) | organism=Chenopodium quinoa" in restored
         assert "test copy (B+15) | organism=Chenopodium quinoa" in restored
@@ -110,6 +120,7 @@ class TestVisualizationRenderingRegression:
         }
         root_edge = tree["edges"][-1]
         fig = viz.plot_neighbor_joining(tree["edges"], names)
+        tip_trace = next(trace for trace in fig.data if trace.mode == "markers+text")
         tree_trace = next(trace for trace in fig.data if trace.mode == "lines")
         horizontal_segments = [
             (x1, x2, y1, y2)
@@ -122,7 +133,15 @@ class TestVisualizationRenderingRegression:
         assert terminal_branches["B"] == pytest.approx(0.00115575)
         assert terminal_branches["D"] == pytest.approx(0.02347925)
         assert root_edge["branch_1"] + root_edge["branch_2"] == pytest.approx(0.04995625)
+        assert list(tip_trace.customdata) == ["A", "C", "B", "D"]
+        assert "midpoint-rooted for display" in fig.layout.title.text
         assert any(x1 != x2 and y1 == y2 for x1, x2, y1, y2 in horizontal_segments)
+
+        midpoint_tree = Phylo.read(StringIO(tree["newick"]), "newick")
+        midpoint_tree.root_at_midpoint()
+        assert sorted(child.branch_length for child in midpoint_tree.root.clades) == pytest.approx(
+            [0.024552, 0.025404]
+        )
 
     def test_neighbor_joining_newick_preserves_real_fasta_headers(self):
         names = [
@@ -142,6 +161,96 @@ class TestVisualizationRenderingRegression:
         parsed = Phylo.read(StringIO(tree["newick"]), "newick")
 
         assert {leaf.name for leaf in parsed.get_terminals()} == set(names)
+
+
+class TestProfessionalPhylogenyView:
+    def test_newick_parser_preserves_quoted_headers_and_ufboot(self):
+        newick = "('cqi:1 | organism=Chenopodium quinoa':0.1,(B:0.2,C:0.3)95.2/100:0.4);"
+
+        root = phylo_view.parse_newick(newick)
+
+        assert phylo_view._leaves(root)[0].name == "cqi:1 | organism=Chenopodium quinoa"
+        assert root.children[1].support == 100
+
+    def test_neighbor_joining_midpoint_roots_bifurcating_newick(self):
+        newick = "((A:0.000310,C:0.024331):0.024978,(B:0.001156,D:0.023479):0.024978);"
+
+        root, was_rerooted = phylo_view.prepare_tree(newick, midpoint=True)
+        root_groups = [set(leaf.name for leaf in phylo_view._leaves(child)) for child in root.children]
+
+        assert was_rerooted
+        assert sorted(child.length for child in root.children) == pytest.approx([0.024552, 0.025404])
+        assert {frozenset(group) for group in root_groups} == {frozenset({"A", "C"}), frozenset({"B", "D"})}
+
+    def test_upgma_figure_uses_node_height_axis_without_rerooting(self):
+        newick = "((B:0.012318,D:0.012318):0.024980,(A:0.012320,C:0.012320):0.024977);"
+
+        fig = phylo_view.make_tree_figure(newick, axis_mode="height")
+
+        assert fig.layout.xaxis.visible
+        assert fig.layout.xaxis.title.text == "Node height (substitutions / site)"
+        assert fig.layout.annotations == ()
+
+    def test_iqtree_midpoint_split_shows_one_support_marker(self):
+        newick = "(A:0.0000025118,(B:0.0000020379,D:0.0246483335)100:0.0501366272,C:0.0246269447);"
+
+        fig = phylo_view.make_tree_figure(newick, support_label="UFBoot", midpoint=True)
+        support_trace = next(
+            trace for trace in fig.data
+            if trace.mode == "markers+text" and list(trace.text) == ["100"]
+        )
+
+        assert list(support_trace.text) == ["100"]
+        assert list(support_trace.marker.color) == ["#2E9E6B"]
+
+    def test_four_taxon_split_warning_mentions_single_split(self):
+        ins = phylo_view.tree_insights("((A:0.1,C:0.1):0.2,(B:0.1,D:0.1):0.2);")
+
+        warning = next(w for w in ins["warnings"] if "sequences" in w.lower())
+        assert "single internal split" in warning.lower()
+        assert "3 possible groupings" in warning.lower()
+        assert "only one support value" not in warning.lower()
+
+    def test_upgma_main_split_follows_display_order(self):
+        newick = "((B:0.012318,D:0.012318):0.024980,(A:0.012320,C:0.012320):0.024977);"
+
+        ins = phylo_view.tree_insights(newick, method="upgma")
+        rendered_order = phylo_view.leaf_order(newick)
+        expected_top_group = [name for name in rendered_order if name in {"A", "C"}]
+
+        assert ins["split"][0][0] == expected_top_group == ["A", "C"]
+        assert ins["split"][0][1] == ["B", "D"]
+
+    def test_distance_heatmap_uses_tree_leaf_order(self):
+        names = ["A", "B", "C", "D"]
+        matrix = [[float(i == j) for j in range(4)] for i in range(4)]
+        order = phylo_view.leaf_order("((B:0.1,D:0.1):0.2,(A:0.1,C:0.1):0.2);")
+
+        fig = phylo_view.make_distance_heatmap(names, matrix, order=order)
+
+        assert list(fig.data[0].x) == order
+        assert list(fig.data[0].y) == order
+
+    def test_streamlit_phylogeny_panel_renders_without_errors(self):
+        newick = "((A:0.1,C:0.1):0.2,(B:0.1,D:0.1):0.2);"
+        columns = lambda count: [MagicMock() for _ in range(count if isinstance(count, int) else len(count))]
+
+        with (
+            patch("streamlit.columns", side_effect=columns),
+            patch("streamlit.plotly_chart"),
+            patch("streamlit.caption"),
+            patch("streamlit.markdown"),
+            patch("streamlit.warning"),
+            patch("streamlit.code"),
+            patch("streamlit.expander"),
+        ):
+            phylo_view.render_phylo_result(
+                newick,
+                method="nj",
+                meta={"distance_method": "K2P", "n_sites": 619},
+                dist_names=["A", "B", "C", "D"],
+                dist_matrix=[[0.0] * 4 for _ in range(4)],
+            )
 
 
 class TestSequenceCleaning:
