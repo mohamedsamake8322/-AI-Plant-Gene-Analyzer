@@ -24,6 +24,7 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 
 import config
+from i18n import translate
 
 
 # ─── Semantic accents (chart-only meaning, not part of the base UI theme) ─────
@@ -69,6 +70,7 @@ def _base_layout(title: str = "") -> dict:
         plot_bgcolor=THEME["plot_bg"],
         font=dict(color=THEME["font_color"], family="Inter, Arial"),
         margin=dict(l=40, r=40, t=60, b=40),
+        dragmode=False,
         # tickfont is set explicitly here (not left to inherit from the
         # figure-level `font` above) because it wasn't: axis tick labels
         # were rendering at low contrast in production (barely-visible
@@ -89,6 +91,10 @@ def _base_layout(title: str = "") -> dict:
             tickfont=dict(color=THEME["font_color"]),
         ),
     )
+
+
+def _chart_text(key: str, default: str = "", **values) -> str:
+    return translate(f"charts.{key}", default=default or key, **values)
 
 
 def _normalize_plotly_color(color_value: str) -> str:
@@ -147,17 +153,17 @@ def plot_nucleotide_pie(dist: dict) -> go.Figure:
             values=values,
             marker=dict(colors=colors, line=dict(color="#0d1b2a", width=2)),
             textinfo="label+percent",
-            hovertemplate="<b>%{label}</b><br>Count: %{value}<br>%{percent}<extra></extra>",
+            hovertemplate=f"<b>%{{label}}</b><br>{_chart_text('count', 'Count')}: %{{value}}<br>%{{percent}}<extra></extra>",
             hole=0.4,
         )
     )
     fig.update_layout(
-        **_base_layout("Nucleotide Composition"),
+        **_base_layout(_chart_text("nucleotide_composition_title", "Nucleotide Composition")),
         showlegend=True,
         legend=dict(font=dict(color=THEME["font_color"])),
         annotations=[
             dict(
-                text="DNA<br>Base",
+                text=f"DNA<br>{_chart_text('dna_base', 'Base')}",
                 x=0.5, y=0.5,
                 font=dict(size=13, color=TEAL),
                 showarrow=False,
@@ -186,12 +192,12 @@ def plot_nucleotide_bar(dist: dict) -> go.Figure:
             text=values,
             textposition="outside",
             textfont=dict(color=THEME["font_color"]),
-            hovertemplate="<b>%{x}</b><br>Count: %{y}<extra></extra>",
+            hovertemplate=f"<b>%{{x}}</b><br>{_chart_text('count', 'Count')}: %{{y}}<extra></extra>",
         )
     )
-    layout = _base_layout("Nucleotide Counts")
-    layout["yaxis"]["title"] = "Count"
-    layout["xaxis"]["title"] = "Nucleotide"
+    layout = _base_layout(_chart_text("nucleotide_counts_title", "Nucleotide Counts"))
+    layout["yaxis"]["title"] = _chart_text("count", "Count")
+    layout["xaxis"]["title"] = _chart_text("nucleotide", "Nucleotide")
     fig.update_layout(**layout)
     return fig
 
@@ -211,12 +217,12 @@ def plot_amino_acid_bar(dist: dict) -> go.Figure:
             text=values,
             textposition="outside",
             textfont=dict(color=THEME["font_color"]),
-            hovertemplate="<b>%{x}</b><br>Count: %{y}<extra></extra>",
+            hovertemplate=f"<b>%{{x}}</b><br>{_chart_text('count', 'Count')}: %{{y}}<extra></extra>",
         )
     )
-    layout = _base_layout("Amino Acid Composition")
-    layout["yaxis"]["title"] = "Count"
-    layout["xaxis"]["title"] = "Amino Acid"
+    layout = _base_layout(_chart_text("amino_acid_composition_title", "Amino Acid Composition"))
+    layout["yaxis"]["title"] = _chart_text("count", "Count")
+    layout["xaxis"]["title"] = _chart_text("amino_acid", "Amino Acid")
     fig.update_layout(**layout)
     return fig
 
@@ -234,13 +240,13 @@ def plot_hydrophobicity_profile(profile: dict) -> go.Figure:
         mode="lines",
         line=dict(color=TEAL, width=2),
         name="Kyte-Doolittle",
-        hovertemplate="Position %{x:.1f}<br>Score %{y:.3f}<extra></extra>",
+        hovertemplate=f"{_chart_text('position', 'Position')} %{{x:.1f}}<br>{_chart_text('score', 'Score')} %{{y:.3f}}<extra></extra>",
     ))
     fig.add_hline(y=threshold, line_dash="dash", line_color=AMBER,
-                  annotation_text=f"Indicative threshold {threshold}")
-    layout = _base_layout(f"Hydrophobicity profile ({profile.get('window', '?')}-aa window)")
-    layout["xaxis"]["title"] = "Window center (residue)"
-    layout["yaxis"]["title"] = "Kyte-Doolittle score"
+                  annotation_text=_chart_text("indicative_threshold", "Indicative threshold {threshold}", threshold=threshold))
+    layout = _base_layout(_chart_text("hydrophobicity_profile_title", "Hydrophobicity profile ({window}-aa window)", window=profile.get("window", "?")))
+    layout["xaxis"]["title"] = _chart_text("window_center_residue", "Window center (residue)")
+    layout["yaxis"]["title"] = _chart_text("kyte_doolittle_score", "Kyte-Doolittle score")
     fig.update_layout(**layout)
     return fig
 
@@ -257,12 +263,12 @@ def plot_charge_profile(profile: dict) -> go.Figure:
         marker=dict(size=4, color=CYAN),
         line=dict(color=CYAN, width=2),
         name="Estimated net charge",
-        hovertemplate="pH %{x:.1f}<br>Net charge %{y:.3f}<extra></extra>",
+        hovertemplate=f"{_chart_text('ph', 'pH')} %{{x:.1f}}<br>{_chart_text('net_charge', 'Net charge')} %{{y:.3f}}<extra></extra>",
     ))
     fig.add_hline(y=0, line_dash="dash", line_color=AMBER)
-    layout = _base_layout(f"Estimated net charge versus pH (pI {profile.get('isoelectric_point', 'N/A')})")
-    layout["xaxis"]["title"] = "pH"
-    layout["yaxis"]["title"] = "Net charge"
+    layout = _base_layout(_chart_text("net_charge_title", "Estimated net charge versus pH (pI {pi})", pi=profile.get("isoelectric_point", "N/A")))
+    layout["xaxis"]["title"] = _chart_text("ph", "pH")
+    layout["yaxis"]["title"] = _chart_text("net_charge", "Net charge")
     fig.update_layout(**layout)
     return fig
 
@@ -313,7 +319,7 @@ def plot_gc_gauge(
                 ),
             ),
             title=dict(
-                text="GC Content",
+                text=_chart_text("gc_content_title", "GC Content"),
                 font=dict(color=TEAL, size=16),
             ),
         )
@@ -325,8 +331,7 @@ def plot_gc_gauge(
         height=300,
         annotations=[
             dict(
-                text="Reference bands only — a high or low GC% reflects species/gene "
-                     "characteristics, not sequence quality.",
+                 text=_chart_text("gc_reference_note", "Reference bands only — GC content reflects species/gene characteristics, not sequence quality."),
                 x=0.5, y=-0.08,
                 xref="paper", yref="paper",
                 showarrow=False,
@@ -377,17 +382,17 @@ def plot_similarity_scores(similarity_results: list[dict]) -> go.Figure:
             customdata=list(zip(raw_genes, traits)),
             hovertemplate=(
                 "<b>%{customdata[0]}</b><br>"
-                "Gene: %{y}<br>"
-                "Trait: %{customdata[1]}<br>"
-                "Similarity: %{x:.1f}%<extra></extra>"
+                f"{_chart_text('gene', 'Gene')}: %{{y}}<br>"
+                f"{_chart_text('trait', 'Trait')}: %{{customdata[1]}}<br>"
+                f"{_chart_text('similarity', 'Similarity')}: %{{x:.1f}}%<extra></extra>"
             ),
         )
     )
-    layout = _base_layout("Global Identity Scores (ranking)")
-    layout["xaxis"]["title"] = "Global identity (%)"
+    layout = _base_layout(_chart_text("similarity_scores_title", "Global Identity Scores (ranking)"))
+    layout["xaxis"]["title"] = _chart_text("global_identity_percent", "Global identity (%)")
     layout["xaxis"]["range"] = [0, max(100, max(scores, default=0) + 8)]
     layout["xaxis"]["ticksuffix"] = "%"
-    layout["yaxis"]["title"] = "Gene"
+    layout["yaxis"]["title"] = _chart_text("gene", "Gene")
     layout["yaxis"]["tickfont"] = dict(size=12)
     layout["margin"] = dict(l=170, r=75, t=55, b=55)
     fig.update_layout(
@@ -432,22 +437,22 @@ def plot_alignment(alignment_map: dict, max_chars: int = 60) -> go.Figure:
                 color=[TEAL if v else CORAL for v in match_values],
                 line=dict(width=0),
             ),
-            name="Match / Mismatch",
+            name=_chart_text("match_mismatch", "Match / Mismatch"),
             hovertemplate=(
-                "Position: %{x}<br>"
-                "Query: %{customdata[0]}<br>"
-                "Reference: %{customdata[1]}<extra></extra>"
+                f"{_chart_text('position', 'Position')}: %{{x}}<br>"
+                f"{_chart_text('query', 'Query')}: %{{customdata[0]}}<br>"
+                f"{_chart_text('reference', 'Reference')}: %{{customdata[1]}}<extra></extra>"
             ),
             customdata=list(zip(q_bases, r_bases)),
             showlegend=True,
         )
     )
 
-    layout = _base_layout("Sequence Alignment Map")
-    layout["xaxis"]["title"] = "Position (bp)"
-    layout["yaxis"]["title"] = "Match"
+    layout = _base_layout(_chart_text("alignment_map_title", "Sequence Alignment Map"))
+    layout["xaxis"]["title"] = _chart_text("position_bp", "Position (bp)")
+    layout["yaxis"]["title"] = _chart_text("match", "Match")
     layout["yaxis"]["tickvals"] = [0, 1]
-    layout["yaxis"]["ticktext"] = ["Mismatch", "Match"]
+    layout["yaxis"]["ticktext"] = [_chart_text("mismatch", "Mismatch"), _chart_text("match", "Match")]
     layout["showlegend"] = False
     fig.update_layout(**layout, height=250)
     return fig
@@ -488,10 +493,10 @@ def plot_alignment_overview(alignment_map: dict) -> go.Figure:
         pos = i + 1
         if m == " ":  # gap column (query or reference has "-")
             gap_x.append(pos)
-            gap_hover.append(f"Position: {pos}<br>Query: {q}<br>Reference: {r}<br>Gap")
+            gap_hover.append(f"{_chart_text('position', 'Position')}: {pos}<br>{_chart_text('query', 'Query')}: {q}<br>{_chart_text('reference', 'Reference')}: {r}<br>{_chart_text('gap', 'Gap')}")
         elif m == "X":  # mismatch, no gap
             mismatch_x.append(pos)
-            mismatch_hover.append(f"Position: {pos}<br>Query: {q}<br>Reference: {r}<br>Mismatch")
+            mismatch_hover.append(f"{_chart_text('position', 'Position')}: {pos}<br>{_chart_text('query', 'Query')}: {q}<br>{_chart_text('reference', 'Reference')}: {r}<br>{_chart_text('mismatch', 'Mismatch')}")
 
     fig = go.Figure()
 
@@ -515,7 +520,7 @@ def plot_alignment_overview(alignment_map: dict) -> go.Figure:
                 y=[0] * len(mismatch_x),
                 mode="markers",
                 marker=dict(color=CORAL, size=9, symbol="line-ns", line=dict(width=2, color=CORAL)),
-                name="Mismatch",
+                name=_chart_text("mismatch", "Mismatch"),
                 hovertext=mismatch_hover,
                 hoverinfo="text",
             )
@@ -527,14 +532,14 @@ def plot_alignment_overview(alignment_map: dict) -> go.Figure:
                 y=[0] * len(gap_x),
                 mode="markers",
                 marker=dict(color=AMBER, size=9, symbol="line-ns", line=dict(width=2, color=AMBER)),
-                name="Gap",
+                name=_chart_text("gap", "Gap"),
                 hovertext=gap_hover,
                 hoverinfo="text",
             )
         )
 
-    layout = _base_layout(f"Full-Length Difference Map ({total_len:,} bp/aa)")
-    layout["xaxis"]["title"] = "Position (bp)"
+    layout = _base_layout(_chart_text("alignment_overview_title", "Full-Length Difference Map ({length} bp/aa)", length=f"{total_len:,}"))
+    layout["xaxis"]["title"] = _chart_text("position_bp", "Position (bp)")
     layout["xaxis"]["range"] = [0, total_len + 1]
     layout["yaxis"]["visible"] = False
     layout["yaxis"]["range"] = [-1, 1]
@@ -542,7 +547,7 @@ def plot_alignment_overview(alignment_map: dict) -> go.Figure:
     fig.update_layout(**layout, height=150)
     if not mismatch_x and not gap_x:
         fig.add_annotation(
-            text="No mismatches or gaps across the full alignment",
+            text=_chart_text("no_alignment_differences", "No mismatches or gaps across the full alignment"),
             x=0.5, y=0.5, xref="paper", yref="paper",
             showarrow=False, font=dict(color=TEAL, size=12),
         )
@@ -769,7 +774,7 @@ def plot_gc_sliding_window(sequence: str, window: int = 20) -> go.Figure:
             fill="tozeroy",
             fillcolor="rgba(0,217,163,0.12)",
             name=f"GC% (w={window}bp)",
-            hovertemplate="Position %{x}<br>GC: %{y:.1f}%<extra></extra>",
+            hovertemplate=f"{_chart_text('position', 'Position')} %{{x}}<br>GC: %{{y:.1f}}%<extra></extra>",
         )
     )
 
@@ -783,9 +788,9 @@ def plot_gc_sliding_window(sequence: str, window: int = 20) -> go.Figure:
         line=dict(color=SLATE, dash="dot", width=1),
     )
 
-    layout = _base_layout(f"GC Content Profile (window = {window} bp)")
-    layout["xaxis"]["title"] = "Position (bp)"
-    layout["yaxis"]["title"] = "GC (%)"
+    layout = _base_layout(_chart_text("gc_profile_title", "GC Content Profile (window = {window} bp)", window=window))
+    layout["xaxis"]["title"] = _chart_text("position_bp", "Position (bp)")
+    layout["yaxis"]["title"] = _chart_text("gc_percent", "GC (%)")
     layout["yaxis"]["range"] = [0, 100]
     layout["yaxis"]["ticksuffix"] = "%"
     fig.update_layout(
@@ -793,7 +798,7 @@ def plot_gc_sliding_window(sequence: str, window: int = 20) -> go.Figure:
         height=320,
     )
     fig.add_annotation(
-        text="Dashed: 50% reference · dotted: gene mean. Shaded bands are reference ranges, not a pass/fail score.",
+        text=_chart_text("gc_profile_note", "Dashed: 50% reference · dotted: gene mean. Shaded bands are indicative, not a pass/fail score."),
         x=0.5,
         y=1.12,
         xref="paper",
@@ -825,19 +830,19 @@ def plot_gc_skew_profile(profile: list[dict], window: int | None = None) -> go.F
         connectgaps=False,
     ))
     fig.add_hline(y=0, line=dict(color=SLATE, dash="dash", width=1))
-    title = "GC / AT Skew Profile"
+    title = _chart_text("gc_at_skew_title", "GC / AT Skew Profile")
     if window is not None:
-        title += f" (window = {window} bp)"
+        title += f" ({window} bp)"
     layout = _base_layout(title)
-    layout["xaxis"]["title"] = "Position (bp)"
-    layout["yaxis"]["title"] = "Skew"
+    layout["xaxis"]["title"] = _chart_text("position_bp", "Position (bp)")
+    layout["yaxis"]["title"] = _chart_text("skew", "Skew")
     layout["yaxis"]["range"] = [-1, 1]
     fig.update_layout(
         **layout,
         height=300,
         annotations=[
             dict(
-                text="Positive GC skew: G > C · Positive AT skew: A > T",
+                text=_chart_text("gc_at_skew_note", "Positive GC skew: G > C · Positive AT skew: A > T"),
                 x=0.5,
                 y=1.12,
                 xref="paper",
@@ -926,6 +931,7 @@ def plot_msa_table(aligned_sequences: list, labels: list | None = None) -> go.Fi
     total_height = 56 + header_row_height + cell_row_height * len(rows)
     fig.update_layout(
         paper_bgcolor=THEME["paper"],
+        dragmode=False,
         height=max(300, total_height),
         margin=dict(l=8, r=8, t=16, b=16),
     )
@@ -1326,7 +1332,7 @@ def plot_alignment_coverage_heatmap(match: dict, query_len: int, window: int = 5
     
     if not seq1 or not seq2 or len(seq1) < window:
         fig = go.Figure()
-        fig.update_layout(**_base_layout("Alignment Coverage"))
+        fig.update_layout(**_base_layout(_chart_text("alignment_coverage_title", "Alignment Coverage")))
         return fig
     
     positions = []
@@ -1342,7 +1348,7 @@ def plot_alignment_coverage_heatmap(match: dict, query_len: int, window: int = 5
     
     if not positions:
         fig = go.Figure()
-        fig.update_layout(**_base_layout("Alignment Coverage"))
+        fig.update_layout(**_base_layout(_chart_text("alignment_coverage_title", "Alignment Coverage")))
         return fig
     
     fig = go.Figure(
@@ -1353,16 +1359,16 @@ def plot_alignment_coverage_heatmap(match: dict, query_len: int, window: int = 5
                 color=identities,
                 colorscale=[[0, CORAL], [0.5, AMBER], [1, TEAL]],
                 showscale=True,
-                colorbar=dict(title=dict(text="Identity %", side="right")),
+                colorbar=dict(title=dict(text=_chart_text("local_identity_percent", "Identity %"), side="right")),
             ),
             text=[f"{v:.0f}%" for v in identities],
             textposition="outside",
-            hovertemplate="Position: %{x}<br>Identity: %{y:.1f}%<extra></extra>",
+            hovertemplate=f"{_chart_text('position', 'Position')}: %{{x}}<br>{_chart_text('identity', 'Identity')}: %{{y:.1f}}%<extra></extra>",
         )
     )
-    layout = _base_layout(f"Alignment Coverage — Identity by Window ({window}bp)")
-    layout["xaxis"]["title"] = "Position in Alignment"
-    layout["yaxis"]["title"] = "Local Identity (%)"
+    layout = _base_layout(_chart_text("alignment_coverage_title", "Alignment Coverage — Identity by Window ({window}bp)", window=window))
+    layout["xaxis"]["title"] = _chart_text("position_bp", "Position (bp)")
+    layout["yaxis"]["title"] = _chart_text("local_identity_percent", "Local Identity (%)")
     layout["yaxis"]["range"] = [0, 105]
     fig.update_layout(**layout, height=300)
     return fig
@@ -1411,19 +1417,20 @@ def plot_confidence_gauge(metrics: dict) -> go.Figure:
                     dict(range=[90, 100], color="rgba(0,217,163,0.1)"),
                 ],
             ),
-            title=dict(text="Match Identity", font=dict(color=color, size=14)),
+            title=dict(text=_chart_text("match_identity", "Match Identity"), font=dict(color=color, size=14)),
         )
     )
     fig.update_layout(
         paper_bgcolor=THEME["paper"],
         font=dict(color=THEME["font_color"]),
+        dragmode=False,
         margin=dict(l=20, r=20, t=60, b=50),
         height=280,
         annotations=[
             dict(
                 text=(
-                    f"Coverage: {coverage:.0f}% | Gaps: {gap_percent:.1f}% | "
-                    f"Composite confidence*: {composite:.0f}%"
+                    _chart_text("coverage_gaps_composite", "Coverage: {coverage}% | Gaps: {gaps}% | Composite confidence*: {composite}%",
+                                coverage=f"{coverage:.0f}", gaps=f"{gap_percent:.1f}", composite=f"{composite:.0f}")
                 ),
                 x=0.5, y=-0.2,
                 xref="paper", yref="paper",
@@ -1431,7 +1438,7 @@ def plot_confidence_gauge(metrics: dict) -> go.Figure:
                 font=dict(size=10, color=SLATE),
             ),
             dict(
-                text="*weighted blend of coverage, gaps and identity — not a substitute for Identity above",
+                text=_chart_text("composite_disclaimer", "*weighted blend of coverage, gaps and identity — not a substitute for Identity above"),
                 x=0.5, y=-0.32,
                 xref="paper", yref="paper",
                 showarrow=False,

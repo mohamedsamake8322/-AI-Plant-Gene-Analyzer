@@ -23,6 +23,16 @@ TOOL_COMMANDS = {
     "MUSCLE": "muscle",
     "ClustalW": "clustalw",
     "IQ-TREE": "iqtree2",
+    "trimAl": "trimal",
+    "ClipKIT": "clipkit",
+}
+
+MAFFT_STRATEGIES = {
+    "auto": ["--auto"],
+    "L-INS-i": ["--localpair", "--maxiterate", "1000"],
+    "E-INS-i": ["--genafpair", "--maxiterate", "1000"],
+    "G-INS-i": ["--globalpair", "--maxiterate", "1000"],
+    "FFT-NS-2": ["--retree", "2", "--maxiterate", "0"],
 }
 
 
@@ -60,7 +70,7 @@ def _run_wsl_shell(
 
 
 def tool_status() -> dict[str, bool]:
-    """Return availability of the four external tools in the WSL distro."""
+    """Return availability of the external tools in the WSL distro."""
     status: dict[str, bool] = {}
     for label, command in TOOL_COMMANDS.items():
         try:
@@ -127,16 +137,29 @@ def restore_iqtree_report_labels(report: str, labels_by_id: dict[str, str]) -> s
     return report
 
 
+def tool_version(engine: str) -> str:
+    command = TOOL_COMMANDS.get(engine)
+    if not command:
+        return ""
+    try:
+        result = _run_wsl(["bash", "-lc", f"{command} --version 2>&1 | head -n 1"])
+    except (OSError, subprocess.CalledProcessError):
+        return ""
+    return (result.stdout or "").strip()
+
+
 def run_external_msa(
     sequences: list[str],
     labels: list[str],
     engine: str,
+    options: dict | None = None,
 ) -> dict[str, object]:
     """Run MAFFT, MUSCLE, or ClustalW and return aligned FASTA data."""
     if engine not in {"MAFFT", "MUSCLE", "ClustalW"}:
         raise ValueError(f"Unsupported external MSA engine: {engine}")
     if len(sequences) < 2:
         raise ValueError("At least two sequences are required for an external MSA.")
+    options = options or {}
 
     with tempfile.TemporaryDirectory(prefix="plant_gene_msa_") as temp_dir:
         root = Path(temp_dir)
@@ -148,21 +171,37 @@ def run_external_msa(
         )
         wsl_input = _wsl_path(input_path)
         wsl_output = _wsl_path(output_path)
+        command: list[str]
 
         if engine == "MAFFT":
-            _run_wsl_shell(["mafft", "--auto", wsl_input], stdout_path=wsl_output)
+            strategy = options.get("strategy", "auto")
+            command = ["mafft", *MAFFT_STRATEGIES.get(strategy, ["--auto"])]
+            if options.get("op") is not None:
+                command.extend(["--op", str(options["op"])])
+            if options.get("ep") is not None:
+                command.extend(["--ep", str(options["ep"])])
+            if options.get("thread"):
+                command.extend(["--thread", str(options["thread"])])
+            if options.get("adjustdirection"):
+                command.append("--adjustdirection")
+            command.append(wsl_input)
+            _run_wsl_shell(command, stdout_path=wsl_output)
             aligned_text = output_path.read_text(encoding="utf-8")
         elif engine == "MUSCLE":
-            _run_wsl_shell(["muscle", "-align", wsl_input, "-output", wsl_output])
+            mode = options.get("muscle_mode", "align")
+            flag = "-super5" if mode == "super5" else "-align"
+            command = ["muscle", flag, wsl_input, "-output", wsl_output]
+            _run_wsl_shell(command)
             aligned_text = output_path.read_text(encoding="utf-8")
         else:
-            _run_wsl_shell([
+            command = [
                 "clustalw",
                 f"-INFILE={wsl_input}",
                 f"-OUTFILE={wsl_output}",
                 "-OUTPUT=FASTA",
                 "-QUIET",
-            ])
+            ]
+            _run_wsl_shell(command)
             aligned_text = output_path.read_text(encoding="utf-8")
 
     aligned_labels, aligned_sequences = _parse_fasta(aligned_text)
@@ -172,6 +211,9 @@ def run_external_msa(
         "algorithm": engine,
         "labels": aligned_labels,
         "aligned_sequences": aligned_sequences,
+        "command": " ".join(command),
+        "engine_version": tool_version(engine),
+        "parameters": options,
     }
 
 

@@ -21,6 +21,15 @@ import phylo_view
 class TestVisualizationRenderingRegression:
     """Ensure Plotly figures keep valid coordinate arrays after the legend-only fix."""
 
+    def test_common_chart_families_do_not_zoom_out_on_drag(self):
+        nucleotide_fig = viz.plot_nucleotide_bar({"counts": {"A": 1, "C": 2, "G": 3, "T": 4}})
+        alignment_fig = viz.plot_msa_table(["ATGC", "ATGT"], labels=["A", "B"])
+        confidence_fig = viz.plot_confidence_gauge({"coverage_percent": 100, "gap_percent": 0, "identity_percent": 90})
+        phylogeny_fig = phylo_view.make_tree_figure("((A:0.1,C:0.1):0.2,(B:0.1,D:0.1):0.2);")
+
+        for fig in (nucleotide_fig, alignment_fig, confidence_fig, phylogeny_fig):
+            assert fig.layout.dragmode is False
+
     def test_upgma_plot_uses_cluster_leaf_order_and_evolutionary_heights(self):
         dendro = {
             "icoord": [[5, 5, 15, 15], [25, 25, 35, 35], [10, 10, 30, 30]],

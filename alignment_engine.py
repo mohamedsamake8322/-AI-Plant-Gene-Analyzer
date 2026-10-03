@@ -709,56 +709,16 @@ def progressive_alignment(sequences: List[str], seq_type: str = "dna") -> Dict:
 
 
 def _calculate_conservation(aligned_sequences: List[str]) -> float:
-    if not aligned_sequences:
-        return 0.0
-    align_length = len(aligned_sequences[0])
-    conserved = 0
-    for pos in range(align_length):
-        column = [seq[pos] if pos < len(seq) else "-" for seq in aligned_sequences]
-        # A column is conserved only when every displayed sequence contains
-        # the same residue. Gaps must not be ignored because the chart claims
-        # conservation across all sequences shown.
-        if column[0] != "-" and len(set(column)) == 1:
-            conserved += 1
-    return round(conserved / align_length * 100, 2) if align_length else 0.0
+    from msa_analysis import analyze_alignment
+
+    return analyze_alignment(aligned_sequences)["conservation_score"]
 
 
-def consensus_profile(aligned_sequences: List[str]) -> Dict:
-    """Return consensus, conservation and variable-column data for an MSA."""
-    if not aligned_sequences:
-        return {"consensus": "", "columns": [], "variable_columns": [], "conservation_score": 0.0}
-    width = max(len(sequence) for sequence in aligned_sequences)
-    columns = []
-    consensus = []
-    variable_columns = []
-    for index in range(width):
-        column = [sequence[index] if index < len(sequence) else "-" for sequence in aligned_sequences]
-        counts = {char: column.count(char) for char in set(column) if char != "-"}
-        if not counts:
-            consensus_char, conservation = "-", 0.0
-        else:
-            consensus_char, count = max(counts.items(), key=lambda item: (item[1], item[0]))
-            conservation = round(count / len(column) * 100, 2)
-        consensus.append(consensus_char)
-        row = {
-            "position": index + 1,
-            "consensus": consensus_char,
-            "conservation_percent": conservation,
-            "counts": counts,
-            "variable": len(set(column)) > 1,
-        }
-        columns.append(row)
-        if row["variable"]:
-            variable_columns.append(index + 1)
-    return {
-        "consensus": "".join(consensus),
-        "columns": columns,
-        "variable_columns": variable_columns,
-        "conservation_score": round(
-            sum(row["conservation_percent"] == 100.0 for row in columns) / width * 100,
-            2,
-        ) if width else 0.0,
-    }
+def consensus_profile(aligned_sequences: List[str], seq_type: str = "dna") -> Dict:
+    """Return IUPAC/majority consensus and MEGA-style site classes for an MSA."""
+    from msa_analysis import analyze_alignment
+
+    return analyze_alignment(aligned_sequences, seq_type=seq_type)
 
 
 def pairwise_align(

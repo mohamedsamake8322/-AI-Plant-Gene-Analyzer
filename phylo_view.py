@@ -76,7 +76,7 @@ def parse_newick(text: str) -> Node:
             pos += 1
             while True:
                 n.children.append(node())
-                if s[pos] == ",":
+                if pos < len(s) and s[pos] == ",":
                     pos += 1
                     continue
                 break
@@ -366,7 +366,10 @@ THEMES = {
 }
 SUPPORT_BANDS = [(95.0, "#2E9E6B", "&#8805; 95  reliable"), (80.0, "#E0A100", "80-94  moderate"), (-1e9, "#D64545", "&lt; 80  weak")]
 FONT = "Inter, 'Segoe UI', Helvetica, Arial, sans-serif"
-PLOTLY_CONFIG = dict(displaylogo=False, modeBarButtonsToRemove=["select2d", "lasso2d"],
+PLOTLY_CONFIG = dict(
+    displaylogo=False,
+    scrollZoom=False,
+    modeBarButtonsToRemove=["zoom2d", "pan2d", "select2d", "lasso2d", "autoScale2d", "resetScale2d"],
                      toImageButtonOptions=dict(format="svg", filename="phylogeny", scale=2))
 
 
@@ -480,6 +483,7 @@ def make_tree_figure(newick: str, *, theme: str = "dark", title: str = "Phylogen
     fig.update_layout(
         height=max(380, 150 + 52 * n), margin=dict(l=24, r=24, t=104, b=24 if axis_mode == "bar" else 56),
         paper_bgcolor=P["bg"], plot_bgcolor=P["bg"], font=dict(family=FONT, color=P["fg"]),
+        dragmode=False,
         title=dict(text=f"<b>{title}</b>" + (f"<br><sup><span style='color:{P['muted']}'>{subtitle}</span></sup>" if subtitle else ""),
                    x=0.01, xanchor="left", y=0.96, yanchor="top", font=dict(size=18, family=FONT)),
         xaxis=xaxis, yaxis=dict(visible=False, range=[y_lo, n - 0.4], fixedrange=True),

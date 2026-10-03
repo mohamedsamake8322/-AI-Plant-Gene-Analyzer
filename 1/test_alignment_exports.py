@@ -11,7 +11,8 @@ def test_protein_alignment_supports_standard_matrices():
 def test_msa_consensus_reports_variable_columns():
     result = aln.star_alignment(["ATGC", "ATGT", "ATGA"], seq_type="dna")
     profile = aln.consensus_profile(result["aligned_sequences"])
-    assert profile["consensus"] == "ATGT"
+    assert profile["consensus"] == "ATGH"
+    assert profile["iupac_consensus"] == "ATGH"
     assert profile["variable_columns"] == [4]
 
 

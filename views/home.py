@@ -127,26 +127,43 @@ def _render_variant_table(items: list[dict], limit: int = 50) -> None:
     as the Similarity top-3 table, kept as a shared helper so both tables
     can't drift out of sync in appearance if one is tweaked later.
     """
+    def translated_variant_term(value: object) -> str:
+        raw = str(value or "unknown")
+        normalized = re.sub(r"[^a-z0-9]+", "_", raw.lower()).strip("_")
+        return translate(f"results.variant_{normalized}", default=raw.replace("_", " ").capitalize())
+
+    columns = {
+        "Ref pos": translate("ui.reference_position"),
+        "Query pos": translate("ui.query_position"),
+        "Reference": translate("results.reference_label"),
+        "Query": translate("results.query_label"),
+        "Type": translate("ui.type"),
+        "Consequence": translate("ui.consequence"),
+        "Codon": translate("results.codon"),
+        "Amino acid": translate("results.amino_acid"),
+        "Impact": translate("results.impact"),
+        "BLOSUM62": "BLOSUM62",
+    }
     rows = [
         {
-            "Ref pos": m.get("position_reference", m.get("start_position_reference", "")),
-            "Query pos": m.get("position_query", m.get("start_position_query", "")),
-            "Reference": m.get("reference", m.get("bases", "-") if m.get("type") == "deletion" else "-"),
-            "Query": m.get("query", m.get("bases", "-") if m.get("type") == "insertion" else "-"),
-            "Type": m.get("type", "variant").capitalize(),
-            "Consequence": m.get("consequence", "Not classified").replace("_", " ").capitalize(),
-            "Codon": (
+            columns["Ref pos"]: m.get("position_reference", m.get("start_position_reference", "")),
+            columns["Query pos"]: m.get("position_query", m.get("start_position_query", "")),
+            columns["Reference"]: m.get("reference", m.get("bases", "-") if m.get("type") == "deletion" else "-"),
+            columns["Query"]: m.get("query", m.get("bases", "-") if m.get("type") == "insertion" else "-"),
+            columns["Type"]: translated_variant_term(m.get("type", "variant")),
+            columns["Consequence"]: translated_variant_term(m.get("consequence", "Not classified")),
+            columns["Codon"]: (
                 f"{m['ref_codon']} → {m['query_codon']}"
                 if m.get("ref_codon") and m.get("query_codon")
                 else "—"
             ),
-            "Amino acid": (
+            columns["Amino acid"]: (
                 f"{m['ref_amino_acid']} → {m['query_amino_acid']}"
                 if m.get("ref_amino_acid") and m.get("query_amino_acid")
                 else "—"
             ),
-            "Impact": m.get("impact_class", m.get("consequence", "Not classified")).replace("_", " ").capitalize(),
-            "BLOSUM62": m.get("blosum62_score"),
+            columns["Impact"]: translated_variant_term(m.get("impact_class", m.get("consequence", "Not classified"))),
+            columns["BLOSUM62"]: m.get("blosum62_score"),
         }
         for m in items[:limit]
     ]
@@ -155,16 +172,16 @@ def _render_variant_table(items: list[dict], limit: int = 50) -> None:
         hide_index=True,
         width='stretch',
         column_config={
-            "Ref pos": st.column_config.NumberColumn("Ref pos", width="small"),
-            "Query pos": st.column_config.NumberColumn("Query pos", width="small"),
-            "Reference": st.column_config.TextColumn("Reference", width="small"),
-            "Query": st.column_config.TextColumn("Query", width="small"),
-            "Type": st.column_config.TextColumn("Type", width="medium"),
-            "Consequence": st.column_config.TextColumn("Consequence", width="medium"),
-            "Codon": st.column_config.TextColumn("Codon", width="medium"),
-            "Amino acid": st.column_config.TextColumn("Amino acid", width="medium"),
-            "Impact": st.column_config.TextColumn("Impact", width="medium"),
-            "BLOSUM62": st.column_config.NumberColumn("BLOSUM62", width="small"),
+            columns["Ref pos"]: st.column_config.NumberColumn(columns["Ref pos"], width="small"),
+            columns["Query pos"]: st.column_config.NumberColumn(columns["Query pos"], width="small"),
+            columns["Reference"]: st.column_config.TextColumn(columns["Reference"], width="small"),
+            columns["Query"]: st.column_config.TextColumn(columns["Query"], width="small"),
+            columns["Type"]: st.column_config.TextColumn(columns["Type"], width="medium"),
+            columns["Consequence"]: st.column_config.TextColumn(columns["Consequence"], width="medium"),
+            columns["Codon"]: st.column_config.TextColumn(columns["Codon"], width="medium"),
+            columns["Amino acid"]: st.column_config.TextColumn(columns["Amino acid"], width="medium"),
+            columns["Impact"]: st.column_config.TextColumn(columns["Impact"], width="medium"),
+            columns["BLOSUM62"]: st.column_config.NumberColumn(columns["BLOSUM62"], width="small"),
         },
     )
 
@@ -836,7 +853,14 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
     best_match = result["best_match"]
     mutation_report = result["mutation_report"]
     variant_report = result.get("variant_report") or {}
-    interpretation = result["interpretation"]
+    from aiinterpreter import AIInterpreter
+
+    interpretation = AIInterpreter(
+        stats,
+        similarity_results,
+        mutation_report,
+        lang=current_lang(),
+    ).full_report()
     sequence_type = result.get("sequence_type", "dna")
     organism = result.get("organism") or result.get("header_metadata", {}).get("organism")
     gc_reference = get_organism_reference(
@@ -853,10 +877,10 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
 
     if batch_mode:
         average_gc = round(sum(r["stats"].get("gc_content", 0) for r in last_results if r["sequence_type"] == "dna") / max(1, sum(1 for r in last_results if r["sequence_type"] == "dna")), 2)
-        st.success(f"✅ Batch analysis complete — {len(last_results)} sequences processed.")
+        st.success(translate("results.batch_analysis_complete", count=len(last_results)))
         st.markdown(
-            f"**Batch summary:** {len(last_results)} sequences, "
-            f"average DNA GC content {average_gc}% (protein sequences excluded from GC average)."
+            f"**{translate('ui.batch_summary')}:** "
+            + translate("results.batch_summary", count=len(last_results), gc=average_gc)
         )
         if len(last_results) > 1:
             summary_rows = []
@@ -866,29 +890,31 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                     similarity_score = item["best_match"]["similarity_score"]
                     similarity_value = f"{similarity_score:.1f}"
                 summary_rows.append({
-                    "Sequence": item["header"],
-                    "Type": item["sequence_type"].upper(),
-                    "Length": item["stats"]["length"],
-                    "Best match": item["best_match"]["gene_name"] if item["best_match"] else "—",
-                    "Similarity (%)": similarity_value,
+                    translate("ui.sequence"): item["header"],
+                    translate("ui.input_type"): translate(f"ai.sequence_type_{item['sequence_type']}"),
+                    translate("ui.length"): item["stats"]["length"],
+                    translate("results.best_match_label"): item["best_match"]["gene_name"] if item["best_match"] else "—",
+                    translate("results.similarity_percent"): similarity_value,
                 })
             st.table(summary_rows)
-            st.markdown("#### Batch analysis details")
+            st.markdown(f"#### {translate('results.batch_details')}")
             for idx, item in enumerate(last_results, start=1):
-                with st.expander(f"{idx}. {item['header']} — {item['sequence_type'].upper()} ({item['stats']['length']} { 'aa' if item['sequence_type'] == 'protein' else 'bp'})"):
-                    st.markdown(f"- **Best match:** {item['best_match']['gene_name'] if item['best_match'] else '—'}")
-                    st.markdown(f"- **Similarity:** {item['best_match']['similarity_score']:.1f}%" if item['best_match'] else "- **Similarity:** —")
+                item_unit = "aa" if item["sequence_type"] == "protein" else "bp"
+                item_type = translate(f"ai.sequence_type_{item['sequence_type']}")
+                with st.expander(f"{idx}. {item['header']} — {item_type} ({item['stats']['length']} {item_unit})"):
+                    st.markdown(f"- **{translate('results.best_match_label')}:** {item['best_match']['gene_name'] if item['best_match'] else '—'}")
+                    st.markdown(f"- **{translate('ui.similarity')}:** {item['best_match']['similarity_score']:.1f}%" if item['best_match'] else f"- **{translate('ui.similarity')}:** —")
                     if item['sequence_type'] == 'dna':
-                        st.markdown(f"- **ORFs found:** {len(item['orfs'])}")
+                        st.markdown(f"- **{translate('results.orfs_found')}:** {len(item['orfs'])}")
                         if item['orfs']:
-                            st.markdown(f"- **Longest ORF:** {item['orfs'][0]['length']} bp in frame {item['orfs'][0]['frame']}")
+                            st.markdown(f"- **{translate('results.longest_orf')}:** {item['orfs'][0]['length']} bp, {translate('ui.reading_frame')} {item['orfs'][0]['frame']}")
                     else:
-                        st.markdown(f"- **Protein weight:** {item['stats'].get('molecular_weight', 'N/A')} Da")
-                        st.markdown(f"- **Estimated pI:** {item['stats'].get('isoelectric_point', 'N/A')}")
-                        st.markdown(f"- **Hydrophobicity:** {item['stats'].get('hydrophobicity', 'N/A')}")
+                        st.markdown(f"- **{translate('results.protein_weight')}:** {item['stats'].get('molecular_weight', 'N/A')} Da")
+                        st.markdown(f"- **{translate('results.estimated_pi')}:** {item['stats'].get('isoelectric_point', 'N/A')}")
+                        st.markdown(f"- **{translate('results.hydrophobicity_label')}:** {item['stats'].get('hydrophobicity', 'N/A')}")
     else:
         length_unit = "aa" if sequence_type == "protein" else "bp"
-        st.success(f"✅ Analysis complete — {stats['length']:,} {length_unit} sequence processed.")
+        st.success(translate("results.analysis_complete", length=f"{stats['length']:,}", unit=length_unit))
     
     # ── Export Options ─────────────────────────────────────────────────────────
     st.markdown("---")
@@ -901,16 +927,16 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 json_path = export_util.export_results_json(result)
                 with open(json_path, "r", encoding="utf-8") as f:
                     st.download_button(
-                        "📥 JSON Report",
+                        f"📥 {translate('results.json_report')}",
                         f.read(),
                         file_name=f"analysis_{stats['length']}bp.json",
                         mime="application/json",
                     )
                 logger.info(f"JSON export created: {json_path}")
-                st.success("✅ JSON exported successfully")
+                st.success(translate("results.export_success", format="JSON"))
             except Exception as e:
                 logger.error(f"JSON export failed: {e}")
-                st.error(f"Export failed: {e}")
+                st.error(translate("results.export_failed", error=e))
     
     with export_col2:
         if st.button(f"📊 {translate('ui.download_csv')}"):
@@ -918,16 +944,16 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 csv_path = export_util.export_results_csv(result)
                 with open(csv_path, "r", encoding="utf-8") as f:
                     st.download_button(
-                        "📥 CSV Report",
+                        f"📥 {translate('results.csv_report')}",
                         f.read(),
                         file_name=f"analysis_{stats['length']}bp.csv",
                         mime="text/csv",
                     )
                 logger.info(f"CSV export created: {csv_path}")
-                st.success("✅ CSV exported successfully")
+                st.success(translate("results.export_success", format="CSV"))
             except Exception as e:
                 logger.error(f"CSV export failed: {e}")
-                st.error(f"Export failed: {e}")
+                st.error(translate("results.export_failed", error=e))
     
     with export_col3:
         if st.button(f"🌐 {translate('ui.download_html')}"):
@@ -935,32 +961,32 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 html_path = export_util.export_results_html(result)
                 with open(html_path, "r", encoding="utf-8") as f:
                     st.download_button(
-                        "📥 HTML Report",
+                        f"📥 {translate('results.html_report')}",
                         f.read(),
                         file_name=f"analysis_{stats['length']}bp.html",
                         mime="text/html",
                     )
                 logger.info(f"HTML export created: {html_path}")
-                st.success("✅ HTML exported successfully")
+                st.success(translate("results.export_success", format="HTML"))
             except Exception as e:
                 logger.error(f"HTML export failed: {e}")
-                st.error(f"Export failed: {e}")
+                st.error(translate("results.export_failed", error=e))
     with export_col4:
         if st.button(f"📑 {translate('ui.download_xlsx')}"):
             try:
                 xlsx_path = export_util.export_results_xlsx(result)
                 with open(xlsx_path, "rb") as f:
                     st.download_button(
-                        "📥 XLSX Report",
+                        f"📥 {translate('results.xlsx_report')}",
                         f.read(),
                         file_name=f"analysis_{stats['length']}bp.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     )
                 logger.info(f"XLSX export created: {xlsx_path}")
-                st.success("✅ XLSX exported successfully")
+                st.success(translate("results.export_success", format="XLSX"))
             except Exception as e:
                 logger.error(f"XLSX export failed: {e}")
-                st.error(f"Export failed: {e}")
+                st.error(translate("results.export_failed", error=e))
 
     with export_col5:
         if st.button(f"🧬 {translate('ui.download_fasta')}"):
@@ -968,35 +994,35 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 fasta_path = export_util.export_results_fasta(result)
                 with open(fasta_path, "r", encoding="utf-8") as f:
                     st.download_button(
-                        "📥 FASTA sequence",
+                        f"📥 {translate('results.fasta_sequence')}",
                         f.read(),
                         file_name=f"analysis_{stats['length']}{'aa' if sequence_type == 'protein' else 'bp'}.fasta",
                         mime="text/plain",
                     )
                 logger.info(f"FASTA export created: {fasta_path}")
-                st.success("✅ FASTA exported successfully")
+                st.success(translate("results.export_success", format="FASTA"))
             except Exception as e:
                 logger.error(f"FASTA export failed: {e}")
-                st.error(f"Export failed: {e}")
+                st.error(translate("results.export_failed", error=e))
 
     with export_col6:
         if sequence_type == "protein":
-            st.caption("GFF3 is available for DNA features only.")
+            st.caption(translate("results.gff3_dna_only"))
         elif st.button(f"🧭 {translate('ui.download_gff3')}"):
             try:
                 gff3_path = export_util.export_results_gff3(result)
                 with open(gff3_path, "r", encoding="utf-8") as f:
                     st.download_button(
-                        "📥 GFF3 annotations",
+                        f"📥 {translate('results.gff3_annotations')}",
                         f.read(),
                         file_name=f"analysis_{stats['length']}bp.gff3",
                         mime="text/plain",
                     )
                 logger.info(f"GFF3 export created: {gff3_path}")
-                st.success("✅ GFF3 exported successfully")
+                st.success(translate("results.export_success", format="GFF3"))
             except Exception as e:
                 logger.error(f"GFF3 export failed: {e}")
-                st.error(f"Export failed: {e}")
+                st.error(translate("results.export_failed", error=e))
 
     with export_col7:
         methods_paragraph = build_methods_paragraph(
@@ -1016,30 +1042,30 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
     st.markdown(f"### {translate('ui.sequence_overview')}")
     if sequence_type == "protein":
         m1, m2, m3, m4, m5 = st.columns(5)
-        m1.metric("Length (aa)", f"{stats['length']:,}")
-        m2.metric("Unique Residues", f"{stats.get('unique_residues', 'N/A')}")
-        m3.metric("Most Abundant", f"{max(dist['counts'], key=dist['counts'].get)}")
+        m1.metric(translate("results.length_aa"), f"{stats['length']:,}")
+        m2.metric(translate("results.unique_residues"), f"{stats.get('unique_residues', 'N/A')}")
+        m3.metric(translate("results.most_abundant"), f"{max(dist['counts'], key=dist['counts'].get)}")
         m4.metric(
-            "Best Match",
+            translate("results.best_match_label"),
             best_match["gene_name"] if best_match else "—",
             f"{best_match['similarity_score']:.1f}%" if best_match else None,
         )
         m5.metric(
-            "Mutations",
+            translate("results.mutations_label"),
             mutation_report["total_mutations"] if mutation_report else "—",
         )
     else:
         m1, m2, m3, m4, m5 = st.columns(5)
-        m1.metric("Length (bp)", f"{stats['length']:,}")
-        m2.metric("GC Content", f"{stats['gc_content']}%")
-        m3.metric("AT Content", f"{stats['at_content']}%")
+        m1.metric(translate("results.length_bp"), f"{stats['length']:,}")
+        m2.metric(translate("results.gc_content_label"), f"{stats['gc_content']}%")
+        m3.metric(translate("results.at_content_label"), f"{stats['at_content']}%")
         m4.metric(
-            "Best Match",
+            translate("results.best_match_label"),
             best_match["gene_name"] if best_match else "—",
             f"{best_match['similarity_score']:.1f}%" if best_match else None,
         )
         m5.metric(
-            "Mutations",
+            translate("results.mutations_label"),
             mutation_report["total_mutations"] if mutation_report else "—",
         )
 
@@ -1047,11 +1073,11 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
         header_meta = result["header_metadata"]
         header_notes = []
         if header_meta.get("gc"):
-            header_notes.append(f"Header GC: {header_meta['gc']}")
+            header_notes.append(f"{translate('results.header_gc')}: {header_meta['gc']}")
         if header_meta.get("trait"):
-            header_notes.append(f"Header trait: {header_meta['trait']}")
+            header_notes.append(f"{translate('results.header_trait')}: {header_meta['trait']}")
         if header_notes:
-            st.info("**Header annotations:** " + ", ".join(header_notes))
+            st.info(f"**{translate('results.header_annotations')}:** " + ", ".join(header_notes))
 
     if result.get("metadata_warnings"):
         for warning_msg in result["metadata_warnings"]:
@@ -1060,37 +1086,37 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
     st.markdown("---")
 
     # ── Tabs ───────────────────────────────────────────────────────────────────
-    st.markdown('<div class="section-heading"><span class="section-index">01</span><span>Analysis results</span></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="section-heading"><span class="section-index">01</span><span>{translate("ui.analysis_results")}</span></div>', unsafe_allow_html=True)
     tabs = st.tabs([
-        "Statistics",
-        "Similarity",
-        "Mutations",
-        "Translation",
-        "AI Interpretation",
-        "Raw Sequence",
+        translate("ui.statistics"),
+        translate("ui.similarity"),
+        translate("ui.mutations_tab"),
+        translate("ui.translation_tab"),
+        translate("ui.ai_interpretation"),
+        translate("ui.raw_sequence"),
     ])
 
     # ── Tab 1: Statistics ──────────────────────────────────────────────────────
     with tabs[0]:
         if sequence_type == "protein":
-            st.markdown("#### Amino Acid Composition")
+            st.markdown(f"#### {translate('results.amino_acid_composition')}")
 
             col1, col2 = st.columns([1, 1])
             with col1:
                 st.plotly_chart(viz.plot_amino_acid_bar(dist), width='stretch')
             with col2:
-                st.markdown("#### Protein Statistics")
-                st.markdown(f"**Sequence Length:** {stats['length']} aa")
-                st.markdown(f"**Unique residues:** {stats.get('unique_residues', 'N/A')}")
-                st.markdown(f"**Residue diversity:** {len([v for v in dist['counts'].values() if v > 0])} / {len(dist['counts'])}")
-                st.markdown(f"**Most abundant residue:** {max(dist['counts'], key=dist['counts'].get)}")
+                st.markdown(f"#### {translate('results.protein_statistics')}")
+                st.markdown(f"**{translate('results.sequence_length')}:** {stats['length']} aa")
+                st.markdown(f"**{translate('results.unique_residues')}:** {stats.get('unique_residues', 'N/A')}")
+                st.markdown(f"**{translate('results.residue_diversity')}:** {len([v for v in dist['counts'].values() if v > 0])} / {len(dist['counts'])}")
+                st.markdown(f"**{translate('results.most_abundant_residue')}:** {max(dist['counts'], key=dist['counts'].get)}")
                 st.markdown(f"**GRAVY:** {protein_stats.get('gravy', 'N/A')}")
                 st.markdown(f"**Guruprasad instability index:** {protein_stats.get('instability_index', 'N/A')}")
-                st.caption("DIWV reference calculation (Guruprasad et al., 1990; ExPASy ProtParam); values above 40 suggest a tendency toward instability.")
+                st.caption(translate("ui.instability_index_help"))
                 st.markdown(f"**Aliphatic index:** {protein_stats.get('aliphatic_index', 'N/A')}")
 
             if motifs:
-                st.markdown("#### Motifs Found")
+                st.markdown(f"#### {translate('results.protein_motifs_found')}")
                 for motif in motifs:
                     st.markdown(
                         f"- **{motif['name']}** (`{motif['motif']}`) — "
@@ -1098,10 +1124,10 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                         f"Match: `{motif['match']}`"
                     )
             else:
-                st.info("No known protein motifs or regulatory elements detected.")
+                st.info(translate("results.no_known_protein_motifs"))
 
         else:
-            st.markdown("#### Nucleotide Composition & GC Profile")
+            st.markdown(f"#### {translate('results.nucleotide_composition_gc')}")
 
             col1, col2, col3 = st.columns([1, 1, 1])
             with col1:
@@ -1118,7 +1144,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                         ),
                         width='stretch',
                     )
-                    st.caption(f"Based on {gc_reference['n']:,} sequences of {organism} in database")
+                    st.caption(translate("results.gc_reference_basis", count=f"{gc_reference['n']:,}", organism=organism))
                 else:
                     st.plotly_chart(viz.plot_gc_gauge(stats["gc_content"]), width='stretch')
                     st.info(gc_reference["fallback_reason"])
@@ -1136,19 +1162,19 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 )
 
             methylation = result.get("methylation_context") or {}
-            st.markdown("#### Cytosine Methylation Context (plant-specific)")
+            st.markdown(f"#### {translate('results.methylation_context')}")
             if methylation:
                 methyl_cols = st.columns(3)
                 for column, label, key in zip(methyl_cols, ("CG", "CHG", "CHH"), ("cg", "chg", "chh")):
                     column.metric(label, f"{methylation[key]['pct']:.2f}%", f"{methylation[key]['count']} cytosines")
-                st.caption("Plant methylation contexts: CG, CHG (H = A/T/C), and CHH. Percentages use classifiable cytosines.")
+                st.caption(translate("results.methylation_note"))
 
             quality = result.get("quality_report", {})
             if quality.get("applicable", True):
-                quality_status = "Yes" if quality.get("valid") else "No"
+                quality_status = translate("results.yes") if quality.get("valid") else translate("results.no")
                 reason = f" ({quality.get('reason')})" if quality.get("reason") else ""
                 st.markdown(
-                    f"**Passes collection quality filter:** {quality_status}{reason} "
+                    f"**{translate('results.quality_filter')}:** {quality_status}{reason} "
                     f"({quality.get('n_pct', 0):.2f}% N, threshold {quality.get('threshold_pct', 5):.2f}%)"
                 )
 
@@ -1159,7 +1185,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 )
 
             if result.get("codon_usage"):
-                st.markdown("#### Codon usage")
+                st.markdown(f"#### {translate('results.codon_usage')}")
                 query_usage = result["codon_usage"]
                 query_total = sum(query_usage.values()) or 1
                 divergent = []
@@ -1174,44 +1200,44 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                     divergent.sort(key=lambda row: abs(row["Delta %"]), reverse=True)
                 st.dataframe(pd.DataFrame(divergent[:10]), hide_index=True, width="stretch")
                 if not codon_reference.get("available"):
-                    st.info(codon_reference["fallback_reason"] + " Species comparison is omitted until the minimum sample size is reached.")
+                    st.info(codon_reference["fallback_reason"] + " " + translate("results.species_comparison_unavailable"))
                 if len(sequence) % 3:
-                    st.caption("The sequence was truncated to complete codons; the trailing bases were excluded.")
+                    st.caption(translate("results.trailing_bases_excluded"))
 
                 cai = bio.codon_adaptation_index(sequence, organism_codon_usage) if codon_reference.get("available") else None
                 if cai is not None:
-                    st.metric("Codon Adaptation Index (CAI)", f"{cai:.3f}")
-                    st.caption("Approximation based on the organism-wide codon distribution, not a highly expressed-gene reference set.")
+                    st.metric(translate("results.cai_label"), f"{cai:.3f}")
+                    st.caption(translate("results.cai_help"))
 
-            st.markdown("#### Detailed Statistics")
+            st.markdown(f"#### {translate('results.detailed_statistics')}")
             stat_col1, stat_col2 = st.columns(2)
             with stat_col1:
                 st.markdown(f"""
-| Property | Value |
+| {translate('results.property')} | {translate('results.value')} |
 |---|---|
-| Sequence Length | `{stats['length']} bp` |
-| GC Content | `{stats['gc_content']}%` |
-| AT Content | `{stats['at_content']}%` |
-| GC/AT Ratio | `{stats.get('gc_ratio', 'N/A')}` |
+| {translate('results.sequence_length')} | `{stats['length']} bp` |
+| {translate('results.gc_content_label')} | `{stats['gc_content']}%` |
+| {translate('results.at_content_label')} | `{stats['at_content']}%` |
+| {translate('results.gc_at_ratio')} | `{stats.get('gc_ratio', 'N/A')}` |
                 """)
                 if length_reference.get("available"):
                     mean_length = float(length_reference["value"])
                     delta = stats["length"] - mean_length
-                    st.markdown(f"**Length vs species:** {delta:+.0f} bp versus the species mean ({mean_length:.0f} bp, n={length_reference['n']}).")
+                    st.markdown(translate("results.length_vs_species", delta=f"{delta:+.0f}", mean=f"{mean_length:.0f}", count=length_reference["n"]))
                 else:
                     st.info(length_reference["fallback_reason"])
             with stat_col2:
                 st.markdown(f"""
-| Property | Value |
+| {translate('results.property')} | {translate('results.value')} |
 |---|---|
-| Is coding length (×3) | `{'Yes' if stats['is_coding_length'] else 'No'}` |
-| Contains ATG in any frame | `{'Yes' if stats['has_start_codon'] else 'No'}` |
-| Contains stop codon in any frame | `{'Yes' if stats['has_stop_codon'] else 'No'}` |
-| Complete ORF found (start→stop, same frame) | `{'Yes' if stats.get('has_complete_orf') else 'No'}` |
-| A count | `{dist['counts']['A']}` |
-| T count | `{dist['counts']['T']}` |
-| G count | `{dist['counts']['G']}` |
-| C count | `{dist['counts']['C']}` |
+| {translate('results.coding_length_multiple')} | `{translate('results.yes') if stats['is_coding_length'] else translate('results.no')}` |
+| {translate('results.contains_atg')} | `{translate('results.yes') if stats['has_start_codon'] else translate('results.no')}` |
+| {translate('results.contains_stop')} | `{translate('results.yes') if stats['has_stop_codon'] else translate('results.no')}` |
+| {translate('results.complete_orf_found')} | `{translate('results.yes') if stats.get('has_complete_orf') else translate('results.no')}` |
+| {translate('results.count_a')} | `{dist['counts']['A']}` |
+| {translate('results.count_t')} | `{dist['counts']['T']}` |
+| {translate('results.count_g')} | `{dist['counts']['G']}` |
+| {translate('results.count_c')} | `{dist['counts']['C']}` |
                 """)
                 # "Contains ATG/stop in any frame" above are independent
                 # existence checks across all 6 reading frames — they don't
@@ -1222,12 +1248,11 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 # sequence_statistics()'s has_complete_orf docstring.
                 if stats['has_start_codon'] and stats['has_stop_codon'] and not stats.get('has_complete_orf'):
                     st.caption(
-                        "⚠️ An ATG and a stop codon both exist somewhere in the sequence, but not as "
-                        "a matching start→stop pair in the same frame — see the ORFs tab/section for what was actually found."
+                        translate("results.orf_complete_caution")
                     )
 
             if motifs:
-                st.markdown("#### Regulatory Motifs Found")
+                st.markdown(f"#### {translate('results.regulatory_motifs_found')}")
                 for motif in motifs:
                     st.markdown(
                         f"- **{motif['name']}** (`{motif['motif']}`) — "
@@ -1235,30 +1260,28 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                         f"Match: `{motif['match']}`"
                     )
             else:
-                st.info("No known regulatory motifs detected in this sequence.")
+                st.info(translate("results.no_regulatory_motifs"))
 
             restriction_sites = result.get("restriction_sites", [])
-            st.markdown("#### Restriction sites")
+            st.markdown(f"#### {translate('results.restriction_sites')}")
             if restriction_sites:
                 st.dataframe(pd.DataFrame(restriction_sites), hide_index=True, width="stretch")
             else:
-                st.caption("No sites for the common enzymes in the panel were detected.")
+                st.caption(translate("results.no_restriction_sites"))
 
             primer_hints = result.get("primer_hints")
             if primer_hints:
-                st.markdown("#### Primer design hints")
+                st.markdown(f"#### {translate('results.primer_design_hints')}")
                 primer_cols = st.columns(2)
-                primer_cols[0].metric("5' primer Tm", f"{primer_hints['forward_tm']:.1f} °C", "GC clamp: yes" if primer_hints["forward_gc_clamp"] else "GC clamp: no")
-                primer_cols[1].metric("3' primer Tm", f"{primer_hints['reverse_tm']:.1f} °C", "GC clamp: yes" if primer_hints["reverse_gc_clamp"] else "GC clamp: no")
-                st.caption(f"Wallace estimate over 20 bp candidates. Forward: `{primer_hints['forward_sequence']}`; reverse: `{primer_hints['reverse_sequence']}`")
+                primer_cols[0].metric(translate("results.forward_primer_tm"), f"{primer_hints['forward_tm']:.1f} °C", translate("results.gc_clamp_yes") if primer_hints["forward_gc_clamp"] else translate("results.gc_clamp_no"))
+                primer_cols[1].metric(translate("results.reverse_primer_tm"), f"{primer_hints['reverse_tm']:.1f} °C", translate("results.gc_clamp_yes") if primer_hints["reverse_gc_clamp"] else translate("results.gc_clamp_no"))
+                st.caption(translate("results.primer_wallace_estimate", forward=primer_hints["forward_sequence"], reverse=primer_hints["reverse_sequence"]))
 
     # ── Tab 2: Similarity ──────────────────────────────────────────────────────
     with tabs[1]:
-        st.markdown("#### Database Similarity Search")
+        st.markdown(f"#### {translate('results.similarity_search_title')}")
         st.caption(
-            "Global similarity is end-to-end identity and determines the ranking. "
-            "Local coverage is the fraction of the query represented by the best local alignment. "
-            "High identity with high coverage supports a full-length match; high local identity with low coverage may indicate a conserved domain only."
+            translate("results.similarity_explanation")
         )
 
         skipped_reason = result.get("similarity_skipped_reason")
@@ -1269,45 +1292,35 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
         similarity_elapsed_seconds = result.get("similarity_elapsed_seconds")
         similarity_prefiltered_count = result.get("similarity_prefiltered_count", 0)
         similarity_search_mode = result.get("similarity_search_mode", "Balanced")
-        info_lines = [f"**Search mode:** `{similarity_search_mode}`"]
+        info_lines = [f"**{translate('results.search_mode')}:** `{similarity_search_mode}`"]
         if similarity_source:
-            info_lines.append(f"**Source:** `{similarity_source}`")
+            info_lines.append(f"**{translate('results.source')}:** `{similarity_source}`")
         if similarity_candidate_count is not None and not skipped_reason:
-            info_lines.append(f"**Candidates evaluated:** `{similarity_candidate_count}`")
+            info_lines.append(f"**{translate('results.candidates_evaluated')}:** `{similarity_candidate_count}`")
         if similarity_candidate_pool_count is not None:
             if similarity_candidate_pool_requested is not None and similarity_candidate_pool_requested > similarity_candidate_pool_count:
-                info_lines.append(
-                    f"**Candidate pool found:** `{similarity_candidate_pool_count}` (reduced from `{similarity_candidate_pool_requested}` by length/alignment budget)"
-                )
+                info_lines.append(translate("results.candidate_pool_reduced", count=similarity_candidate_pool_count, requested=similarity_candidate_pool_requested))
             else:
-                info_lines.append(f"**Candidate pool found:** `{similarity_candidate_pool_count}`")
+                info_lines.append(translate("results.candidate_pool", count=similarity_candidate_pool_count))
         if similarity_elapsed_seconds is not None:
-            elapsed_label = "Candidate selection time" if skipped_reason else "Similarity workflow time"
+            elapsed_label = translate("results.candidate_selection_time") if skipped_reason else translate("results.similarity_workflow_time")
             info_lines.append(f"**{elapsed_label}:** `{similarity_elapsed_seconds:.3f} s`")
         if similarity_prefiltered_count:
-            info_lines.append(f"**Skipped by prefilter:** `{similarity_prefiltered_count}`")
+            info_lines.append(f"**{translate('results.skipped_prefilter')}:** `{similarity_prefiltered_count}`")
         if info_lines:
             st.markdown(" — ".join(info_lines))
 
         if low_complexity.get("regions"):
             st.warning(
-                f"{low_complexity['coverage_pct']:.1f}% of this sequence is repetitive/low complexity; "
-                "similarity matches involving these regions may not reflect true homology."
+                translate("results.low_complexity_warning", coverage=f"{low_complexity['coverage_pct']:.1f}")
             )
 
         if skipped_reason == "sequence_too_long":
-            st.warning(
-                f"Similarity alignment was not run: this sequence has {len(sequence):,} bp, "
-                f"above the {config.MAX_ALIGNMENT_SEQUENCE_LENGTH:,} bp safety threshold. Candidate selection may still have run, "
-                "but no identity score was calculated. Use a shorter region for full alignment."
-            )
+            st.warning(translate("results.sequence_too_long_warning", length=f"{len(sequence):,}", limit=f"{config.MAX_ALIGNMENT_SEQUENCE_LENGTH:,}"))
         elif skipped_reason == "alignment_cost_too_high":
-            st.warning(
-                "Similarity search was not run because the estimated cost across all candidates is too high. "
-                "This is not the same as no matches being found."
-            )
+            st.warning(translate("results.alignment_cost_warning"))
         elif not similarity_results:
-            st.warning("Similarity search completed but found no matches.")
+            st.warning(translate("results.no_similarity_matches"))
         else:
             st.plotly_chart(
                 viz.plot_similarity_scores(similarity_results),
@@ -1316,9 +1329,11 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
 
             if best_match:
                 best_class = sim.classify_similarity(best_match["similarity_score"])
+                confidence_label = translate(f"results.{best_class['level']}_similarity")
+                confidence_text = translate(f"results.{best_class['level']}_similarity_interpretation")
                 st.markdown(
-                    f"**Result confidence:** {best_class['emoji']} "
-                    f"{best_class['label']} — {best_class['interpretation']}"
+                    f"**{translate('results.result_confidence')}:** {best_class['emoji']} "
+                    f"{confidence_label} — {confidence_text}"
                 )
 
             # Enhanced similarity analysis: top 3 comparison & confidence overview
@@ -1341,14 +1356,14 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                     for row, match in zip(top3_table["rows"], similarity_results):
                         classification = sim.classify_similarity(match["similarity_score"])
                         table_rows.append({
-                            "Rank": row["rank"],
-                            "Confidence": classification["emoji"],
-                            "Gene": row["gene"],
-                            "Similarity": _pct_to_float(row["similarity"]),
-                            "Trait": row["trait"],
-                            "Organism": row["organism"],
-                            "Coverage": _pct_to_float(row["coverage"]),
-                            "Gaps": _pct_to_float(row["gaps"]),
+                            translate("results.rank"): row["rank"],
+                            translate("results.confidence"): classification["emoji"],
+                            translate("glossary.gene").capitalize(): row["gene"],
+                            translate("results.similarity_percent"): _pct_to_float(row["similarity"]),
+                            translate("glossary.trait").capitalize(): row["trait"],
+                            translate("glossary.organism").capitalize(): row["organism"],
+                            translate("results.coverage"): _pct_to_float(row["coverage"]),
+                            translate("results.gaps"): _pct_to_float(row["gaps"]),
                         })
 
                     df_top3 = pd.DataFrame(table_rows)
@@ -1357,25 +1372,25 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                         hide_index=True,
                         width='stretch',
                         column_config={
-                            "Rank": st.column_config.NumberColumn("Rank", width="small"),
-                            "Confidence": st.column_config.TextColumn("", width="small"),
-                            "Gene": st.column_config.TextColumn("Gene", width="medium"),
-                            "Similarity": st.column_config.ProgressColumn(
-                                "Similarity",
-                                help="Global end-to-end identity (Needleman-Wunsch). Used for ranking.",
+                            translate("results.rank"): st.column_config.NumberColumn(translate("results.rank"), width="small"),
+                            translate("results.confidence"): st.column_config.TextColumn("", width="small"),
+                            translate("glossary.gene").capitalize(): st.column_config.TextColumn(translate("glossary.gene").capitalize(), width="medium"),
+                            translate("results.similarity_percent"): st.column_config.ProgressColumn(
+                                translate("results.similarity_percent"),
+                                help=translate("results.global_similarity_help"),
                                 format="%.1f%%",
                                 min_value=0,
                                 max_value=100,
                             ),
-                            "Trait": st.column_config.TextColumn("Trait", width="large"),
-                            "Organism": st.column_config.TextColumn("Organism", width="medium"),
-                            "Coverage": st.column_config.ProgressColumn(
-                                "Global coverage",
+                            translate("glossary.trait").capitalize(): st.column_config.TextColumn(translate("glossary.trait").capitalize(), width="large"),
+                            translate("glossary.organism").capitalize(): st.column_config.TextColumn(translate("glossary.organism").capitalize(), width="medium"),
+                            translate("results.coverage"): st.column_config.ProgressColumn(
+                                translate("results.global_coverage"),
                                 format="%.1f%%",
                                 min_value=0,
                                 max_value=100,
                             ),
-                            "Gaps": st.column_config.NumberColumn("Gaps", format="%.1f%%"),
+                            translate("results.gaps"): st.column_config.NumberColumn(translate("results.gaps"), format="%.1f%%"),
                         },
                     )
 
@@ -1409,13 +1424,8 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
 
                     if len(msa_sequences) >= 2:
                         st.markdown("---")
-                        st.markdown(f"##### Conservation across top {len(msa_sequences) - 1} matches")
-                        st.caption(
-                            "Independent multiple alignment (query + top matches, reference-guided). "
-                            "Solid columns of one color = conserved across every sequence shown; "
-                            "mixed colors = variable position. This is separate from the ranking "
-                            "alignment above and may show slightly different gap placement."
-                        )
+                        st.markdown(translate("results.conservation_top_matches", count=len(msa_sequences) - 1))
+                        st.caption(translate("results.conservation_alignment_explanation"))
                         try:
                             msa_result = aln.star_alignment(msa_sequences, seq_type=sequence_type)
                         except Exception:
@@ -1432,20 +1442,13 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                             max_cols = 40
                             window = [seq[:max_cols] for seq in aligned]
                             if full_width > max_cols:
-                                st.info(
-                                    f"Showing first {max_cols} of {full_width} aligned columns "
-                                    "(conserved/variable regions are usually visible well within "
-                                    "this window)."
-                                )
+                                st.info(translate("results.showing_aligned_columns", shown=max_cols, total=full_width))
                             st.plotly_chart(
                                 viz.plot_msa_table(window, labels=msa_labels),
                                 width='stretch',
                                 key="conservation_msa",
                             )
-                            st.caption(
-                                f"Overall conservation score: {msa_result.get('conservation_score', 0):.1f}% "
-                                "of displayed columns identical across all sequences shown."
-                            )
+                            st.caption(translate("results.conservation_score", score=f"{msa_result.get('conservation_score', 0):.1f}"))
 
             for i, match in enumerate(similarity_results):
                 classification = sim.classify_similarity(match["similarity_score"])
@@ -1455,51 +1458,46 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 clean_name = re.sub(r"^_[a-z]{2,20}[_-]", "", raw_name, flags=re.IGNORECASE)
                 # Fallback to original if cleaning produced empty string
                 display_name = clean_name if clean_name else raw_name
+                localized_level = translate(f"results.{classification['level']}_similarity")
+                localized_interpretation = translate(f"results.{classification['level']}_similarity_interpretation")
                 with st.expander(
-                    f"{classification['emoji']}  {display_name} — {match['similarity_score']:.1f}% similarity"
+                    f"{classification['emoji']}  {display_name} — {match['similarity_score']:.1f}% {translate('ui.similarity').lower()}"
                 ):
                     c1, c2 = st.columns(2)
                     with c1:
-                        st.markdown(f"**Gene:** {display_name}")
-                        st.markdown(f"**Trait:** {match['trait']}")
-                        st.markdown(f"**Organism:** {match['organism']}")
-                        st.markdown(f"**Accession:** {match['accession']}")
+                        st.markdown(f"**{translate('glossary.gene').capitalize()}:** {display_name}")
+                        st.markdown(f"**{translate('glossary.trait').capitalize()}:** {match['trait']}")
+                        st.markdown(f"**{translate('glossary.organism').capitalize()}:** {match['organism']}")
+                        st.markdown(f"**{translate('results.accession')}:** {match['accession']}")
                     with c2:
                         st.metric(
-                            "Similarity (global)",
+                            translate("results.global_similarity"),
                             f"{match['similarity_score']:.2f}%",
-                            help="Global end-to-end identity across the complete query and reference sequences. Used for ranking candidates.",
+                            help=translate("results.global_similarity_help"),
                         )
                         local_coverage = match.get("local_coverage_percent")
                         if local_coverage is not None:
                             st.metric(
-                                "Local coverage",
+                                translate("results.local_coverage"),
                                 f"{local_coverage:.2f}%",
-                                help="Percentage of the query sequence represented by one Smith-Waterman local traceback. It is not the percentage of a perfect segment and may include mismatches or gaps.",
+                                help=translate("results.local_coverage_help"),
                             )
                             local_identity = match.get("local_identity")
                             if local_identity is not None:
-                                st.caption(f"Best local segment identity: {local_identity:.2f}%")
+                                st.caption(translate("results.local_identity", identity=f"{local_identity:.2f}"))
                             if local_coverage < 90.0:
-                                st.warning(
-                                    "Partial match: the best local segment covers less than 90% of the query; "
-                                    "this may represent a conserved domain rather than a complete orthologue."
-                                )
-                        st.markdown(f"**Alignment:** {match.get('alignment_method', 'global')}")
+                                st.warning(translate("results.partial_match_warning"))
+                        st.markdown(f"**{translate('results.alignment_method')}:** {match.get('alignment_method', 'global')}")
                         if match.get("alignment", {}).get("algorithm"):
-                            st.markdown(f"**Algorithm:** {match['alignment']['algorithm']}")
-                        st.markdown(f"**Level:** {classification['label']}")
-                        st.markdown(f"**Interpretation:** {classification['interpretation']}")
-                        st.markdown(f"**Description:** {match['description']}")
+                            st.markdown(f"**{translate('results.algorithm')}:** {match['alignment']['algorithm']}")
+                        st.markdown(f"**{translate('results.level')}:** {localized_level}")
+                        st.markdown(f"**{translate('results.interpretation')}:** {localized_interpretation}")
+                        st.markdown(f"**{translate('results.description')}:** {match['description']}")
 
                     if match.get("alignment"):
                         alignment_map = match["alignment"]["alignment_map"]
                         st.markdown(f"**{translate('ui.alignment_map')}:**")
-                        st.caption(
-                            "Zoomed view of the first 60 aligned positions. Differences beyond "
-                            "this window (if any) are shown separately below, since the full "
-                            "aligned length can run into the thousands of bp."
-                        )
+                        st.caption(translate("results.showing_alignment_window"))
                         st.plotly_chart(
                             viz.plot_alignment(alignment_map),
                             width='stretch',
@@ -1537,21 +1535,21 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                                 st.markdown(f"**{translate('ui.alignment_metrics')}:**")
                                 if metrics:
                                     st.markdown(
-                                        f"- **Aligned Length:** {metrics.get('alignment_length', 'N/A')} bp\n"
-                                        f"- **Matches:** {metrics.get('matches', 'N/A')}\n"
-                                        f"- **Mismatches:** {metrics.get('mismatches', 'N/A')}\n"
-                                        f"- **Gaps:** {metrics.get('total_gaps', 'N/A')} ({metrics.get('gap_percent', 0):.1f}%)\n"
-                                        f"- **Coverage:** {metrics.get('coverage_percent', 0):.1f}%\n"
-                                        f"- **Identity:** {metrics.get('identity_percent', 0):.1f}%"
+                                        f"- **{translate('results.aligned_length')}:** {metrics.get('alignment_length', 'N/A')} bp\n"
+                                        f"- **{translate('results.matches')}:** {metrics.get('matches', 'N/A')}\n"
+                                        f"- **{translate('results.mismatches')}:** {metrics.get('mismatches', 'N/A')}\n"
+                                        f"- **{translate('results.gaps')}:** {metrics.get('total_gaps', 'N/A')} ({metrics.get('gap_percent', 0):.1f}%)\n"
+                                        f"- **{translate('results.coverage')}:** {metrics.get('coverage_percent', 0):.1f}%\n"
+                                        f"- **{translate('results.identity')}:** {metrics.get('identity_percent', 0):.1f}%"
                                     )
 
                         # Gene context card (1)
                         context = viz.build_match_context_card(match)
                         st.markdown(f"**{translate('ui.gene_context')}:**")
                         st.markdown(
-                            f"- **Description:** {context.get('description', 'No description')}\n"
-                            f"- **Accession:** {context.get('accession', 'N/A')}\n"
-                            f"- **Source:** {context.get('source', 'Unknown')}"
+                            f"- **{translate('results.description')}:** {context.get('description', 'No description')}\n"
+                            f"- **{translate('results.accession')}:** {context.get('accession', 'N/A')}\n"
+                            f"- **{translate('results.source')}:** {context.get('source', 'Unknown')}"
                         )
 
     # ── Tab 3: Mutations ───────────────────────────────────────────────────────
@@ -1565,9 +1563,9 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 None,
             )
             if reference_warning:
-                st.info(reference_warning)
+                st.info(translate("results.no_close_reference"))
             else:
-                st.info("No mutation report — run analysis with a database match first, or provide an explicit reference sequence above.")
+                st.info(translate("results.no_mutation_report"))
         else:
             raw_substitutions = mutation_report.get("mutations", [])
             classified_substitutions = variant_report.get("substitutions") or raw_substitutions
@@ -1618,21 +1616,21 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             frameshift_count = sum(1 for item in indel_blocks if item.get("frameshift"))
             consequences = {}
             for item in substitutions:
-                consequence = item.get("consequence", "indéterminée")
+                consequence = item.get("consequence", "unknown")
                 consequences[consequence] = consequences.get(consequence, 0) + 1
             if frameshift_count:
-                st.warning(f"{frameshift_count} événement(s) frameshift détecté(s) : la lecture des codons peut être décalée après l’indel.")
+                st.warning(translate("results.frameshift_warning", count=frameshift_count))
             elif consequences:
                 important = sum(
                     count for name, count in consequences.items()
                     if name in {"missense", "nonsense", "readthrough", "radical", "downstream_of_frameshift"}
                 )
                 if important:
-                    st.warning(f"{important} substitution(s) potentiellement fonctionnelle(s) selon la classification disponible.")
+                    st.warning(translate("results.functional_mutation_warning", count=important))
                 elif all(name == "silent" for name in consequences):
-                    st.success("Les substitutions classifiées sont silencieuses : aucun changement d’acide aminé détecté dans le cadre choisi.")
+                    st.success(translate("results.silent_mutations_notice"))
                 else:
-                    st.info("L’impact biologique est indéterminé pour une partie des variants; une annotation complémentaire est recommandée.")
+                    st.info(translate("results.uncertain_mutation_impact"))
 
             important_only = st.checkbox(
                 translate("ui.important_mutations_only"),
@@ -1766,115 +1764,109 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 st.markdown(f"#### {translate('ui.substitutions')}")
                 _render_variant_table(displayed_substitutions)
                 if len(displayed_substitutions) > 50:
-                    st.info(f"Showing first 50 of {len(displayed_substitutions)} substitutions.")
+                    st.info(translate("results.showing_substitutions", count=len(displayed_substitutions)))
             if displayed_indels:
                 st.markdown(f"#### {translate('ui.indels')}")
                 _render_variant_table(displayed_indels)
                 if len(displayed_indels) > 50:
-                    st.info(f"Showing first 50 of {len(displayed_indels)} indels.")
+                    st.info(translate("results.showing_indels", count=len(displayed_indels)))
             if not displayed_substitutions and not displayed_indels:
-                st.success("No differences after global alignment — sequences are identical.")
+                st.success(translate("results.no_differences_after_alignment"))
 
     # ── Tab 4: Translation ─────────────────────────────────────────────────────
     with tabs[3]:
         if sequence_type == "protein":
-            st.markdown("#### Protein input detected — translation not applicable")
+            st.markdown(f"#### {translate('results.sequence_type_protein')}")
             st.info(
-                "The uploaded sequence is interpreted as a protein sequence. "
-                "DNA translation and nucleotide complement calculations are skipped."
+                translate("results.sequence_type_protein_details")
             )
-            st.markdown("#### Protein Properties")
-            st.markdown(f"**Sequence length:** {stats['length']} aa")
-            st.markdown(f"**Unique residues:** {stats.get('unique_residues', 'N/A')}")
-            st.markdown(f"**Most abundant residue:** {max(dist['counts'], key=dist['counts'].get)}")
+            st.markdown(f"#### {translate('results.protein_properties')}")
+            st.markdown(f"**{translate('results.sequence_length')}:** {stats['length']} aa")
+            st.markdown(f"**{translate('results.unique_residues')}:** {stats.get('unique_residues', 'N/A')}")
+            st.markdown(f"**{translate('results.most_abundant_residue')}:** {max(dist['counts'], key=dist['counts'].get)}")
         else:
-            st.markdown(f"#### Selected frame: {reading_frame:+d}")
+            st.markdown(f"#### {translate('results.selected_frame', frame=f'{reading_frame:+d}')}")
             tl = translation
             codon_count = len(tl.get("codons", []))
-            status_label = "Complete ORF: stop codon found" if tl["status"] == "complete" else "Open translation: no stop codon in this frame"
+            status_label = translate("results.complete_orf_status") if tl["status"] == "complete" else translate("results.open_translation_status")
             m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Protein length", f"{tl['length']} aa")
-            m2.metric("Complete codons", codon_count)
-            m3.metric("Status", "Complete" if tl["status"] == "complete" else "Open")
-            m4.metric("Remaining bases", tl.get("remainder_nucleotides", 0))
+            m1.metric(translate("results.protein_length_short"), f"{tl['length']} aa")
+            m2.metric(translate("results.complete_codons"), codon_count)
+            m3.metric(translate("results.translation_status"), translate("results.complete") if tl["status"] == "complete" else translate("results.open"))
+            m4.metric(translate("results.remaining_bases"), tl.get("remainder_nucleotides", 0))
             st.caption(status_label)
             ambiguous_count = sum(1 for base in sequence.upper() if base not in {"A", "T", "G", "C"})
             if ambiguous_count:
                 st.warning(
-                    f"{ambiguous_count} ambiguous nucleotide(s) detected. "
-                    "Translated amino acids containing ambiguous codons are shown as ?."
+                    translate("results.ambiguous_nucleotides", count=ambiguous_count)
                 )
 
             if tl["protein"]:
-                st.markdown("**Protein sequence**")
+                st.markdown(f"**{translate('results.protein_sequence')}**")
                 st.code(tl.get("protein_with_stop", tl["protein"]), language=None)
             else:
-                st.warning("No protein sequence translated — check reading frame or sequence length.")
+                st.warning(translate("results.no_translation"))
 
             codon_rows = bio.translation_codon_rows(sequence, frame=reading_frame)
             if codon_rows:
-                st.markdown("**Codon map**")
+                st.markdown(f"**{translate('results.codon_map')}**")
                 st.dataframe(
                     pd.DataFrame(codon_rows).rename(columns={
-                        "codon_index": "Codon #", "start": "Start (nt)", "end": "End (nt)",
-                        "codon": "Codon", "amino_acid": "Amino acid", "is_stop": "Stop",
+                        "codon_index": translate("results.codon_number"), "start": translate("results.start_nt"), "end": translate("results.end_nt"),
+                        "codon": translate("results.codon"), "amino_acid": translate("results.amino_acid"), "is_stop": translate("results.stop"),
                     }),
                     hide_index=True,
                     width="stretch",
                 )
                 st.download_button(
-                    "Download selected protein (FASTA)",
+                    translate("results.download_translated_fasta"),
                     f">translated_frame_{reading_frame:+d}\n{tl.get('protein_with_stop', tl['protein'])}\n",
                     file_name=f"translated_frame_{reading_frame:+d}.fasta",
                     mime="text/plain",
                     key="translation_fasta",
                 )
 
-            st.markdown("#### Six-frame comparison")
+            st.markdown(f"#### {translate('results.six_frame_comparison')}")
             all_frames = bio.translate_all_frames(sequence, include_reverse=True)
             recommended_frame = max(
                 all_frames.items(),
                 key=lambda item: (item[1]["status"] == "complete", item[1]["length"]),
             )[0]
             st.info(
-                f"Recommended frame for review: **{recommended_frame}**. "
-                "This is a computational suggestion based on stop-codon completion and translated length, not proof of expression."
+                translate("results.recommended_frame", frame=recommended_frame)
             )
             frame_rows = []
             for frame_name, frame_result in all_frames.items():
                 frame_rows.append({
-                    "Frame": frame_name,
-                    "Strand": frame_result.get("strand", "forward").title(),
-                    "Protein (aa)": frame_result["length"],
-                    "Stop": "Yes" if frame_result["status"] == "complete" else "No",
-                    "Complete codons": len(frame_result.get("codons", [])),
-                    "Remaining bases": frame_result.get("remainder_nucleotides", 0),
+                    translate("results.frame"): frame_name,
+                    translate("results.strand"): translate(f"results.strand_{frame_result.get('strand', 'forward')}").title(),
+                    translate("results.protein_aa"): frame_result["length"],
+                    translate("results.stop"): translate("results.yes") if frame_result["status"] == "complete" else translate("results.no"),
+                    translate("results.complete_codons"): len(frame_result.get("codons", [])),
+                    translate("results.remaining_bases"): frame_result.get("remainder_nucleotides", 0),
                 })
             st.dataframe(pd.DataFrame(frame_rows), hide_index=True, width="stretch")
             for frame_name, frame_result in all_frames.items():
                 expanded = frame_name == f"Frame {reading_frame:+d}"
                 with st.expander(f"{frame_name} — {frame_result['length']} aa", expanded=expanded):
                     st.code(frame_result.get("protein_with_stop", frame_result["protein"]) or "(empty)", language=None)
-                    st.caption(
-                        "Complete ORF / stop found" if frame_result["status"] == "complete"
-                        else "No stop codon in this frame"
-                    )
+                    st.caption(translate("results.complete_orf_status") if frame_result["status"] == "complete" else translate("results.open_translation_status"))
 
-            st.markdown("#### Predicted ORFs")
+            st.markdown(f"#### {translate('results.predicted_orfs')}")
             orf_rows = [
                 {
-                    "Strand / frame": orf["frame"],
-                    "Start (nt)": orf["start"],
-                    "End (nt)": orf["end"],
-                    "Length (nt)": orf["length"],
-                    "Protein (aa)": len(str(orf.get("protein", "")).replace("...[truncated]", "")),
-                    "Complete": "Yes" if orf["complete"] else "No",
+                    translate("results.strand_frame"): orf["frame"],
+                    translate("results.start_nt"): orf["start"],
+                    translate("results.end_nt"): orf["end"],
+                    translate("results.length_nt"): orf["length"],
+                    translate("results.protein_aa"): len(str(orf.get("protein", "")).replace("...[truncated]", "")),
+                    translate("results.complete"): translate("results.yes") if orf["complete"] else translate("results.no"),
                 }
                 for orf in result.get("orfs", [])[:100]
             ]
             if orf_rows:
                 st.dataframe(pd.DataFrame(orf_rows), hide_index=True, width="stretch")
-                st.markdown("**ORF map**")
+                st.markdown(f"**{translate('results.orf_map')}**")
                 sequence_length = max(len(sequence), 1)
                 for index, orf in enumerate(result.get("orfs", [])[:20], start=1):
                     left = max(0.0, (int(orf["start"]) - 1) / sequence_length * 100)
@@ -1889,28 +1881,28 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                         unsafe_allow_html=True,
                     )
                 gff_rows = [
-                    f"{result.get('header', 'sequence')}\tPlantGeneAnalyzer\tORF\t{orf['start']}\t{orf['end']}\t.\t{ '+' if str(orf['frame']).startswith('+') else '-' }\t.\tID=orf_{idx + 1};frame={orf['frame']}"
+                        f"{result.get('header', 'sequence')}\tPlantGeneAnalyzer\tORF\t{orf['start']}\t{orf['end']}\t.\t{ '+' if str(orf['frame']).startswith('+') else '-' }\t.\tID=orf_{idx + 1};frame={orf['frame']}"
                     for idx, orf in enumerate(result.get("orfs", [])[:100])
                 ]
                 st.download_button(
-                    "Download ORFs (GFF3)",
+                    translate("results.download_orfs_gff3"),
                     "##gff-version 3\n" + "\n".join(gff_rows) + "\n",
                     file_name="predicted_orfs.gff3",
                     mime="text/plain",
                     key="translation_gff3",
                 )
             else:
-                st.info("No ORF above the minimum length was detected.")
+                st.info(translate("results.no_orfs"))
 
-            st.markdown("#### Complementary sequences")
+            st.markdown(f"#### {translate('results.complementary_sequences')}")
             comp_col1, comp_col2 = st.columns(2)
             with comp_col1:
-                st.markdown("**Complement (5'→3' orientation):**")
+                st.markdown(f"**{translate('results.complement_orientation')}:**")
                 st.code(bio.complement(sequence[:80]) + ("…" if len(sequence) > 80 else ""), language=None)
             with comp_col2:
-                st.markdown("**Reverse complement:**")
+                st.markdown(f"**{translate('results.reverse_complement')}:**")
                 st.code(bio.reverse_complement(sequence[:80]) + ("…" if len(sequence) > 80 else ""), language=None)
-            st.caption("Translation alone does not prove that a protein is expressed; experimental or transcript evidence is required.")
+            st.caption(translate("results.translation_disclaimer"))
 
     # ── Tab 5: AI Interpretation ───────────────────────────────────────────────
     with tabs[4]:
@@ -1919,13 +1911,15 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
         interp = interpretation
 
         # Overall summary
-        st.info(f"**Summary:** {interp['overall_summary']}")
+        st.info(f"**{translate('ai.summary_label')}:** {interp['overall_summary']}")
 
         # Confidence badge
         conf = interp["confidence_level"]
         conf_colors = {"High": "🟢", "Medium": "🟡", "Low": "🔴"}
+        confidence_key = str(conf["level"]).lower()
+        localized_confidence = translate(f"ai.confidence_level_{confidence_key}")
         st.markdown(
-            f"**Confidence:** {conf_colors.get(conf['level'], '⚪')} {conf['level']} — {conf['note']}"
+            f"**{translate('ai.confidence_label')}:** {conf_colors.get(conf['level'], '⚪')} {localized_confidence} — {conf['note']}"
         )
 
         st.markdown("---")
@@ -1934,48 +1928,54 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
         left, right = st.columns(2)
 
         with left:
-            st.markdown("##### Sequence Profile")
+            st.markdown(f"##### {translate('ai.sequence_profile_title')}")
             profile = interp["sequence_profile"]
             for note in profile["notes"]:
                 st.markdown(f"- {note}")
-            st.markdown(f"*Coding potential: **{profile['coding_potential'].upper()}***")
+            st.markdown(f"*{translate('ai.coding_potential_label')}: **{profile['coding_potential'].upper()}***")
 
-            st.markdown("##### GC Content Analysis")
+            st.markdown(f"##### {translate('ai.gc_analysis_title')}")
             gc_interp = interp["gc_interpretation"]
             for line in gc_interp["interpretation"]:
                 st.markdown(f"- {line}")
             st.markdown(f"*{gc_interp['stress_implication']}*")
 
-            st.markdown("##### Functional Prediction")
+            st.markdown(f"##### {translate('ai.functional_prediction_title')}")
             func = interp["functional_prediction"]
             for p in func["predictions"]:
                 st.markdown(f"- {p}")
 
         with right:
-            st.markdown("##### Similarity Interpretation")
+            st.markdown(f"##### {translate('ai.similarity_title')}")
             sim_interp = interp["similarity_interpretation"]
             for line in sim_interp.get("interpretation", ["—"]):
                 st.markdown(f"- {line}")
 
-            st.markdown("##### Mutation Interpretation")
+            st.markdown(f"##### {translate('ai.mutation_title')}")
             mut_interp = interp["mutation_interpretation"]
             for line in mut_interp.get("interpretation", ["—"]):
                 st.markdown(f"- {line}")
 
-            st.markdown("##### Stress Resistance Assessment")
+            st.markdown(f"##### {translate('ai.stress_title')}")
             stress = interp["stress_resistance"]
             detected = stress.get("detected_resistance", {})
             if detected:
                 for stress_type, detail in detected.items():
-                    st.markdown(f"- **{stress_type.upper()}:** {detail}")
+                    localized_stress = translate(f"ai.trait_{stress_type}", default=stress_type)
+                    st.markdown(f"- **{localized_stress.upper()}:** {detail}")
             else:
-                st.markdown("- No specific stress resistance profile detected.")
+                st.markdown(f"- {translate('ai.no_specific_stress')}")
 
         st.markdown("---")
-        st.markdown("#### Agricultural Recommendations")
+        st.markdown(f"#### {translate('ai.recommendations_title')}")
 
         recs = interp["agricultural_recommendations"]
-        priority_colors = {"HIGH": "🔴", "MEDIUM": "🟡", "LOW": "🔵"}
+        priority_colors = {
+            translate("ai.priority_high"): "🔴",
+            translate("ai.priority_medium"): "🟡",
+            translate("ai.priority_low"): "🔵",
+            "HIGH": "🔴", "MEDIUM": "🟡", "LOW": "🔵",
+        }
         for rec in recs:
             priority_icon = priority_colors.get(rec["priority"], "⚪")
             with st.expander(f"{priority_icon} [{rec['priority']}] {rec['category']}"):
@@ -1986,14 +1986,14 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
         st.markdown(f"#### {translate('ui.cleaned_sequence')}")
         if sequence_type == "protein":
             st.markdown(
-                f"**Length:** {len(sequence)} aa  |  "
-                f"**Valid amino acids only** (standard residues + X/B/Z/*)"
+                f"**{translate('results.raw_sequence_length', length=len(sequence), unit='aa')}**  |  "
+                f"**{translate('results.valid_amino_acids')}**"
             )
         else:
             st.markdown(
-                f"**Length:** {len(sequence)} bp  |  "
-                f"**GC:** {stats['gc_content']}%  |  "
-                f"**Valid nucleotides only** (ATGCN)"
+                f"**{translate('results.raw_sequence_length', length=len(sequence), unit='bp')}**  |  "
+                f"**{translate('results.gc_short')}:** {stats['gc_content']}%  |  "
+                f"**{translate('results.valid_nucleotides')}**"
             )
         st.code(sequence, language=None)
 
@@ -2003,7 +2003,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
         else:
             fasta_content = f">Query_sequence | length={len(sequence)}bp | GC={stats['gc_content']}%\n{sequence}\n"
         st.download_button(
-            label="Download as FASTA",
+            label=translate("results.download_as_fasta"),
             data=fasta_content,
             file_name="query_sequence.fasta",
             mime="text/plain",
