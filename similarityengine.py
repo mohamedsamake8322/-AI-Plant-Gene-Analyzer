@@ -553,6 +553,13 @@ def compare_with_database(
             "description": gene_info.get("description", ""),
             "organism": gene_info.get("organism", "Unknown"),
             "accession": gene_info.get("accession", "N/A"),
+            # DIAMOND (vs Swiss-Prot) / Pfam (vs Pfam-A) annotations, precomputed
+            # offline by scripts/collect_diamond.py and scripts/collect_pfam.py
+            # into the species JSON's gene["annotation"]. Carried through here
+            # (unflattened by _flatten_sequence, which only touches "sequence")
+            # so the UI can show them as independent evidence alongside the
+            # live alignment score -- never merged into similarity_score.
+            "annotation": gene_info.get("annotation") or {},
             "similarity_score": match["similarity_score"],
             "alignment_method": match.get("method", "global"),
             "local_identity": match.get("local_identity"),

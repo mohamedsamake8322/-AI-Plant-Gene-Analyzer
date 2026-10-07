@@ -1552,6 +1552,57 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                             f"- **{translate('results.source')}:** {context.get('source', 'Unknown')}"
                         )
 
+                    # Offline DIAMOND / Pfam annotations of the MATCHED database
+                    # gene (precomputed by scripts/collect_diamond.py and
+                    # scripts/collect_pfam.py into *_all_sources.json). These are
+                    # independent evidence from a different comparison (vs
+                    # Swiss-Prot / vs Pfam-A), never merged into similarity_score
+                    # above -- shown as separate panels so the two kinds of
+                    # evidence stay distinguishable, consistent with how every
+                    # other model output in this app is kept un-fused.
+                    match_annotation = match.get("annotation") or {}
+                    diamond_hits = match_annotation.get("diamond_hits") or []
+                    pfam_domains = match_annotation.get("pfam_domains") or []
+
+                    if diamond_hits:
+                        st.markdown("---")
+                        st.markdown("**🔎 Known homologs in Swiss-Prot (DIAMOND):**")
+                        st.caption(
+                            "Independent evidence: alignment of this database gene against "
+                            "UniProt/Swiss-Prot, computed offline. Not part of the similarity "
+                            "score above."
+                        )
+                        for hit in diamond_hits[:5]:
+                            identity = hit.get("identity")
+                            evalue = hit.get("evalue")
+                            st.markdown(
+                                f"- `{hit.get('accession', '?')}` — "
+                                f"{(hit.get('description') or '')[:100]} "
+                                f"({identity:.1f}% identity, e-value {evalue:.1e})"
+                                if isinstance(identity, (int, float)) and isinstance(evalue, (int, float))
+                                else f"- `{hit.get('accession', '?')}` — {(hit.get('description') or '')[:100]}"
+                            )
+                        if len(diamond_hits) > 5:
+                            st.caption(f"+ {len(diamond_hits) - 5} more hit(s) not shown.")
+
+                    if pfam_domains:
+                        st.markdown("---")
+                        st.markdown("**🧩 Functional domains (Pfam):**")
+                        st.caption(
+                            "Independent evidence: Pfam-A domains detected in this database "
+                            "gene's protein sequence via hmmscan, computed offline."
+                        )
+                        for domain in pfam_domains[:5]:
+                            score = domain.get("score")
+                            score_text = f"{score:.1f}" if isinstance(score, (int, float)) else "N/A"
+                            st.markdown(
+                                f"- `{domain.get('accession', '?')}` **{domain.get('name', '')}** "
+                                f"— positions {domain.get('start', '?')}–{domain.get('end', '?')}, "
+                                f"score {score_text}"
+                            )
+                        if len(pfam_domains) > 5:
+                            st.caption(f"+ {len(pfam_domains) - 5} more domain(s) not shown.")
+
     # ── Tab 3: Mutations ───────────────────────────────────────────────────────
     with tabs[2]:
         st.markdown(f"#### {translate('ui.mutation_analysis')}")
