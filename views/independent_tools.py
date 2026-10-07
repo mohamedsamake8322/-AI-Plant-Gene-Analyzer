@@ -21,6 +21,7 @@ import visualization as viz
 import trait_research as tr
 import config
 from i18n import translate, language_selector
+from slider_utils import _alignment_window_slider_bounds
 
 STAR_MSA_ENGINE = "Star MSA (fast / approximate)"
 MSA_ENGINES = ["MAFFT", "MUSCLE", "ClustalW", STAR_MSA_ENGINE]
@@ -307,11 +308,12 @@ with tool_tabs[0]:
             step=1,
             key="independent_msa_window_start",
         )
+        slider_min, slider_max, slider_value = _alignment_window_slider_bounds(alignment_length)
         window_width = st.slider(
             translate('ui.msa_window_visible', default="Visible alignment columns"),
-            20,
-            min(200, max(20, alignment_length)),
-            min(60, max(20, alignment_length)),
+            min_value=slider_min,
+            max_value=slider_max,
+            value=slider_value,
             key="independent_msa_window_width",
         )
         window_end = min(alignment_length, window_start + window_width - 1)

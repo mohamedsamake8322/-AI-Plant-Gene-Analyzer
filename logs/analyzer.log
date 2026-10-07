@@ -900,3 +900,44 @@ ValueError: Sequence is empty.
 2026-10-02 20:57:17,608 - __main__ - INFO - Starting analysis for record 1/1: cqi:110688118 | organism=Chenopodium quinoa
 2026-10-02 20:57:17,994 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 45 candidates for top_n=3
 2026-10-02 20:57:17,998 - __main__ - INFO - Analysis session state saved
+2026-10-03 21:15:46,258 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-07 10:18:41,468 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-07 10:18:41,468 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-07 10:19:10,558 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-07 10:19:10,558 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-07 10:19:13,608 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-07 10:19:13,608 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-07 10:19:13,868 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-10-07 10:19:13,868 - __main__ - INFO - Starting analysis for record 1/1: Sequence 1
+2026-10-07 10:19:14,368 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 1 candidates for top_n=3
+2026-10-07 10:19:14,368 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 1 candidates for top_n=3
+2026-10-07 10:20:13,325 - __main__ - INFO - Analysis session state saved
+2026-10-07 10:20:13,325 - __main__ - INFO - Analysis session state saved
+2026-10-07 10:22:21,466 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-07 10:22:21,466 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-07 10:22:25,517 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-07 10:22:25,517 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-07 10:22:27,779 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-07 10:22:27,779 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-07 10:22:27,832 - __main__ - INFO - Starting analysis for record 1/1: cqi:110684354 | organism=Chenopodium quinoa
+2026-10-07 10:22:27,832 - __main__ - INFO - Starting analysis for record 1/1: cqi:110684354 | organism=Chenopodium quinoa
+2026-10-07 10:22:28,349 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 45 candidates for top_n=3
+2026-10-07 10:22:28,349 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 45 candidates for top_n=3
+2026-10-07 10:22:30,535 - __main__ - INFO - Analysis session state saved
+2026-10-07 10:22:30,535 - __main__ - INFO - Analysis session state saved
+2026-10-07 10:22:37,678 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-07 10:22:37,678 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-07 10:22:37,711 - __main__ - INFO - Starting analysis for record 1/1: cqi:110684354 | organism=Chenopodium quinoa
+2026-10-07 10:22:37,711 - __main__ - INFO - Starting analysis for record 1/1: cqi:110684354 | organism=Chenopodium quinoa
+2026-10-07 10:22:37,971 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 45 candidates for top_n=3
+2026-10-07 10:22:37,971 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 45 candidates for top_n=3
+2026-10-07 10:22:37,975 - __main__ - INFO - Analysis session state saved
+2026-10-07 10:22:37,975 - __main__ - INFO - Analysis session state saved
+2026-10-07 10:22:39,899 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-07 10:22:39,899 - __main__ - INFO - CSS loaded successfully from style.css
+2026-10-07 10:22:39,959 - __main__ - INFO - Starting analysis for record 1/1: cqi:110684354 | organism=Chenopodium quinoa
+2026-10-07 10:22:39,959 - __main__ - INFO - Starting analysis for record 1/1: cqi:110684354 | organism=Chenopodium quinoa
+2026-10-07 10:22:40,293 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 45 candidates for top_n=3
+2026-10-07 10:22:40,293 - __main__ - INFO - find_similar_genes: k-mer prefilter returned 45 candidates for top_n=3
+2026-10-07 10:22:40,306 - __main__ - INFO - Analysis session state saved
+2026-10-07 10:22:40,306 - __main__ - INFO - Analysis session state saved

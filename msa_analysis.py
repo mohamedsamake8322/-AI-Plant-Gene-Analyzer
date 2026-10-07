@@ -2,10 +2,14 @@
 
 Site-class definitions are unique and MEGA-compatible:
 
-* Terminal gaps and ``?`` / ``.`` / ``*`` (alignment missing) are missing data,
-  not indels, and are ignored when scoring residue states.
+* Terminal gaps and ``?`` / ``.`` (alignment missing) are missing data,
+  not indels, and are ignored when scoring residue states. Ambiguity codes
+  (DNA: N R Y S W K M B D H V; protein: B J X Z) are also ignored: ``A`` vs ``N``
+  is not a substitution. ``*`` (stop) is a residue in protein alignments.
 * Internal gaps are indels.
-* Conserved: exactly one residue state among non-missing, non-indel characters.
+* Single: only one sequence has a residue in the column (cannot be called
+  conserved or variable).
+* Conserved: one residue state shared by at least two sequences.
 * Variable: two or more residue states (gaps never create variability by
   themselves). This is the single definition used by consensus, CSV metrics
   and MEGA-style counts.
@@ -28,6 +32,8 @@ from typing import Iterable
 VALID_NUCLEOTIDES = set("ATGCNRYSWKMBDHVU")
 AMINO_ACIDS = set("ACDEFGHIKLMNPQRSTVWYBXZ*")
 MISSING_CHARS = set("?.")
+AMBIGUOUS_DNA = set("NRYSWKMBDHV")
+AMBIGUOUS_PROTEIN = set("BJXZ")
 GAP_CHARS = set("-")
 IUPAC_SETS = {
     "A": frozenset("A"),
@@ -50,7 +56,7 @@ IUPAC_SETS = {
 IUPAC_FROM_SET = {bases: code for code, bases in IUPAC_SETS.items() if code != "U"}
 METHODS_CITATIONS = {
     "MAFFT": "Katoh K, Standley DM (2013) MAFFT multiple sequence alignment software version 7. Mol Biol Evol 30:772-780.",
-    "MUSCLE": "Edgar RC (2022) Muscle5: High-accuracy alignment ensembles enable accurate phylogenetic inference. Nat Commun 13:2680.",
+    "MUSCLE": "Edgar RC (2022) Muscle5: High-accuracy alignment ensembles enable unbiased assessments of sequence homology and phylogeny. Nat Commun 13:6968.",
     "ClustalW": "Larkin MA et al. (2007) Clustal W and Clustal X version 2.0. Bioinformatics 23:2947-2948.",
     "trimAl": "Capella-Gutierrez S, Silla-Martinez JM, Gabaldon T (2009) trimAl: a tool for automated alignment trimming. Bioinformatics 25:1972-1973.",
     "ClipKIT": "Steenwyk JL et al. (2020) ClipKIT: A multiple sequence alignment trimming software for accurate phylogenomic inference. PLoS Biol 18:e3001007.",
@@ -58,20 +64,20 @@ METHODS_CITATIONS = {
 
 
 def detect_sequence_type(sequence: str) -> str:
+    """'dna' if >= 90 % of letters are A/C/G/T/U/N, else 'protein' (short peptides such as MKV stay protein)."""
     cleaned = re.sub(r"[^A-Za-z*]", "", sequence).upper()
     if not cleaned:
         return "unknown"
-    chars = set(cleaned)
-    if chars <= VALID_NUCLEOTIDES:
-        return "dna"
-    if chars <= AMINO_ACIDS or chars & set("BJOUXZ*"):
-        return "protein"
-    return "dna"
+    nucleotide_like = sum(cleaned.count(base) for base in "ACGTUN")
+    return "dna" if nucleotide_like / len(cleaned) >= 0.9 else "protein"
 
 
 def _pad_alignment(aligned_sequences: list[str]) -> list[str]:
-    width = max((len(sequence) for sequence in aligned_sequences), default=0)
-    return [sequence.ljust(width, "-")[:width] for sequence in aligned_sequences]
+    """Return the sequences unchanged; an alignment must be rectangular (no silent padding)."""
+    widths = {len(sequence) for sequence in aligned_sequences}
+    if len(widths) > 1:
+        raise ValueError(f"Aligned sequences have different lengths: {sorted(widths)}")
+    return list(aligned_sequences)
 
 
 def terminal_gap_mask(sequence: str) -> list[bool]:
@@ -90,21 +96,21 @@ def terminal_gap_mask(sequence: str) -> list[bool]:
     return mask
 
 
-def classify_cell(char: str, is_terminal_gap: bool) -> str:
+def classify_cell(char: str, is_terminal_gap: bool, dna: bool = True) -> str:
     upper = char.upper()
     if upper in MISSING_CHARS or is_terminal_gap:
         return "missing"
     if upper in GAP_CHARS:
         return "indel"
-    if upper == "*":
-        return "residue"
+    if upper in (AMBIGUOUS_DNA if dna else AMBIGUOUS_PROTEIN):
+        return "ambiguous"
     return "residue"
 
 
-def column_residue_counts(column: list[str], terminal_flags: list[bool]) -> Counter:
+def column_residue_counts(column: list[str], terminal_flags: list[bool], dna: bool = True) -> Counter:
     counts: Counter = Counter()
     for char, is_terminal in zip(column, terminal_flags):
-        if classify_cell(char, is_terminal) == "residue":
+        if classify_cell(char, is_terminal, dna) == "residue":
             counts[char.upper()] += 1
     return counts
 
@@ -118,16 +124,30 @@ def iupac_consensus_char(residues: Iterable[str]) -> str:
     return IUPAC_FROM_SET.get(frozenset(bases), "N")
 
 
-def majority_consensus_char(counts: Counter) -> str:
+def top_states(counts: Counter) -> frozenset:
     if not counts:
+        return frozenset()
+    best = max(counts.values())
+    return frozenset(state for state, frequency in counts.items() if frequency == best)
+
+
+def majority_consensus_char(counts: Counter, dna: bool = True) -> str:
+    """Most frequent state; a tie is reported as an IUPAC code (DNA) or X (protein), never as an arbitrary letter."""
+    top = top_states(counts)
+    if not top:
         return "-"
-    return max(counts.items(), key=lambda item: (item[1], item[0]))[0]
+    if len(top) == 1:
+        return next(iter(top))
+    return iupac_consensus_char(top) if dna else "X"
 
 
 def site_class(counts: Counter) -> str:
     n_states = len(counts)
-    if n_states == 0:
+    total = sum(counts.values())
+    if total == 0:
         return "missing"
+    if total == 1:
+        return "single"
     if n_states == 1:
         return "conserved"
     informative = sum(1 for frequency in counts.values() if frequency >= 2)
@@ -200,16 +220,18 @@ def analyze_alignment(aligned_sequences: list[str], seq_type: str = "dna") -> di
     columns = []
     iupac_chars = []
     majority_chars = []
+    top_sets: list[frozenset] = []
 
     for index in range(width):
         column = [sequence[index] for sequence in sequences]
         flags = [terminal[row][index] for row in range(n_seq)]
-        residues = column_residue_counts(column, flags)
+        residues = column_residue_counts(column, flags, dna)
         background.update(residues)
-        gap_count = sum(1 for char, flag in zip(column, flags) if classify_cell(char, flag) == "indel")
-        missing_count = sum(1 for char, flag in zip(column, flags) if classify_cell(char, flag) == "missing")
+        gap_count = sum(1 for char, flag in zip(column, flags) if classify_cell(char, flag, dna) == "indel")
+        missing_count = sum(1 for char, flag in zip(column, flags) if classify_cell(char, flag, dna) in {"missing", "ambiguous"})
         klass = site_class(residues)
-        majority = majority_consensus_char(residues)
+        majority = majority_consensus_char(residues, dna)
+        top_sets.append(top_states(residues))
         iupac = iupac_consensus_char(residues) if dna else majority
         entropy_counts = residues + (Counter({"indel": gap_count}) if gap_count else Counter())
         columns.append({
@@ -242,18 +264,18 @@ def analyze_alignment(aligned_sequences: list[str], seq_type: str = "dna") -> di
     sequence_qc = []
     for seq_index, sequence in enumerate(sequences):
         flags = terminal[seq_index]
-        residues = [char for char, flag in zip(sequence, flags) if classify_cell(char, flag) == "residue"]
+        residues = [char for char, flag in zip(sequence, flags) if classify_cell(char, flag, dna) == "residue"]
         matches = 0
         compared = 0
-        for char, flag, majority in zip(sequence, flags, majority_chars):
-            if classify_cell(char, flag) != "residue" or majority == "-":
+        for char, flag, top in zip(sequence, flags, top_sets):
+            if classify_cell(char, flag, dna) != "residue" or not top:
                 continue
             compared += 1
-            if char.upper() == majority:
+            if char.upper() in top:          # a tie counts as a match for every tied state
                 matches += 1
         identity = round(matches / compared * 100, 2) if compared else 0.0
-        n_count = sum(char.upper() == "N" for char in residues)
-        internal_gaps = sum(classify_cell(char, flag) == "indel" for char, flag in zip(sequence, flags))
+        n_count = sum(char.upper() == "N" for char in sequence) if dna else 0
+        internal_gaps = sum(classify_cell(char, flag, dna) == "indel" for char, flag in zip(sequence, flags))
         sequence_qc.append({
             "index": seq_index + 1,
             "aligned_length": len(sequence),
@@ -289,6 +311,7 @@ def analyze_alignment(aligned_sequences: list[str], seq_type: str = "dna") -> di
             "parsimony_informative": len(pi_sites),
             "singletons": len(singletons),
             "gapped": len(gapped),
+            "single_residue": sum(1 for row in columns if row["class"] == "single"),
         },
         "sequence_qc": sequence_qc,
     }
@@ -300,10 +323,11 @@ def alignment_column_to_residue(sequence: str, column: int) -> int | None:
         return None
     residue = 0
     for index, char in enumerate(sequence, start=1):
-        if char not in GAP_CHARS:
+        is_residue = char not in GAP_CHARS and char not in MISSING_CHARS
+        if is_residue:
             residue += 1
         if index == column:
-            return residue if char not in GAP_CHARS else None
+            return residue if is_residue else None
     return None
 
 
@@ -313,7 +337,7 @@ def residue_to_alignment_column(sequence: str, residue_index: int) -> int | None
         return None
     residue = 0
     for index, char in enumerate(sequence, start=1):
-        if char in GAP_CHARS:
+        if char in GAP_CHARS or char in MISSING_CHARS:
             continue
         residue += 1
         if residue == residue_index:
@@ -345,6 +369,15 @@ def qc_unaligned(
     lengths = [len(sequence) for sequence in sequences]
     median = sorted(lengths)[len(lengths) // 2]
     seen: dict[str, str] = {}
+    label_counts = Counter(labels)
+    for label, count in label_counts.items():
+        if count > 1:
+            issues.append({
+                "level": "error",
+                "code": "duplicate_label",
+                "sequence": label,
+                "message": f"Sequence name '{label}' is used {count} times; names must be unique.",
+            })
 
     for label, sequence, length in zip(labels, sequences, lengths):
         invalid = sorted({char for char in sequence.upper() if char not in alphabet and char not in GAP_CHARS})
@@ -377,7 +410,8 @@ def qc_unaligned(
                 "sequence": label,
                 "message": f"{label}: length {length} is aberrant versus median {median}",
             })
-        previous = seen.get(sequence)
+        key = re.sub(r"[\s\-?.]", "", sequence).upper()
+        previous = seen.get(key)
         if previous:
             issues.append({
                 "level": "warning",
@@ -386,7 +420,7 @@ def qc_unaligned(
                 "message": f"{label} is a duplicate of {previous}",
             })
         else:
-            seen[sequence] = label
+            seen[key] = label
     return issues
 
 
@@ -396,35 +430,40 @@ def trim_alignment(
     gt: float = 0.8,
     cons: float = 60.0,
     codon: bool = False,
+    seq_type: str = "dna",
 ) -> dict:
-    """Internal gap-based trimming (trimAl-like gt/cons; codon keeps multiples of 3)."""
+    """Internal column filters. Modes named after trimAl / ClipKIT are *approximations*, not the real tools:
+
+    gt              keep columns with >= ``gt`` fraction of residues (trimAl -gt)
+    cons            keep the best ``cons`` % of columns (coverage, then informativeness, then position)
+    automated1      fixed 50 % coverage (NOT trimAl's gappyout/strict heuristic)
+    smart-gap       fixed 90 % coverage (NOT ClipKIT's dynamic threshold)
+    kpic-smart-gap  keep parsimony-informative AND constant sites with >= ``gt`` coverage
+    Use the external tools (trimAl, ClipKIT) for publication-grade trimming.
+    """
     sequences = _pad_alignment(aligned_sequences)
     if not sequences:
-        return {"aligned_sequences": [], "kept_columns": [], "removed_columns": [], "mode": mode}
+        return {"aligned_sequences": [], "kept_columns": [], "removed_columns": [], "mode": mode, "tool": "internal", "empty": True}
 
     width = len(sequences[0])
     n_seq = len(sequences)
-    keep = []
-    for index in range(width):
-        residue_fraction = sum(sequence[index] not in GAP_CHARS | MISSING_CHARS for sequence in sequences) / n_seq
-        keep.append(residue_fraction >= gt)
+    coverage = [sum(sequence[index] not in GAP_CHARS | MISSING_CHARS for sequence in sequences) / n_seq for index in range(width)]
+    keep = [value >= gt for value in coverage]
 
     if mode == "automated1":
-        keep = [sum(sequence[index] not in GAP_CHARS for sequence in sequences) / n_seq >= 0.5 for index in range(width)]
+        keep = [value >= 0.5 for value in coverage]
+    elif mode == "smart-gap":
+        keep = [value >= 0.9 for value in coverage]
     elif mode == "cons":
+        classes = {row["position"]: row["class"] for row in analyze_alignment(sequences, seq_type)["columns"]}
+        priority = {"parsimony_informative": 0, "singleton": 1, "conserved": 2}
         target = max(1, int(math.ceil(width * (cons / 100.0))))
-        ranked = sorted(range(width), key=lambda index: -sum(sequence[index] not in GAP_CHARS for sequence in sequences))
+        ranked = sorted(range(width), key=lambda i: (-coverage[i], priority.get(classes[i + 1], 3), i))
         chosen = set(ranked[:target])
         keep = [index in chosen for index in range(width)]
-    elif mode == "smart-gap":
-        keep = [sum(sequence[index] not in GAP_CHARS for sequence in sequences) / n_seq >= 0.9 for index in range(width)]
     elif mode == "kpic-smart-gap":
-        analysis = analyze_alignment(sequences)
-        informative = set(analysis["parsimony_informative_columns"])
-        keep = [
-            (index + 1) in informative and sum(sequence[index] not in GAP_CHARS for sequence in sequences) / n_seq >= 0.9
-            for index in range(width)
-        ]
+        classes = {row["position"]: row["class"] for row in analyze_alignment(sequences, seq_type)["columns"]}
+        keep = [classes[i + 1] in {"parsimony_informative", "conserved"} and coverage[i] >= gt for i in range(width)]
 
     if codon:
         codon_keep = []
@@ -445,6 +484,8 @@ def trim_alignment(
         "gt": gt,
         "cons": cons,
         "codon": codon,
+        "tool": "internal",
+        "empty": not kept,
     }
 
 
@@ -480,20 +521,20 @@ def build_provenance(
 
 def methods_paragraph(provenance: dict) -> str:
     engine = str(provenance.get("engine", ""))
-    command = provenance.get("command") or json.dumps(provenance.get("parameters", {}), sort_keys=True)
-    parts = [
-        f"Sequences were aligned with {engine} {provenance.get('engine_version', '')}".strip()
-        + f" ({command})."
-    ]
+    command = provenance.get("command") or (json.dumps(provenance.get("parameters", {}), sort_keys=True) if provenance.get("parameters") else "")
+    head = f"Sequences were aligned with {engine} {provenance.get('engine_version', '')}".strip()
+    parts = [head + (f" ({command})." if command else ".")]
+    trim_tools = []
     for step in provenance.get("trim_steps") or []:
+        tool = str(step.get("tool", "internal"))
         parts.append(
-            f"Alignment columns were trimmed with {step.get('tool', 'internal trim')} "
-            f"mode {step.get('mode')} (removed {len(step.get('removed_columns') or [])} columns)."
+            f"Alignment columns were trimmed with {tool} mode {step.get('mode')} "
+            f"(removed {len(step.get('removed_columns') or [])} columns)."
         )
-    citations = []
-    for key, citation in METHODS_CITATIONS.items():
-        if key.lower() in engine.lower() or any(key.lower() in str(step.get("tool", "")).lower() for step in provenance.get("trim_steps") or []):
-            citations.append(citation)
+        if "internal" not in tool.lower() and "approx" not in tool.lower():   # cite a trimmer only if it was really used
+            trim_tools.append(tool.lower())
+    citations = [citation for key, citation in METHODS_CITATIONS.items()
+                 if key.lower() in engine.lower() or any(key.lower() in tool for tool in trim_tools)]
     if not citations and "star" in engine.lower():
         parts.append("The internal star MSA is a fast approximate reference-guided fallback, not a publication aligner.")
     if citations:

@@ -1,5 +1,6 @@
 import alignment_engine as aln
 import alignment_exports as exports
+from slider_utils import _alignment_window_slider_bounds
 from msa_analysis import (
     alignment_column_to_residue,
     analyze_alignment,
@@ -77,6 +78,11 @@ def test_codon_trimming_keeps_multiples_of_three():
     trimmed = trim_alignment(aligned, mode="gt", gt=0.9, codon=True)
     assert all(len(sequence) % 3 == 0 for sequence in trimmed["aligned_sequences"])
     assert trimmed["removed_columns"] == [4, 5, 6]
+
+
+def test_alignment_window_slider_bounds_never_equal():
+    assert _alignment_window_slider_bounds(20) == (1, 20, 20)
+    assert _alignment_window_slider_bounds(100) == (20, 100, 60)
 
 
 def test_star_alignment_uses_same_site_classes():
