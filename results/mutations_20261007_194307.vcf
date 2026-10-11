@@ -1,0 +1,19 @@
+##fileformat=VCFv4.3
+##source=AI_Plant_Gene_Analyzer
+##contig=<ID=sequence,description=Local_sequence_coordinates_not_genomic>
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
+sequence	242	VAR1	A	T	.	PASS	CONSEQUENCE=missense
+sequence	473	VAR2	T	G	.	PASS	CONSEQUENCE=nonsense
+sequence	623	VAR3	C	A	.	PASS	CONSEQUENCE=missense
+sequence	1044	VAR4	C	T	.	PASS	CONSEQUENCE=silent
+sequence	1170	VAR5	G	A	.	PASS	CONSEQUENCE=silent
+sequence	1398	VAR6	T	C	.	PASS	CONSEQUENCE=silent
+sequence	1554	VAR7	A	G	.	PASS	CONSEQUENCE=silent
+sequence	1582	VAR8	C	T	.	PASS	CONSEQUENCE=missense
+sequence	2014	VAR9	A	G	.	PASS	CONSEQUENCE=missense
+sequence	3533	VAR10	G	C	.	PASS	CONSEQUENCE=missense
+sequence	3791	VAR11	G	T	.	PASS	CONSEQUENCE=missense
+sequence	4108	VAR12	C	A	.	PASS	CONSEQUENCE=missense
+sequence	4220	VAR13	T	G	.	PASS	CONSEQUENCE=missense
+sequence	4498	VAR14	A	T	.	PASS	CONSEQUENCE=missense
+sequence	5165	VAR15	T	A	.	PASS	CONSEQUENCE=missense

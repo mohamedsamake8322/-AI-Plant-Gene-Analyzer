@@ -261,8 +261,8 @@ def load_gene_database_cached(db_path: str = str(config.DATABASE_PATH)) -> dict:
     Prefer PostgreSQL if the helper is available and configured.
     """
     try:
-        # Try PostgreSQL first if available
-        if load_gene_database_from_postgres is not None:
+        # Try PostgreSQL only when explicitly enabled
+        if config.USE_POSTGRES and load_gene_database_from_postgres is not None:
             try:
                 db = load_gene_database_from_postgres()
                 if db:
@@ -500,7 +500,7 @@ with st.sidebar:
     metadata = None
     metadata_available = False
 
-    if get_gene_count is not None and search_gene_metadata is not None:
+    if config.USE_POSTGRES and get_gene_count is not None and search_gene_metadata is not None:
         try:
             # A cheap COUNT(*) rather than materializing all ~56k rows just
             # to call len() on them. Cached for 5 minutes so a widget

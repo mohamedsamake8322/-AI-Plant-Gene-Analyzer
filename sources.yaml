@@ -1,0 +1,630 @@
+# =====================================================================
+# sources.yaml : registre des sources de donnees (Phase 0)
+# Especes : mais, riz, tabac
+# Rempli le 2026-10-08. AUCUNE URL ni licence ci-dessous n'a encore ete
+# verifiee : tout est marque `status: to_verify` et `license_checked: false`.
+# Regle : un telechargement n'est autorise que si license_checked: true
+# (voir validate_sources.py).
+# =====================================================================
+
+schema_version: 1
+
+constraints:
+  free_disk_gb_measured: 22        # 23 957 151 744 octets libres, 2026-10-09
+  ram_gb: 8
+  rule: "pas de fichiers globaux (UniProt/GOA complets) ; budget brut cible <= 12 Go"
+
+legend:
+  status: [to_verify, verified, blocked]          # etat de l'URL / du chemin
+  redistribution: [open, private_only, unknown]    # peut-on republier (HF public, Zenodo) ?
+  license_expected: "ce que je pense etre la licence, A CONFIRMER sur le site"
+  phase: "phase du plan de collecte ou la source sert"
+
+# ---------------------------------------------------------------------
+# Politique d'identifiants (ID maitre)
+# ---------------------------------------------------------------------
+id_policy:
+  master_id_format: "<ESPECE>|<assemblage>|<id_natif>"
+  examples:
+    - "NITAB|TN90_RefSeq|GeneID:107821857"
+    - "NITAB|Nitab4.5|Nitab4.5_0000001g0010"
+    - "ZEAMA|B73_v5_eb.1|Zm00001eb000010"
+    - "ORYSA|IRGSP-1.0_RAP|Os01g0100100"
+  rules:
+    - "jamais de fusion par symbole"
+    - "chaque enregistrement porte taxon_id + version d'assemblage + source"
+    - "un lien non clair est classe `ambigu` ou `non_mappe`, jamais force"
+
+mapping_rules:        # seuils PROPOSES, a figer apres le pilote (phase 4a)
+  status: proposed
+  categories: [exact, rbh_1to1, one_to_many, many_to_one, ambiguous, unmapped]
+  tn90_vs_nitab45:
+    method: "hash exact, puis meilleur hit reciproque (RBH), puis coordonnees des CDS (homeologues)"
+    min_identity_pct: 95
+    min_coverage_pct: 90
+  rap_vs_msu:
+    method: "table RAP-DB d'abord ; le reste par RBH sur les proteines"
+
+release_policy:
+  public_dataset_includes: "uniquement les sources avec license_checked: true ET redistribution: open"
+  everything_else: "non republie : seuls les scripts de recuperation et le manifeste sont publies"
+  required_in_release: [manifest.csv, rapport de completude, sources.yaml, species.yaml, citations]
+  versioning: "version de la base = date + hash du manifeste"
+
+training_corpora:                 # donnees d'entrainement, separees de la base de requete
+  esm2_protein:
+    data: "proteomes de plantes (UniProt + RefSeq), multi-especes : plus d'especes = mieux"
+    labels: "GO non-IEA, domaines InterPro"
+    split: "par cluster de sequences (MMseqs2 ou CD-HIT), jamais aleatoire"
+    where_to_train: "Colab/Kaggle (GPU), donnees sur Hugging Face"
+  agront_dna:
+    data: "genomes + GFF (fichiers `optional` a activer dans fetch_raw), fenetres <= 6 144 nt"
+    labels: "a definir (promoteurs, sites d'epissage, expression)"
+    disk: "genomes = plusieurs Go : stockage externe ou Hugging Face"
+
+# Les especes sont definies dans species.yaml (source de verite unique).
+
+# ---------------------------------------------------------------------
+# Sources
+# ---------------------------------------------------------------------
+sources:
+
+  # ===== Phase 1 : squelette (proteome, CDS, ARN, GFF) =====
+  - id: ncbi_refseq_nitab_tn90
+    species: nicotiana_tabacum
+    phase: 1
+    capability: [sequence, annotation, go]
+    role: "squelette tabac (proteome, CDS, ARN, GFF, gene_info)"
+    url: "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/715/135/GCF_000715135.1_Ntab-TN90/"
+    checksum_file: md5checksums.txt     # format NCBI habituel ; a confirmer au premier telechargement
+    files:                              # noms et tailles releves sur le listing du 2026-10-09
+      - {name: GCF_000715135.1_Ntab-TN90_protein.faa.gz, size_mb: 16}
+      - {name: GCF_000715135.1_Ntab-TN90_cds_from_genomic.fna.gz, size_mb: 28}
+      - {name: GCF_000715135.1_Ntab-TN90_rna.fna.gz, size_mb: 39}
+      - {name: GCF_000715135.1_Ntab-TN90_genomic.gff.gz, size_mb: 26}
+      - {name: GCF_000715135.1_Ntab-TN90_feature_table.txt.gz, size_mb: 6}
+      - {name: GCF_000715135.1-RS_2024_11_gene_ontology.gaf.gz, size_mb: 2.3}
+      - {name: GCF_000715135.1_Ntab-TN90_assembly_report.txt, size_mb: 34}
+      - {name: GCF_000715135.1_Ntab-TN90_genomic.fna.gz, size_mb: 1100, optional: true}   # genome complet, inutile au debut
+    format: [faa, fna, gff, gbff]
+    version: "Ntab-TN90 (GCF_000715135.1)"
+    license_expected: "NCBI n'impose aucune restriction d'usage ni de distribution ; certains soumetteurs d'origine peuvent revendiquer des droits. Garder la mention de disclaimer NCBI."
+    license_url: "https://www.ncbi.nlm.nih.gov/home/about/policies/"
+    license_evidence_date: "2026-10-09"
+    license_checked: true
+    redistribution: open
+    status: verified
+    notes: "Le sous-dossier exact porte le nom de l'assemblage ; a lister sur place."
+
+  - id: ncbi_refseq_zea_b73_v5
+    species: zea_mays
+    phase: 1
+    capability: [sequence, annotation]
+    role: "squelette mais cote NCBI (recoupement avec MaizeGDB)"
+    url: "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/902/167/145/GCF_902167145.1_Zm-B73-REFERENCE-NAM-5.0/"
+    checksum_file: md5checksums.txt
+    files_note: "Noms deduits de la convention NCBI (non listes) : un 404 signalera une erreur. GAF RefSeq a ajouter apres listing."
+    files:
+      - {name: GCF_902167145.1_Zm-B73-REFERENCE-NAM-5.0_protein.faa.gz, size_mb: 16}
+      - {name: GCF_902167145.1_Zm-B73-REFERENCE-NAM-5.0_cds_from_genomic.fna.gz, size_mb: 30}
+      - {name: GCF_902167145.1_Zm-B73-REFERENCE-NAM-5.0_rna.fna.gz, size_mb: 40}
+      - {name: GCF_902167145.1_Zm-B73-REFERENCE-NAM-5.0_genomic.gff.gz, size_mb: 25}
+      - {name: GCF_902167145.1_Zm-B73-REFERENCE-NAM-5.0_feature_table.txt.gz, size_mb: 6}
+    format: [faa, fna, gff, gbff]
+    version: "Zm-B73-REFERENCE-NAM-5.0 (GCF_902167145.1)"
+    license_expected: "NCBI n'impose aucune restriction d'usage ni de distribution ; certains soumetteurs d'origine peuvent revendiquer des droits. Garder la mention de disclaimer NCBI."
+    license_url: "https://www.ncbi.nlm.nih.gov/home/about/policies/"
+    license_evidence_date: "2026-10-09"
+    license_checked: true
+    redistribution: open
+    status: verified
+
+  - id: ncbi_refseq_oryza_irgsp
+    species: oryza_sativa
+    phase: 1
+    capability: [sequence, annotation]
+    role: "squelette riz cote NCBI (recoupement avec RAP-DB)"
+    url: "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/001/433/935/GCF_001433935.1_IRGSP-1.0/"
+    checksum_file: md5checksums.txt
+    files_note: "Noms deduits de la convention NCBI (non listes) : un 404 signalera une erreur. GAF RefSeq a ajouter apres listing."
+    files:
+      - {name: GCF_001433935.1_IRGSP-1.0_protein.faa.gz, size_mb: 16}
+      - {name: GCF_001433935.1_IRGSP-1.0_cds_from_genomic.fna.gz, size_mb: 30}
+      - {name: GCF_001433935.1_IRGSP-1.0_rna.fna.gz, size_mb: 40}
+      - {name: GCF_001433935.1_IRGSP-1.0_genomic.gff.gz, size_mb: 25}
+      - {name: GCF_001433935.1_IRGSP-1.0_feature_table.txt.gz, size_mb: 6}
+    format: [faa, fna, gff, gbff]
+    version: "IRGSP-1.0 (GCF_001433935.1), verifier l'assemblage RefSeq courant"
+    license_expected: "NCBI n'impose aucune restriction d'usage ni de distribution ; certains soumetteurs d'origine peuvent revendiquer des droits. Garder la mention de disclaimer NCBI."
+    license_url: "https://www.ncbi.nlm.nih.gov/home/about/policies/"
+    license_evidence_date: "2026-10-09"
+    license_checked: true
+    redistribution: open
+    status: verified
+
+  - id: maizegdb_b73_v5
+    species: zea_mays
+    phase: 1
+    capability: [sequence, annotation, domains, go, id_map]
+    role: "squelette mais officiel : FASTA, GFF, InterProScan, xref d'IDs, scores AED"
+    url: "https://download.maizegdb.org/Zm-B73-REFERENCE-NAM-5.0/"
+    files:                              # releves sur le listing du 2026-10-09
+      - {name: Zm-B73-REFERENCE-NAM-5.0.README, size_mb: 0.01}
+      - {name: Zm-B73-REFERENCE-NAM-5.0.md5, size_mb: 0.01}
+      - {name: Zm-B73-REFERENCE-NAM-5.0.metadata, size_mb: 0.01}
+      - {name: Zm-B73-REFERENCE-NAM-5.0_Zm00001eb.1.protein.fa.gz, size_mb: 10}
+      - {name: Zm-B73-REFERENCE-NAM-5.0_Zm00001eb.1.cds.fa.gz, size_mb: 17}
+      - {name: Zm-B73-REFERENCE-NAM-5.0_Zm00001eb.1.gff3.gz, size_mb: 12}
+      - {name: Zm-B73-REFERENCE-NAM-5.0_Zm00001eb.1.interproscan.tsv.gz, size_mb: 3.4}
+      - {name: Zm-B73-REFERENCE-NAM-5.0_Zm00001eb.1AED_QI.scores.gz, size_mb: 0.9}
+      - {name: Zm-B73-REFERENCE-NAM-5.0_Zm00001e.1_ab.1_xref_gene_IDs.txt.gz, size_mb: 0.8}
+      - {name: Zm-B73-REFERENCE-NAM-5.0-GMs-GOTerms.csv.gz, size_mb: 3.4}
+      - {name: Zm-B73-REFERENCE-NAM.UniProt.GO.tab.gz, size_mb: 0.4}
+      - {name: Zm-B73-REFERENCE-NAM.UniProt.proteins.tab.gz, size_mb: 2.3}
+      - {name: Zm00001eb.1.fulldata.txt.gz, size_mb: 2.8}
+      - {name: Zm-B73-REFERENCE-NAM-5.0_Zm00001eb.1.genemodel_locus.txt.gz, size_mb: 0.1}
+      - {name: Zm-B73-REFERENCE-NAM-5.0_Zm00001eb.1_entap_results.tsv.gz, size_mb: 12, optional: true}
+      - {name: Zm-B73-REFERENCE-NAM-5.0_Zm00001eb.1.cdna.fa.gz, size_mb: 27, optional: true}
+      - {name: Zm-B73-REFERENCE-NAM-5.0.fa.gz, size_mb: 616, optional: true}   # genome complet
+    format: [fasta, gff3, tsv]
+    version: "Zm-B73-REFERENCE-NAM-5.0 / Zm00001eb.1"
+    license_expected: "Indicatif (source secondaire) : donnees curees par MaizeGDB en CC BY 4.0 sauf mention contraire ; le catalogue data.gov indique domaine public americain. A CONFIRMER sur le site MaizeGDB."
+    license_url: "A TROUVER sur maizegdb.org (page politique de donnees / citation)"
+    license_evidence_date: "2026-10-09"
+    license_checked: false
+    redistribution: unknown
+    status: to_verify
+    notes: "Chercher le dossier de l'assemblage NAM-5.0 et le fichier de correspondance eb/e."
+
+  - id: rapdb_irgsp
+    species: oryza_sativa
+    phase: 1
+    capability: [sequence, annotation, id_map]
+    role: "squelette riz officiel (IDs RAP), table RAP<->MSU"
+    url: "https://rapdb.dna.affrc.go.jp/download/"
+    format: [fasta, gff3, tsv]
+    version: "IRGSP-1.0"
+    license_expected: unknown
+    license_checked: false
+    redistribution: unknown
+    status: blocked
+    ssl_issue: "Certificat non fiable meme pour curl/Windows (SEC_E_UNTRUSTED_ROOT, 2026-10-09). Ne pas contourner globalement. Chercher d abord une alternative (NCBI, Gramene/Ensembl, UniProt) ; sinon exception verify_ssl:false pour CETTE source + checksum."
+
+  - id: sgn_nitab45
+    species: nicotiana_tabacum
+    phase: 1
+    capability: [sequence, annotation, qtl, expression]
+    role: "assemblage et annotation Nitab4.5 ; QTL et expression SGN"
+    url: "https://solgenomics.net/"
+    format: [fasta, gff3]
+    version: "Nitab4.5"
+    license_expected: unknown
+    license_checked: false
+    redistribution: unknown
+    status: to_verify
+    notes: "Trouver le chemin FTP exact depuis le portail (ftp.solgenomics.net)."
+
+  # ===== Phase 2 : correspondance d'identifiants =====
+  - id: ncbi_gene_info
+    species: [nicotiana_tabacum, zea_mays, oryza_sativa]
+    phase: 2
+    capability: [id_map, go]
+    role: "gene_info, gene2refseq, gene2accession : lien GeneID <-> RefSeq <-> UniProt"
+    url: "https://ftp.ncbi.nlm.nih.gov/gene/DATA/"
+    format: [tsv.gz]
+    version: "continu : noter la date du telechargement"
+    license_expected: "NCBI n'impose aucune restriction d'usage ni de distribution ; certains soumetteurs d'origine peuvent revendiquer des droits. Garder la mention de disclaimer NCBI."
+    license_url: "https://www.ncbi.nlm.nih.gov/home/about/policies/"
+    license_evidence_date: "2026-10-09"
+    license_checked: true
+    redistribution: open
+    status: verified
+
+  - id: uniprot_idmapping
+    species: [nicotiana_tabacum, zea_mays, oryza_sativa]
+    phase: 2
+    capability: [id_map]
+    role: "idmapping_selected : UniProt <-> RefSeq, GeneID, Ensembl, PIR..."
+    disk_warning: "Fichier complet tres volumineux : NE PAS le telecharger (disque libre ~22 Go). Utiliser l API idmapping ou extraire par taxon."
+    url: "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/idmapping/"
+    format: [tsv.gz]
+    version: "release UniProt courante (a noter)"
+    license_expected: "CC BY 4.0 sur les parties protegeables par le droit d'auteur ; garder la mention de copyright UniProt avec chaque copie."
+    license_url: "https://www.uniprot.org/help/license"
+    license_evidence_date: "2026-10-09"
+    license_checked: true
+    redistribution: open
+    status: verified
+
+  # ===== Phase 3 : annotation fonctionnelle =====
+  # uniprot_proteomes : scindee en 3 entrees (une par taxon) car fetch_raw.py
+  # ne gere pas les sources multi-especes (species: liste -> "non geree,
+  # a decouper"). Decision revue le 2026-10-10 (remplace la note du
+  # 2026-10-09) : reviewed:true SEUL (Swiss-Prot), pas TrEMBL. Comptes reels
+  # verifies via l'en-tete X-Total-Results de l'API UniProt (curl -D -) :
+  #   mais    4577  : reviewed 850    / total 105155  (x124)
+  #   riz     39947 : reviewed 4197   / total 61200    (x15)
+  #   tabac   4097  : reviewed 507    / total 78317    (x154)
+  # TrEMBL exclu volontairement : annotation non revisee, meme probleme deja
+  # rencontre avec les GO IEA (83% non fiables sur l'ancien fichier tabac) --
+  # inclure TrEMBL diluerait la qualite plus qu'il n'ajouterait de valeur
+  # pour la base de requete. A reconsiderer separement si besoin de volume
+  # pour le corpus d'entrainement ESM2 (training_corpora.esm2_protein).
+  - id: uniprot_proteomes_tabacum
+    species: nicotiana_tabacum
+    phase: 3
+    capability: [annotation, domains, go, training]
+    role: "proteome Swiss-Prot (reviewed) par requete API, taxon 4097"
+    url: "https://rest.uniprot.org/uniprotkb/stream?query=organism_id:4097+AND+reviewed:true&format=fasta&compressed=true"
+    single_file: true
+    file_name: "uniprot_proteome_nicotiana_tabacum_4097_reviewed.fasta.gz"
+    size_mb: 0.4              # estimation : 507 entrees reviewed
+    format: [fasta]
+    version: "release UniProt courante (a noter au telechargement, cf. en-tete X-UniProt-Release si fourni)"
+    license_expected: "CC BY 4.0 sur les parties protegeables par le droit d'auteur ; garder la mention de copyright UniProt avec chaque copie."
+    license_url: "https://www.uniprot.org/help/license"
+    license_evidence_date: "2026-10-09"
+    license_checked: true
+    redistribution: open
+    status: verified
+    notes: "Compte verifie le 2026-10-10 (X-Total-Results : 507 reviewed). Tabac n'a pas de 'reference proteome' officiel chez UniProt (espece moins modele) -- ces 507 entrees sont tout ce qui existe en Swiss-Prot pour ce taxon. Faire un --dry-run puis verifier que le fichier telecharge est bien un FASTA valide."
+
+  - id: uniprot_proteomes_zea_mays
+    species: zea_mays
+    phase: 3
+    capability: [annotation, domains, go, training]
+    role: "proteome Swiss-Prot (reviewed) par requete API, taxon 4577"
+    url: "https://rest.uniprot.org/uniprotkb/stream?query=organism_id:4577+AND+reviewed:true&format=fasta&compressed=true"
+    single_file: true
+    file_name: "uniprot_proteome_zea_mays_4577_reviewed.fasta.gz"
+    size_mb: 1                # estimation : 850 entrees reviewed
+    format: [fasta]
+    version: "release UniProt courante (a noter au telechargement)"
+    license_expected: "CC BY 4.0 sur les parties protegeables par le droit d'auteur ; garder la mention de copyright UniProt avec chaque copie."
+    license_url: "https://www.uniprot.org/help/license"
+    license_evidence_date: "2026-10-09"
+    license_checked: true
+    redistribution: open
+    status: verified
+    notes: "Compte verifie le 2026-10-10 (X-Total-Results : 850 reviewed, 105155 avec TrEMBL exclu). /stream choisi plutot que /search : pas de pagination a 25/page, renvoie tout en un seul flux."
+
+  - id: uniprot_proteomes_oryza_sativa
+    species: oryza_sativa
+    phase: 3
+    capability: [annotation, domains, go, training]
+    role: "proteome Swiss-Prot (reviewed) par requete API, taxon 39947"
+    url: "https://rest.uniprot.org/uniprotkb/stream?query=organism_id:39947+AND+reviewed:true&format=fasta&compressed=true"
+    single_file: true
+    file_name: "uniprot_proteome_oryza_sativa_39947_reviewed.fasta.gz"
+    size_mb: 3                # estimation : 4197 entrees reviewed
+    format: [fasta]
+    version: "release UniProt courante (a noter au telechargement)"
+    license_expected: "CC BY 4.0 sur les parties protegeables par le droit d'auteur ; garder la mention de copyright UniProt avec chaque copie."
+    license_url: "https://www.uniprot.org/help/license"
+    license_evidence_date: "2026-10-09"
+    license_checked: true
+    redistribution: open
+    status: verified
+    notes: "Compte verifie le 2026-10-10 (X-Total-Results : 4197 reviewed, 61200 avec TrEMBL exclu). Faire un --dry-run puis verifier que le fichier telecharge est bien un FASTA valide."
+
+  - id: ebi_goa
+    species: [nicotiana_tabacum, zea_mays, oryza_sativa]
+    phase: 3
+    capability: [go]
+    role: "GO complet avec codes de preuve (fichiers GAF)"
+    disk_warning: "Prendre les fichiers PAR PROTEOME/ESPECE, pas le GAF UniProt complet."
+    url: "https://ftp.ebi.ac.uk/pub/databases/GO/goa/"
+    format: [gaf.gz]
+    version: "release GOA courante"
+    license_expected: "Conditions d'usage EMBL-EBI : aucune restriction supplementaire a celles du detenteur des donnees ; les annotations GO sont sous CC BY. Citer GOA."
+    license_url: "https://www.ebi.ac.uk/about/terms-of-use"
+    license_evidence_date: "2026-10-09"
+    license_checked: true
+    redistribution: open
+    status: verified
+    notes: "CORRECTION 2026-10-09 : GOA ne fournit des GAF par espece que pour humain/souris/Arabidopsis/levure/poisson-zebre -- ni mais, ni riz, ni tabac. Le fichier global goa_uniprot_all.gaf.gz est trop gros (budget disque 22 Go). Piste retenue : API QuickGO (ebi.ac.uk/QuickGO/services/annotation), qui filtre par taxonId. Endpoint de recherche confirme ; endpoint de telechargement en masse/pagination PAS ENCORE verifie -- a tester avant de remplir `files:` ou `single_file`."
+
+  - id: go_ontology
+    species: [nicotiana_tabacum, zea_mays, oryza_sativa]
+    phase: 3
+    capability: [go, ontology]
+    role: "ontologie GO (descendants pour les requetes par trait)"
+    url: "http://purl.obolibrary.org/obo/go/go-basic.obo"
+    single_file: true
+    size_mb: 35          # estimation (taille typique des releases go-basic.obo), non mesuree
+    format: [obo]
+    version: "date de la release a noter"
+    license_expected: "CC BY (la page des telechargements GO indique CC-BY ; version exacte, probablement 4.0, a confirmer)."
+    license_url: "https://current.geneontology.org/products/pages/downloads.html"
+    license_evidence_date: "2026-10-09"
+    license_checked: true
+    redistribution: open
+    status: verified
+
+  - id: interpro_pfam
+    species: [nicotiana_tabacum, zea_mays, oryza_sativa]
+    phase: 3
+    capability: [domains]
+    role: "domaines (InterPro/Pfam) : base HMM et annotations"
+    url: "https://ftp.ebi.ac.uk/pub/databases/interpro/"
+    format: [hmm, tsv]
+    version: "release InterPro courante"
+    license_expected: "CC0 1.0 pour les donnees telechargeables InterPro, Pfam, PRINTS, SFLD. ATTENTION : certains membres de InterProScan peuvent avoir des licences differentes (non commerciales)."
+    license_url: "https://interpro-documentation.readthedocs.io/en/latest/license.html"
+    license_evidence_date: "2026-10-09"
+    license_checked: true
+    redistribution: open
+    status: verified
+    notes: "Les HMM Pfam ont change d'hebergement : verifier le chemin courant."
+
+  - id: planttfdb
+    species: [nicotiana_tabacum, zea_mays, oryza_sativa]
+    phase: 3
+    capability: [annotation]
+    role: "facteurs de transcription et familles"
+    url: "https://planttfdb.gao-lab.org/download.php"
+    format: [fasta, tsv]
+    version: "version courante, a noter"
+    license_expected: unknown
+    license_checked: false
+    redistribution: unknown
+    status: to_verify
+
+  - id: plant_reactome_gramene
+    species: [zea_mays, oryza_sativa]
+    phase: 3
+    capability: [pathway]
+    role: "voies metaboliques ouvertes (alternative a KEGG)"
+    url: "https://plantreactome.gramene.org/"
+    format: [tsv]
+    version: "a noter"
+    license_expected: unknown
+    license_checked: false
+    redistribution: unknown
+    status: to_verify
+    notes: "Pas de donnees tabac probables : a confirmer."
+
+  - id: kegg
+    species: [nicotiana_tabacum, zea_mays, oryza_sativa]
+    phase: 3
+    capability: [pathway]
+    role: "voies metaboliques (deja utilise dans l'ancienne collecte)"
+    url: "https://rest.kegg.jp/"
+    format: [txt]
+    version: "continu"
+    license_expected: "academique uniquement ; telechargement massif sous licence"
+    license_checked: false
+    redistribution: private_only
+    status: blocked
+    notes: "Bloque jusqu'a lecture des conditions. Ne jamais publier sur un depot public."
+
+  # ===== Phase 4 : orthologie et resistance =====
+  - id: ensembl_plants_compara
+    species: [zea_mays, oryza_sativa]
+    phase: 4
+    capability: [ortho, variation]
+    role: "orthologie de recoupement (maïs, riz) ; verifier si le tabac est present"
+    url: "https://ftp.ebi.ac.uk/ensemblgenomes/pub/plants/"
+    url_new_platform: "https://ftp.ebi.ac.uk/pub/ensemblorganisms/"
+    format: [tsv, gff3]
+    version: "release Ensembl Plants courante"
+    license_expected: "libre (conditions EMBL-EBI, a confirmer)"
+    license_checked: false
+    redistribution: unknown
+    status: to_verify
+    notes: "ftp.ensemblgenomes.org a un certificat invalide (hote deplace). Ensembl Plants ancien site = derniere release (EG63) ; nouvelle plateforme avec structure FTP changee en juin 2026 (voir url_new_platform et son README/manifeste JSON). Choisir UNE release et la noter. API REST : https://rest.ensembl.org."
+
+  - id: plaza
+    species: [nicotiana_tabacum, zea_mays, oryza_sativa]
+    phase: 4
+    capability: [ortho]
+    role: "familles homologues/orthologues (sert de recoupement)"
+    url: "https://ftp.psb.ugent.be/pub/plaza/"
+    format: [tsv]
+    version: "PLAZA Dicots/Monocots courante (a noter)"
+    license_expected: unknown
+    license_checked: false
+    redistribution: unknown
+    status: to_verify
+    notes: "Le tabac est dans PLAZA dicots (IDs Nitab4.5) ; mais/riz dans PLAZA monocots."
+
+  - id: prgdb
+    species: [nicotiana_tabacum, zea_mays, oryza_sativa]
+    phase: 4
+    capability: [resistance]
+    role: "genes de resistance de reference (hits DIAMOND/hmmscan locaux)"
+    url: "http://prgdb.org/prgdb4/"
+    format: [fasta]
+    version: "PRGdb 4.0"
+    license_expected: "non commercial probable (a confirmer)"
+    license_checked: false
+    redistribution: private_only
+    status: blocked
+    notes: "Bloque jusqu'a lecture des conditions (meme profil de risque que kegg). Pas d'API repertoriee : telecharger les sequences de reference une fois la licence verifiee."
+
+  # ===== Phase 5 : expression (exploratoire) =====
+  - id: rapdb_expression
+    species: oryza_sativa
+    phase: 5
+    capability: [expression]
+    role: "expression riz (RiceXPro, TENOR) et coexpression"
+    url: "https://rapdb.dna.affrc.go.jp/"
+    format: [tsv]
+    version: "a noter par jeu de donnees"
+    license_expected: unknown
+    license_checked: false
+    redistribution: unknown
+    status: blocked
+    ssl_issue: "Certificat non fiable meme pour curl/Windows (SEC_E_UNTRUSTED_ROOT, 2026-10-09). Ne pas contourner globalement. Chercher d abord une alternative (NCBI, Gramene/Ensembl, UniProt) ; sinon exception verify_ssl:false pour CETTE source + checksum."
+    notes: "Documenter plateforme + normalisation + unite pour chaque jeu."
+
+  - id: sgn_tobea
+    species: nicotiana_tabacum
+    phase: 5
+    capability: [expression, qtl]
+    role: "atlas d'expression du tabac (TobEA), QTL SGN"
+    url: "https://solgenomics.net/"
+    format: [tsv]
+    version: "a noter"
+    license_expected: unknown
+    license_checked: false
+    redistribution: unknown
+    status: to_verify
+    notes: "Base ancienne (puces/EST) : mapping vers l'ID maitre necessaire."
+
+  - id: expression_atlas
+    species: [nicotiana_tabacum, zea_mays, oryza_sativa]
+    phase: 5
+    capability: [expression]
+    role: "expression deja quantifiee, si des jeux existent pour ces especes"
+    url: "https://www.ebi.ac.uk/gxa/"
+    format: [tsv]
+    version: "par jeu de donnees"
+    license_expected: unknown
+    license_checked: false
+    redistribution: unknown
+    status: to_verify
+    notes: "Couverture du tabac non verifiee."
+
+  - id: ncbi_sra
+    species: [nicotiana_tabacum, zea_mays, oryza_sativa]
+    phase: 5
+    capability: [expression, variation]
+    role: "lectures brutes : 5 a 10 BioProjects choisis (secheresse, pathogene, tissus)"
+    url: "https://www.ncbi.nlm.nih.gov/sra"
+    format: [fastq]
+    version: "par accession"
+    license_expected: "donnees publiques ; verifier les restrictions par projet"
+    license_checked: false
+    redistribution: unknown
+    status: to_verify
+    notes: "Volume important : traiter par jeu, sans tout garder en local."
+
+  # ===== Phase 3 (ontologies de traits) et phase 7 (variants, QTL) =====
+  - id: planteome_trait_ontology
+    species: [nicotiana_tabacum, zea_mays, oryza_sativa]
+    phase: 3
+    capability: [ontology, phenotype]
+    role: "Plant Trait Ontology : requetes par trait avec termes et descendants"
+    url: "https://github.com/Planteome/plant-trait-ontology"
+    format: [obo, owl]
+    version: "release GitHub a noter"
+    license_expected: "CC BY 4.0 (depot GitHub, d'apres mes recherches)"
+    license_checked: false
+    redistribution: open
+    status: to_verify
+    notes: "Ontologies Planteome : PO, TO, PECO, plus Crop Ontology. Une fiche de catalogue indique CC-BY-NC pour l'ARTICLE : confirmer la licence des fichiers."
+
+  - id: planteome_annotations
+    species: [nicotiana_tabacum, zea_mays, oryza_sativa]
+    phase: 3
+    capability: [phenotype, ontology, go]
+    role: "annotations gene -> termes de traits (fichiers GAF, release 5.0 de juillet 2023 la derniere vue)"
+    url: "https://planteome.org/"
+    format: [gaf]
+    version: "release Planteome a noter"
+    license_expected: "CC BY 4.0 (site Planteome, d'apres mes recherches)"
+    license_checked: false
+    redistribution: open
+    status: to_verify
+    notes: "Fichiers d'annotation telechargeables depuis le depot SVN de Planteome ; couverture mais/riz/tabac a mesurer."
+
+  - id: crop_ontology
+    species: [nicotiana_tabacum, zea_mays, oryza_sativa]
+    phase: 3
+    capability: [ontology, phenotype]
+    role: "vocabulaires de phenotypage par culture (selectionneurs), lies a BrAPI"
+    url: "https://cropontology.org/"
+    format: [obo, json]
+    version: "a noter"
+    license_expected: unknown
+    license_checked: false
+    redistribution: unknown
+    status: to_verify
+
+  - id: snpseek_3k_rice
+    species: oryza_sativa
+    phase: 7
+    capability: [variation, phenotype]
+    role: "variants du riz (3 024 accessions alignees sur Nipponbare IRGSP-1.0) + donnees de passeport"
+    url: "https://iric.irri.org/resources/3krg-in-aws"
+    format: [vcf]
+    version: "3K RGP, a noter"
+    license_expected: unknown
+    license_checked: false
+    redistribution: unknown
+    status: to_verify
+    disk_warning: "VCF tres volumineux (plus de 30 M de variants, fichiers sur AWS S3 public) : par chromosome ou par region, jamais en entier."
+    notes: "SNP-Seek donne aussi une API. Verifier la correspondance avec l'assemblage IRGSP-1.0 utilise ici."
+
+  - id: eva_plants
+    species: [nicotiana_tabacum, zea_mays, oryza_sativa]
+    phase: 7
+    capability: [variation]
+    role: "European Variation Archive : variants deposes pour les plantes, si presents pour ces especes"
+    url: "https://www.ebi.ac.uk/eva/"
+    format: [vcf]
+    version: "par etude"
+    license_expected: unknown
+    license_checked: false
+    redistribution: unknown
+    status: to_verify
+    notes: "Couverture du tabac a verifier."
+
+  - id: maize_variants
+    species: zea_mays
+    phase: 7
+    capability: [variation]
+    role: "variants du mais (HapMap, NAM) : localiser le jeu exact et la version d'assemblage"
+    url: "https://www.maizegdb.org/"
+    format: [vcf]
+    version: "a noter"
+    license_expected: unknown
+    license_checked: false
+    redistribution: unknown
+    status: to_verify
+    notes: "Beaucoup de variants sont sur B73 v4 : conversion via les chain files MaizeGDB (dossier chain_files)."
+
+  - id: gramene_qtl
+    species: [zea_mays, oryza_sativa]
+    phase: 7
+    capability: [qtl]
+    role: "QTL et marqueurs (mais, riz)"
+    url: "https://www.gramene.org/"
+    format: [tsv]
+    version: "a noter"
+    license_expected: unknown
+    license_checked: false
+    redistribution: unknown
+    status: to_verify
+
+  - id: ncbi_refseq_nitab_asm71507v2
+    species: nicotiana_tabacum
+    phase: 1
+    capability: [sequence, annotation, go, expression]
+    role: "second assemblage RefSeq du tabac (annotation RS_2025_07), porte les GeneID absents de TN90"
+    url: "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/715/075/GCF_000715075.1_ASM71507v2/"
+    checksum_file: md5checksums.txt
+    files:                              # listing du 2026-10-10
+      - {name: GCF_000715075.1_ASM71507v2_protein.faa.gz, size_mb: 18}
+      - {name: GCF_000715075.1_ASM71507v2_cds_from_genomic.fna.gz, size_mb: 30}
+      - {name: GCF_000715075.1_ASM71507v2_rna.fna.gz, size_mb: 49}
+      - {name: GCF_000715075.1_ASM71507v2_genomic.gff.gz, size_mb: 23}
+      - {name: GCF_000715075.1_ASM71507v2_feature_table.txt.gz, size_mb: 6.4}
+      - {name: GCF_000715075.1-RS_2025_07_gene_ontology.gaf.gz, size_mb: 2}
+      - {name: GCF_000715075.1_ASM71507v2_assembly_report.txt, size_mb: 0.06}
+      - {name: GCF_000715075.1_ASM71507v2_assembly_stats.txt, size_mb: 0.04}
+      - {name: GCF_000715075.1-RS_2025_07_gene_expression_counts.txt.gz, size_mb: 15}
+      - {name: GCF_000715075.1-RS_2025_07_normalized_gene_expression_counts.txt.gz, size_mb: 27}
+      - {name: GCF_000715075.1-RS_2025_07_rnaseq_runs.txt, size_mb: 0.03}
+      - {name: GCF_000715075.1-RS_2025_07_rnaseq_alignment_summary.txt, size_mb: 0.01}
+      - {name: GCF_000715075.1_ASM71507v2_genomic.fna.gz, size_mb: 1100, optional: true}
+    format: [faa, fna, gff, gaf]
+    version: "ASM71507v2 (GCF_000715075.1), RS_2025_07"
+    license_expected: "NCBI n'impose aucune restriction d'usage ni de distribution ; certains soumetteurs d'origine peuvent revendiquer des droits. Garder la mention de disclaimer NCBI."
+    license_url: "https://www.ncbi.nlm.nih.gov/home/about/policies/"
+    license_evidence_date: "2026-10-09"
+    license_checked: true
+    redistribution: open
+    status: verified
+    notes: "assembly_stats (2026-10-10) : 3,996 Gb, 701 scaffolds, scaffold N50 166,6 Mb, 1411 contigs, contig N50 11,8 Mb, 26 molecules. Cultivar a confirmer via assembly_report (hypothese : K326, Sierro 2024)."

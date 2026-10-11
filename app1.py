@@ -179,11 +179,10 @@ def _cached_analyze(
 def load_gene_database_cached(db_path: str = str(config.DATABASE_PATH)) -> dict:
     """
     Load gene database with Streamlit caching to improve performance.
-    Prefer PostgreSQL if the helper is available and configured.
+    Use PostgreSQL only when enabled; otherwise load the configured JSON file.
     """
     try:
-        # Try PostgreSQL first if available
-        if load_gene_database_from_postgres is not None:
+        if config.USE_POSTGRES and load_gene_database_from_postgres is not None:
             try:
                 db = load_gene_database_from_postgres()
                 if db:
@@ -396,7 +395,7 @@ with st.sidebar:
     metadata = None
     metadata_available = False
 
-    if get_gene_count is not None and search_gene_metadata is not None:
+    if config.USE_POSTGRES and get_gene_count is not None and search_gene_metadata is not None:
         try:
             # A cheap COUNT(*) rather than materializing all ~56k rows just
             # to call len() on them. Cached for 5 minutes so a widget
@@ -447,10 +446,10 @@ with st.sidebar:
     if db is not None:
         if not db:
             st.error(
-                "❌ No genes available: PostgreSQL could not be loaded and the tracked fallback database is missing."
+                "❌ No genes available: the configured gene database could not be loaded."
             )
         elif isinstance(db, dict) and db:
-            fallback_note = " (local fallback; PostgreSQL unavailable)" if not metadata_available else ""
+            fallback_note = " (local JSON)" if not config.USE_POSTGRES else " (local fallback; PostgreSQL unavailable)"
             st.success(f"✅ {len(db)} genes loaded{fallback_note}")
     elif metadata_available:
         st.info("✅ Lightweight gene metadata available. Full database will load on analysis.")

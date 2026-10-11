@@ -1,0 +1,76 @@
+# =====================================================================
+# species.yaml : registre des especes (source de verite unique)
+# Ajouter une espece = ajouter un bloc ici + ses sources dans sources.yaml.
+# Le pipeline (phases 1 a 7) est le meme pour toutes les especes.
+# =====================================================================
+
+schema_version: 1
+
+# Niveaux de preparation (calcules par le rapport de completude, pas declares a la main)
+readiness_levels:
+  1: "genome + annotation -> recherche de sequence, domaines"
+  2: "+ GO fiable + orthologues -> recherche par trait (directe ou par transfert)"
+  3: "+ variants de populations -> analyse de mutations"
+  4: "+ phenotypes, QTL, expression -> outils pour selectionneurs"
+
+# Role de l'espece dans la plateforme
+roles:
+  donor: "espece bien annotee, sert de source de connaissance pour les autres"
+  target: "espece cible : utilisateurs la consultent, connaissances en partie transferees"
+
+species:
+  zea_mays:
+    code: ZEAMA
+    common_name: mais
+    taxon_id: 4577
+    roles: [donor, target]
+    reference_assembly: Zm-B73-REFERENCE-NAM-5.0
+    reference_annotation: Zm00001eb.1
+    refseq_accession: GCF_902167145.1        # confirme (listing NCBI du 2026-10-09)
+    native_id_regex: '^Zm00001eb\d{6}$'
+    warnings:
+      - "Les IDs Zm00001e (sans b) sont preliminaires : les convertir via le fichier xref MaizeGDB."
+
+  oryza_sativa:
+    code: ORYSA
+    common_name: riz
+    taxon_id: 39947                          # O. sativa subsp. japonica
+    roles: [donor, target]
+    reference_assembly: IRGSP-1.0
+    refseq_accession: GCF_001433935.1        # confirme (listing NCBI du 2026-10-09)
+    id_systems:
+      rap_regex: '^Os\d{2}g\d{7}$'
+      msu_regex: '^LOC_Os\d{2}g\d{5}$'
+    warnings:
+      - "Deux systemes d'IDs (RAP et MSU) : les tables de correspondance ont des trous."
+      - "RAP-DB : certificat non fiable cote Windows (2026-10-09), source bloquee pour l'instant."
+
+  nicotiana_tabacum:
+    code: NITAB
+    common_name: tabac
+    taxon_id: 4097
+    roles: [target]
+    assemblies:
+      - name: Ntab-TN90
+        accession: GCF_000715135.1           # confirme (listing NCBI du 2026-10-09)
+        id_style: "GeneID:<n> / XP_ / XM_"
+      - name: Nitab4.5
+        origin: "SGN / Edwards et al. 2017"
+        id_regex: '^Nitab4\.5_\d{7}g\d{4}$'
+    warnings:
+      - "Deux assemblages distincts : relier par sequence (RBH), jamais par symbole."
+      - "Allotetraploide : prevoir des relations 1:n (homeologues)."
+    open_question: "Quelle reference sert de squelette ? (conseil : TN90 RefSeq + Nitab4.5 relie)"
+
+# ---------------------------------------------------------------------
+# Modele pour ajouter une espece (copier, remplir, decommenter)
+# ---------------------------------------------------------------------
+# nom_latin_en_snake_case:
+#   code: XXXXX                  # 5 lettres
+#   common_name: ...
+#   taxon_id: ...
+#   roles: [target]              # ou [donor, target]
+#   reference_assembly: ...
+#   refseq_accession: GCF_...
+#   native_id_regex: '...'
+#   warnings: []

@@ -1,0 +1,30 @@
+  - id: ncbi_refseq_nitab_asm71507v2
+    species: nicotiana_tabacum
+    phase: 1
+    capability: [sequence, annotation, go, expression]
+    role: "second assemblage RefSeq du tabac (annotation RS_2025_07), porte les GeneID absents de TN90"
+    url: "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/715/075/GCF_000715075.1_ASM71507v2/"
+    checksum_file: md5checksums.txt
+    files:                              # listing du 2026-10-10
+      - {name: GCF_000715075.1_ASM71507v2_protein.faa.gz, size_mb: 18}
+      - {name: GCF_000715075.1_ASM71507v2_cds_from_genomic.fna.gz, size_mb: 30}
+      - {name: GCF_000715075.1_ASM71507v2_rna.fna.gz, size_mb: 49}
+      - {name: GCF_000715075.1_ASM71507v2_genomic.gff.gz, size_mb: 23}
+      - {name: GCF_000715075.1_ASM71507v2_feature_table.txt.gz, size_mb: 6.4}
+      - {name: GCF_000715075.1-RS_2025_07_gene_ontology.gaf.gz, size_mb: 2}
+      - {name: GCF_000715075.1_ASM71507v2_assembly_report.txt, size_mb: 0.06}
+      - {name: GCF_000715075.1_ASM71507v2_assembly_stats.txt, size_mb: 0.04}
+      - {name: GCF_000715075.1-RS_2025_07_gene_expression_counts.txt.gz, size_mb: 15}
+      - {name: GCF_000715075.1-RS_2025_07_normalized_gene_expression_counts.txt.gz, size_mb: 27}
+      - {name: GCF_000715075.1-RS_2025_07_rnaseq_runs.txt, size_mb: 0.03}
+      - {name: GCF_000715075.1-RS_2025_07_rnaseq_alignment_summary.txt, size_mb: 0.01}
+      - {name: GCF_000715075.1_ASM71507v2_genomic.fna.gz, size_mb: 1100, optional: true}
+    format: [faa, fna, gff, gaf]
+    version: "ASM71507v2 (GCF_000715075.1), RS_2025_07"
+    license_expected: "NCBI n'impose aucune restriction d'usage ni de distribution ; certains soumetteurs d'origine peuvent revendiquer des droits. Garder la mention de disclaimer NCBI."
+    license_url: "https://www.ncbi.nlm.nih.gov/home/about/policies/"
+    license_evidence_date: "2026-10-09"
+    license_checked: true
+    redistribution: open
+    status: verified
+    notes: "assembly_stats (2026-10-10) : 3,996 Gb, 701 scaffolds, scaffold N50 166,6 Mb, 1411 contigs, contig N50 11,8 Mb, 26 molecules. Cultivar a confirmer via assembly_report (hypothese : K326, Sierro 2024)."

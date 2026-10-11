@@ -10,7 +10,8 @@ from pathlib import Path
 
 # ─── Project Paths ────────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).parent
-DATABASE_PATH = PROJECT_ROOT / "data" / "clean" / "species" / "chenopodium_quinoa_all_sources.json"
+DATABASE_PATH = PROJECT_ROOT / "Data" / "clean" / "species" / "test_output" / "nicotiana_tabacum_all_sources.json"
+USE_POSTGRES = False
 STYLE_CSS_PATH = PROJECT_ROOT / "style.css"
 LOG_DIR = PROJECT_ROOT / "logs"
 RESULTS_DIR = PROJECT_ROOT / "results"

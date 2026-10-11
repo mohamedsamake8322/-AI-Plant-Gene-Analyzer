@@ -1,0 +1,4 @@
+##fileformat=VCFv4.3
+##source=AI_Plant_Gene_Analyzer
+##contig=<ID=sequence,description=Local_sequence_coordinates_not_genomic>
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO

@@ -936,4 +936,4 @@ with tool_tabs[3]:
                 )
 
 with tool_tabs[4]:
-    tr.render_trait_research_tab("Data/clean/species")
+    tr.render_trait_research_tab("Data/clean/species/test_output")
