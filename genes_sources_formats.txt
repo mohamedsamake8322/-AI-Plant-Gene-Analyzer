@@ -1,0 +1,12 @@
+﻿kegg,ncbi|2700|GeneID:100280441|zma:778437
+kegg,ncbi,planttfdb|2795|GeneID:100037784|zma:732842
+kegg,ncbi,planttfdb,plaza,uniprot|523|A0A060CVM9|YCY30587.1
+kegg,ncbi,planttfdb,uniprot|2380|A0A060CVD8|YCY24232.1
+ncbi|35924|AB031011.1|zma:778438
+ncbi,planttfdb|41|A0A1D6F975|sp|Q6JB12.1|MEG4_MAIZE
+ncbi,planttfdb,plaza|6|A0A1D6KEL8|sp|Q6JB10.1|MEG6_MAIZE
+ncbi,planttfdb,plaza,uniprot|1124|A0A060CUY1|YGF81040.1
+ncbi,planttfdb,uniprot|13648|A0A059Q8J5|YCZ22896.1
+ncbi,plaza,uniprot|1|D4HR93|D4HR93
+ncbi,uniprot|1|B4FUK8|B4FUK8
+plaza|37896|PLAZA:Zm00001eb000010|PLAZA:Zm00001eb443030

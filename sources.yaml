@@ -103,13 +103,14 @@ sources:
     role: "squelette mais cote NCBI (recoupement avec MaizeGDB)"
     url: "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/902/167/145/GCF_902167145.1_Zm-B73-REFERENCE-NAM-5.0/"
     checksum_file: md5checksums.txt
-    files_note: "Noms deduits de la convention NCBI (non listes) : un 404 signalera une erreur. GAF RefSeq a ajouter apres listing."
+    files_note: "Noms et tailles confirmes par listing reel (curl) le 2026-10-10."
     files:
-      - {name: GCF_902167145.1_Zm-B73-REFERENCE-NAM-5.0_protein.faa.gz, size_mb: 16}
-      - {name: GCF_902167145.1_Zm-B73-REFERENCE-NAM-5.0_cds_from_genomic.fna.gz, size_mb: 30}
-      - {name: GCF_902167145.1_Zm-B73-REFERENCE-NAM-5.0_rna.fna.gz, size_mb: 40}
-      - {name: GCF_902167145.1_Zm-B73-REFERENCE-NAM-5.0_genomic.gff.gz, size_mb: 25}
-      - {name: GCF_902167145.1_Zm-B73-REFERENCE-NAM-5.0_feature_table.txt.gz, size_mb: 6}
+      - {name: GCF_902167145.1_Zm-B73-REFERENCE-NAM-5.0_protein.faa.gz, size_mb: 12}
+      - {name: GCF_902167145.1_Zm-B73-REFERENCE-NAM-5.0_cds_from_genomic.fna.gz, size_mb: 18}
+      - {name: GCF_902167145.1_Zm-B73-REFERENCE-NAM-5.0_rna.fna.gz, size_mb: 36}
+      - {name: GCF_902167145.1_Zm-B73-REFERENCE-NAM-5.0_genomic.gff.gz, size_mb: 15}
+      - {name: GCF_902167145.1_Zm-B73-REFERENCE-NAM-5.0_feature_table.txt.gz, size_mb: 4.3}
+      - {name: GCF_902167145.1-RS_2025_02_gene_ontology.gaf.gz, size_mb: 1.1}
     format: [faa, fna, gff, gbff]
     version: "Zm-B73-REFERENCE-NAM-5.0 (GCF_902167145.1)"
     license_expected: "NCBI n'impose aucune restriction d'usage ni de distribution ; certains soumetteurs d'origine peuvent revendiquer des droits. Garder la mention de disclaimer NCBI."
@@ -126,13 +127,14 @@ sources:
     role: "squelette riz cote NCBI (recoupement avec RAP-DB)"
     url: "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/001/433/935/GCF_001433935.1_IRGSP-1.0/"
     checksum_file: md5checksums.txt
-    files_note: "Noms deduits de la convention NCBI (non listes) : un 404 signalera une erreur. GAF RefSeq a ajouter apres listing."
+    files_note: "Noms et tailles confirmes par listing reel (curl) le 2026-10-11."
     files:
-      - {name: GCF_001433935.1_IRGSP-1.0_protein.faa.gz, size_mb: 16}
-      - {name: GCF_001433935.1_IRGSP-1.0_cds_from_genomic.fna.gz, size_mb: 30}
-      - {name: GCF_001433935.1_IRGSP-1.0_rna.fna.gz, size_mb: 40}
-      - {name: GCF_001433935.1_IRGSP-1.0_genomic.gff.gz, size_mb: 25}
-      - {name: GCF_001433935.1_IRGSP-1.0_feature_table.txt.gz, size_mb: 6}
+      - {name: GCF_001433935.1_IRGSP-1.0_protein.faa.gz, size_mb: 9.1}
+      - {name: GCF_001433935.1_IRGSP-1.0_cds_from_genomic.fna.gz, size_mb: 15}
+      - {name: GCF_001433935.1_IRGSP-1.0_rna.fna.gz, size_mb: 26}
+      - {name: GCF_001433935.1_IRGSP-1.0_genomic.gff.gz, size_mb: 9.8}
+      - {name: GCF_001433935.1_IRGSP-1.0_feature_table.txt.gz, size_mb: 2.9}
+      - {name: GCF_001433935.1_IRGSP-1.0_gene_ontology.gaf.gz, size_mb: 0.75}
     format: [faa, fna, gff, gbff]
     version: "IRGSP-1.0 (GCF_001433935.1), verifier l'assemblage RefSeq courant"
     license_expected: "NCBI n'impose aucune restriction d'usage ni de distribution ; certains soumetteurs d'origine peuvent revendiquer des droits. Garder la mention de disclaimer NCBI."
@@ -218,7 +220,8 @@ sources:
     license_evidence_date: "2026-10-09"
     license_checked: true
     redistribution: open
-    status: verified
+    status: blocked
+    notes: "SUPERSEDEE le 2026-10-11 : le lien GeneID <-> RefSeq (mRNA/proteine) est deja present gratuitement dans feature_table.txt.gz, deja telecharge en Phase 1 pour les 4 squelettes (verifie sur l'echantillon maïs : colonnes GeneID, product_accession, related_accession, symbol). Pas de telechargement necessaire pour cet usage. Gardee en reserve (status: blocked, pas a telecharger) si un besoin plus large (gene2go, etc.) apparait plus tard."
 
   - id: uniprot_idmapping
     species: [nicotiana_tabacum, zea_mays, oryza_sativa]
@@ -234,7 +237,65 @@ sources:
     license_evidence_date: "2026-10-09"
     license_checked: true
     redistribution: open
+    status: blocked
+    notes: "SUPERSEDEE le 2026-10-11 par les 3 sources uniprot_idmap_* ci-dessous : requete /stream par espece en format tsv (meme mecanisme que uniprot_proteomes_*), xref_geneid sert directement de cle de jointure avec GeneID NCBI. Plus simple, plus petit, pas de fichier global. Gardee en reserve (status: blocked) au cas ou."
+
+  - id: uniprot_idmap_tabacum
+    species: nicotiana_tabacum
+    phase: 2
+    capability: [id_map]
+    role: "correspondance UniProt <-> RefSeq/GeneID/InterPro (reviewed), taxon 4097, jointure sur xref_geneid"
+    url: "https://rest.uniprot.org/uniprotkb/stream?query=organism_id:4097+AND+reviewed:true&format=tsv&fields=accession,reviewed,id,protein_name,gene_names,xref_refseq,xref_geneid,xref_interpro,xref_ensembl&compressed=true"
+    single_file: true
+    file_name: "uniprot_idmap_nicotiana_tabacum_4097_reviewed.tsv.gz"
+    size_mb: 0.2
+    format: [tsv]
+    version: "release UniProt courante (a noter au telechargement)"
+    license_expected: "CC BY 4.0 sur les parties protegeables par le droit d'auteur ; garder la mention de copyright UniProt avec chaque copie."
+    license_url: "https://www.uniprot.org/help/license"
+    license_evidence_date: "2026-10-09"
+    license_checked: true
+    redistribution: open
     status: verified
+    notes: "Memes 507 entrees reviewed que uniprot_proteomes_tabacum (2026-10-10), format tsv au lieu de fasta. A faire : --dry-run puis verifier les noms de colonnes reels (xref_geneid -> 'GeneID' normalement) avant d'ecrire build_id_map.py definitivement."
+
+  - id: uniprot_idmap_zea_mays
+    species: zea_mays
+    phase: 2
+    capability: [id_map]
+    role: "correspondance UniProt <-> RefSeq/GeneID/InterPro (reviewed), taxon 4577, jointure sur xref_geneid"
+    url: "https://rest.uniprot.org/uniprotkb/stream?query=organism_id:4577+AND+reviewed:true&format=tsv&fields=accession,reviewed,id,protein_name,gene_names,xref_refseq,xref_geneid,xref_interpro,xref_ensembl&compressed=true"
+    single_file: true
+    file_name: "uniprot_idmap_zea_mays_4577_reviewed.tsv.gz"
+    size_mb: 0.3
+    format: [tsv]
+    version: "release UniProt courante (a noter au telechargement)"
+    license_expected: "CC BY 4.0 sur les parties protegeables par le droit d'auteur ; garder la mention de copyright UniProt avec chaque copie."
+    license_url: "https://www.uniprot.org/help/license"
+    license_evidence_date: "2026-10-09"
+    license_checked: true
+    redistribution: open
+    status: verified
+    notes: "Memes 850 entrees reviewed que uniprot_proteomes_zea_mays (2026-10-10)."
+
+  - id: uniprot_idmap_oryza_sativa
+    species: oryza_sativa
+    phase: 2
+    capability: [id_map]
+    role: "correspondance UniProt <-> RefSeq/GeneID/InterPro (reviewed), taxon 39947, jointure sur xref_geneid"
+    url: "https://rest.uniprot.org/uniprotkb/stream?query=organism_id:39947+AND+reviewed:true&format=tsv&fields=accession,reviewed,id,protein_name,gene_names,xref_refseq,xref_geneid,xref_interpro,xref_ensembl&compressed=true"
+    single_file: true
+    file_name: "uniprot_idmap_oryza_sativa_39947_reviewed.tsv.gz"
+    size_mb: 1
+    format: [tsv]
+    version: "release UniProt courante (a noter au telechargement)"
+    license_expected: "CC BY 4.0 sur les parties protegeables par le droit d'auteur ; garder la mention de copyright UniProt avec chaque copie."
+    license_url: "https://www.uniprot.org/help/license"
+    license_evidence_date: "2026-10-09"
+    license_checked: true
+    redistribution: open
+    status: verified
+    notes: "Memes 4197 entrees reviewed que uniprot_proteomes_oryza_sativa (2026-10-10)."
 
   # ===== Phase 3 : annotation fonctionnelle =====
   # uniprot_proteomes : scindee en 3 entrees (une par taxon) car fetch_raw.py
@@ -342,20 +403,27 @@ sources:
     status: verified
 
   - id: interpro_pfam
-    species: [nicotiana_tabacum, zea_mays, oryza_sativa]
+    species: shared   # base Pfam commune aux 3 especes, pas de decoupage par espece (contrairement a uniprot_proteomes_*/uniprot_idmap_* qui sont des requetes vraiment specifiques a un taxon) -- range dans raw/shared/interpro_pfam/
     phase: 3
     capability: [domains]
-    role: "domaines (InterPro/Pfam) : base HMM et annotations"
-    url: "https://ftp.ebi.ac.uk/pub/databases/interpro/"
+    role: "domaines Pfam : modeles HMM pour scanner nous-memes les proteomes (hmmscan), pas de telechargement d'un tableau de hits precalcule (Pfam-A.regions.tsv.gz fait 4.7 Go et ne couvre que les proteines deja dans UniProt, pas nos proteomes RefSeq complets)"
+    url: "https://ftp.ebi.ac.uk/pub/databases/Pfam/current_release/"
+    checksum_file: null
+    files_note: "Noms et tailles confirmes par listing reel (curl) le 2026-10-11. Pas de md5checksums.txt connu sur ce FTP -- a verifier au premier telechargement (fetch_raw.py continue sans verification si absent)."
+    files:
+      - {name: Pfam-A.hmm.gz, size_mb: 399}
+      - {name: Pfam-A.hmm.dat.gz, size_mb: 0.8}
+      - {name: Pfam-A.clans.tsv.gz, size_mb: 0.6}
+      - {name: Pfam-A.seed.gz, size_mb: 185, optional: true}
     format: [hmm, tsv]
-    version: "release InterPro courante"
+    version: "current_release au 2026-01-22 (date serveur confirmee par listing le 2026-10-11)"
     license_expected: "CC0 1.0 pour les donnees telechargeables InterPro, Pfam, PRINTS, SFLD. ATTENTION : certains membres de InterProScan peuvent avoir des licences differentes (non commerciales)."
     license_url: "https://interpro-documentation.readthedocs.io/en/latest/license.html"
-    license_evidence_date: "2026-10-09"
+    license_evidence_date: "2026-10-11"
     license_checked: true
     redistribution: open
     status: verified
-    notes: "Les HMM Pfam ont change d'hebergement : verifier le chemin courant."
+    notes: "Chemin confirme le 2026-10-11 (l'ancien chemin /pub/databases/interpro/ est bloque par robots.txt pour certains outils, mais /pub/databases/Pfam/current_release/ fonctionne). Un fichier Pfam-A.hmm local date de juillet 2025 existait deja chez l'utilisateur (une release derriere) : non reutilise, retelecharge en version courante pour rester coherent/date avec le reste du pipeline."
 
   - id: planttfdb
     species: [nicotiana_tabacum, zea_mays, oryza_sativa]

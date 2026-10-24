@@ -1,0 +1,21 @@
+﻿genes|id|integer
+genes|gene_id|text
+genes|symbol|text
+genes|organism|text
+genes|sequence|text
+genes|sequence_type|text
+genes|description|text
+genes|source|text
+genes|source_url|text
+genes|external_links|jsonb
+genes|expression_profiles|jsonb
+genes|pathways|jsonb
+genes|publications|jsonb
+genes|annotations|jsonb
+genes|traits|jsonb
+genes|length|integer
+genes|date_added|timestamp with time zone
+genes|sequence_hash|text
+genes|origin|text
+genes|relations|jsonb
+genes|kmer_hashes|ARRAY
