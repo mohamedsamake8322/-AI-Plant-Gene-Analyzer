@@ -695,7 +695,7 @@ class SimilarityCandidates(dict):
         return len(self)
 
 
-def find_similar_genes(
+def _find_similar_genes_legacy(
     query: str,
     top_n: int = 3,
     metadata: Optional[dict] = None,
@@ -809,7 +809,7 @@ def find_similar_genes(
     return SimilarityCandidates(candidates, source="length_prefilter_sql", requested_pool_size=requested_pool_size)
 
 
-def find_similar_genes_deep(
+def _find_similar_genes_deep_legacy(
     query: str,
     top_n: int = 3,
     metadata: Optional[dict] = None,
@@ -879,6 +879,51 @@ def find_similar_genes_deep(
         if logger:
             logger.exception("Deep Search exhaustive candidate screening failed")
         return SimilarityCandidates(source="deep_search_exhaustive")
+
+
+# BIOINFO_WIRING: enveloppes vers bioinfo_pipeline (USE_BIOINFO=1) ; anciens corps conserves (_legacy)
+def _bioinfo_enabled() -> bool:
+    try:
+        from core_engines.bioinfo_reader import is_enabled
+        return is_enabled()
+    except Exception:
+        return False
+
+
+def _bioinfo_candidates(query, pool_size, deep, requested, logger):
+    from core_engines.bioinfo_similarity import find_candidates
+    return find_candidates(query, pool_size, deep, logger, SimilarityCandidates, requested_pool_size=requested)
+
+
+def find_similar_genes(
+    query: str,
+    top_n: int = 3,
+    metadata: Optional[dict] = None,
+    candidate_pool_multiplier: int = DEFAULT_CANDIDATE_POOL_MULTIPLIER,
+    max_length_ratio: float = DEFAULT_MAX_LENGTH_RATIO,
+    logger=None,
+) -> "SimilarityCandidates":
+    if _bioinfo_enabled():
+        requested = max(1, top_n) * candidate_pool_multiplier
+        return _bioinfo_candidates(query, _budgeted_candidate_pool_size(len(query), requested), False, requested, logger)
+    return _find_similar_genes_legacy(
+        query, top_n=top_n, metadata=metadata, candidate_pool_multiplier=candidate_pool_multiplier,
+        max_length_ratio=max_length_ratio, logger=logger,
+    )
+
+
+def find_similar_genes_deep(
+    query: str,
+    top_n: int = 3,
+    metadata: Optional[dict] = None,
+    alignment_limit: int = 500,
+    logger=None,
+) -> "SimilarityCandidates":
+    if _bioinfo_enabled():
+        return _bioinfo_candidates(query, _budgeted_candidate_pool_size(len(query), alignment_limit), True, alignment_limit, logger)
+    return _find_similar_genes_deep_legacy(
+        query, top_n=top_n, metadata=metadata, alignment_limit=alignment_limit, logger=logger,
+    )
 
 
 def classify_similarity(score: float) -> dict[str, str]:

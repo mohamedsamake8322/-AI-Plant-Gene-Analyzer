@@ -255,7 +255,8 @@ def _patristic(root: Node):
 
 def _pretty_distance(name: str) -> str:
     return {"kimura": "Kimura 2-parameter (K2P)", "k2p": "Kimura 2-parameter (K2P)", "p": "p-distance",
-            "p-distance": "p-distance", "jc": "Jukes-Cantor", "jukes-cantor": "Jukes-Cantor"}.get((name or "").strip().lower(), name or "K2P")
+            "p-distance": "p-distance", "jc": "Jukes-Cantor", "jukes-cantor": "Jukes-Cantor",
+            "embedding_cosine_distance": "ESM-2 cosine distance"}.get((name or "").strip().lower(), name or "K2P")
 
 
 def _tied(rows: list, smallest: bool, tol: float = 0.02) -> list:
@@ -265,7 +266,8 @@ def _tied(rows: list, smallest: bool, tol: float = 0.02) -> list:
 
 def tree_insights(newick: str, support_cut: float = 95.0, dist_names: Optional[List[str]] = None,
                   dist_matrix: Optional[List[List[float]]] = None, method: Optional[str] = None,
-                  fit_warn: float = 0.15, midpoint: bool = False) -> dict:
+                  fit_warn: float = 0.15, midpoint: bool = False,
+                  distance_kind: Optional[str] = None) -> dict:
     """Summary of the tree. If the observed distance matrix is given, 'closest/farthest' use it (the tree only
     approximates the data) and the gap between tree and data is reported."""
     parsed = parse_newick(newick)
@@ -287,6 +289,10 @@ def tree_insights(newick: str, support_cut: float = 95.0, dist_names: Optional[L
         fits = [(abs(dt - do) / do, a, b, dt, do) for _, a, b, dt, do in rows if do and do > 1e-6]
         if fits:
             ins["fit"] = max(fits)
+    if distance_kind == "embedding_cosine_distance":
+        ins["warnings"].append(
+            "This is a phenetic clustering from ESM-2 embedding proximity, not a phylogenetic inference from evolutionary substitutions."
+        )
     if len(root.children) == 2:
         sup = next((c.support for c in root.children if c.support is not None), None)
         groups = [[l.name for l in _leaves(c)] for c in root.children]
@@ -321,7 +327,7 @@ def tree_insights(newick: str, support_cut: float = 95.0, dist_names: Optional[L
                                + ": no private changes relative to the inferred ancestor of its group (identical or ancestral-like). Check for duplicates.")
     if has_negative:
         ins["warnings"].append("Negative branch length(s) in the input (typical NJ artefact on noisy distances); drawn as 0.")
-    if ins["farthest"] and ins["farthest"][0][0] > 0.5:
+    if distance_kind != "embedding_cosine_distance" and ins["farthest"] and ins["farthest"][0][0] > 0.5:
         ins["warnings"].append("Some distances exceed 0.5 substitutions/site: sites may be saturated and the topology less reliable.")
     return ins
 
@@ -332,18 +338,22 @@ def _pairs_txt(rows: list, k: int = 3) -> str:
 
 
 def findings(ins: dict, support_label: str = "support", dist_label: str = "distance",
-             support_cut: float = 95.0) -> List[str]:
+             support_cut: float = 95.0, distance_unit: str = "substitutions / site") -> List[str]:
     src = f"observed {dist_label}" if ins.get("source") == "observed" else "distance along the tree"
     out = []
     if ins["closest"]:
         d = ins["closest"][0][0]
         many = len(ins["closest"]) > 1
-        out.append(f"**Closest pair{'s (tied)' if many else ''}:** {_pairs_txt(ins['closest'])} - {d:.4f} substitutions/site "
-                   f"(about {d*100:.1f} differences per 100 sites; {src}).")
+        detail = (
+            f"(about {d*100:.1f} differences per 100 sites; {src})"
+            if distance_unit == "substitutions / site" else f"({src})"
+        )
+        out.append(f"**Closest pair{'s (tied)' if many else ''}:** {_pairs_txt(ins['closest'])} - {d:.4f} {distance_unit} "
+                   f"{detail}.")
     if ins["farthest"] and ins["n"] > 2:
         d = ins["farthest"][0][0]
         many = len(ins["farthest"]) > 1
-        out.append(f"**Most divergent pair{'s (tied)' if many else ''}:** {_pairs_txt(ins['farthest'])} - {d:.4f} substitutions/site ({src}).")
+        out.append(f"**Most divergent pair{'s (tied)' if many else ''}:** {_pairs_txt(ins['farthest'])} - {d:.4f} {distance_unit} ({src}).")
     if ins["split"]:
         groups, sup = ins["split"]
         txt = " | ".join("{" + ", ".join(html.escape(split_label(x)[0]) for x in g) + "}" for g in groups)
@@ -392,7 +402,7 @@ def _nice(x: float) -> float:
 
 def make_tree_figure(newick: str, *, theme: str = "dark", title: str = "Phylogenetic tree", subtitle: str = "",
                      axis_mode: str = "bar", support_label: str = "UFBoot", group_colors: bool = True,
-                     midpoint: bool = False) -> go.Figure:
+                     midpoint: bool = False, distance_unit: str = "substitutions / site") -> go.Figure:
     """axis_mode: 'bar' = scale bar (additive trees)  |  'height' = node-height axis (ultrametric / UPGMA)."""
     P = THEMES[theme]
     root, rerooted = prepare_tree(newick, midpoint=midpoint)
@@ -470,7 +480,7 @@ def make_tree_figure(newick: str, *, theme: str = "dark", title: str = "Phylogen
         bar = _nice(xmax / 4)
         fig.add_trace(go.Scatter(x=[0, bar, None, 0, 0, None, bar, bar], y=[-1.2, -1.2, None, -1.05, -1.35, None, -1.05, -1.35],
                                  mode="lines", line=dict(color=P["muted"], width=2), hoverinfo="skip", showlegend=False))
-        fig.add_annotation(x=bar / 2, y=-1.85, text=f"{bar:g} substitutions / site", showarrow=False,
+        fig.add_annotation(x=bar / 2, y=-1.85, text=f"{bar:g} {html.escape(distance_unit)}", showarrow=False,
                            font=dict(size=12, color=P["muted"], family=FONT), xref="x", yref="y")
     else:
         step = _nice(xmax / 5)
@@ -478,7 +488,7 @@ def make_tree_figure(newick: str, *, theme: str = "dark", title: str = "Phylogen
         xaxis = dict(visible=True, range=[-0.045 * xmax, x_hi], tickmode="array", tickvals=[xmax - h for h in hs],
                      ticktext=[f"{h:g}" for h in hs], showgrid=True, gridcolor=P["grid"], zeroline=False, showline=True,
                      linecolor=P["muted"], tickfont=dict(size=12, color=P["muted"], family=FONT),
-                     title=dict(text="Node height (substitutions / site)", font=dict(size=12, color=P["muted"], family=FONT)))
+                     title=dict(text=f"Node height ({html.escape(distance_unit)})", font=dict(size=12, color=P["muted"], family=FONT)))
 
     fig.update_layout(
         height=max(380, 150 + 52 * n), margin=dict(l=24, r=24, t=104, b=24 if axis_mode == "bar" else 56),
@@ -559,6 +569,12 @@ def methods_paragraph(method: str, meta: dict) -> str:
                 f"inferred with {meta.get('engine', 'IQ-TREE')}; branch support was assessed with {meta.get('bootstrap', 1000)} ultrafast bootstrap replicates (UFBoot2). "
                 "The tree is unrooted and drawn midpoint-rooted for display only.")
     algo = "UPGMA" if method == "upgma" else "Neighbor-Joining"
+    if meta.get("distance_method") == "embedding_cosine_distance":
+        return (
+            f"Protein sequences were embedded with ESM-2 and compared using cosine distance "
+            f"(1 - cosine similarity); a {algo} phenetic clustering was built. "
+            "This is not an evolutionary phylogenetic inference."
+        )
     return f"{pre}Pairwise {_pretty_distance(meta.get('distance_method', 'K2P'))} distances were computed and a {algo} tree was built."
 
 
@@ -592,9 +608,13 @@ def render_phylo_result(newick: str, *, method: str = "iqtree", meta: Optional[d
     support_cut = 95.0 if method == "iqtree" else 70.0
     midpoint = method in {"iqtree", "nj"}
     ins = tree_insights(newick, support_cut=support_cut, dist_names=dist_names,
-                        dist_matrix=dist_matrix, method=method, midpoint=midpoint)
-    root_note = {"iqtree": "unrooted estimate, midpoint root for display",
-                 "nj": "unrooted estimate, midpoint root for display", "upgma": "constant-rate (clock) assumption"}[method]
+                        dist_matrix=dist_matrix, method=method, midpoint=midpoint,
+                        distance_kind=meta.get("distance_method"))
+    embedding_tree = meta.get("distance_method") == "embedding_cosine_distance"
+    distance_unit = meta.get("distance_unit", "substitutions / site")
+    root_note = "embedding-based phenetic clustering" if embedding_tree else {
+        "iqtree": "unrooted estimate, midpoint root for display",
+        "nj": "unrooted estimate, midpoint root for display", "upgma": "constant-rate (clock) assumption"}[method]
     mid = f"{meta.get('model', '')} &#183; UFBoot x{meta.get('bootstrap', 1000)}" if method == "iqtree" else f"{dist_label} distances"
     subtitle = f"{spec['label']} &#183; {mid} &#183; {root_note}"
 
@@ -604,24 +624,38 @@ def render_phylo_result(newick: str, *, method: str = "iqtree", meta: Optional[d
     c[2].metric("Sequences", ins["n"])
     c[3].metric("Alignment", f"{meta['n_sites']:,} bp" if meta.get("n_sites") else "-")
 
-    _plot(st, make_tree_figure(newick, theme=theme, subtitle=subtitle, axis_mode=spec["axis"],
-                               support_label=sup_label, midpoint=midpoint), f"{key}_tree")
+    _plot(st, make_tree_figure(newick, theme=theme, title="ESM-2 embedding similarity tree" if embedding_tree else "Phylogenetic tree",
+                               subtitle=subtitle, axis_mode=spec["axis"], support_label=sup_label,
+                               midpoint=midpoint, distance_unit=distance_unit), f"{key}_tree")
     st.caption("Camera icon = download as SVG (vector, ready for a paper or slide).")
 
     left, right = st.columns(2)
     with left:
         st.markdown("##### Key findings")
-        for line in findings(ins, sup_label, dist_label, support_cut) or ["Not enough sequences to summarise."]:
+        for line in findings(ins, sup_label, dist_label, support_cut, distance_unit) or ["Not enough sequences to summarise."]:
             st.markdown(f"- {line}")
     with right:
         st.markdown("##### How to read this tree")
-        for line in HOW_TO_READ["common"] + HOW_TO_READ[method]:
+        reading_notes = (
+            [
+                "Branch lengths represent ESM-2 cosine distance (1 - cosine similarity), not substitutions per site.",
+                "This clustering compares learned protein embeddings; it is not a phylogenetic tree or evidence of function.",
+            ]
+            if embedding_tree else HOW_TO_READ["common"] + HOW_TO_READ[method]
+        )
+        for line in reading_notes:
             st.markdown(f"- {line}")
     for w in ins["warnings"]:
         st.warning(w)
 
     if dist_names and dist_matrix:
         with st.expander("Observed pairwise distances (same order as the tree)"):
-            _plot(st, make_distance_heatmap(dist_names, dist_matrix, order=leaf_order(newick, midpoint=midpoint), theme=theme), f"{key}_heat")
+            _plot(st, make_distance_heatmap(
+                dist_names,
+                dist_matrix,
+                order=leaf_order(newick, midpoint=midpoint),
+                theme=theme,
+                title="ESM-2 cosine distances" if embedding_tree else "Observed pairwise distances (substitutions / site)",
+            ), f"{key}_heat")
     with st.expander("Methods paragraph and references (copy into your report)"):
         st.code(methods_paragraph(method, meta) + "\n\nReferences\n" + "\n".join(f"- {r}" for r in references_for(method, meta)), language=None)

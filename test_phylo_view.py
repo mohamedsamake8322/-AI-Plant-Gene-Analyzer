@@ -1,7 +1,7 @@
 """Standalone tests for phylo_view.py (no dependency on the rest of the app).  Run: pytest test_phylo_view.py"""
 import pytest
 from phylo_view import (parse_newick, prepare_tree, tree_insights, make_tree_figure, leaf_order,
-                        split_label, _leaves, midpoint_root)
+                        split_label, _leaves, midpoint_root, methods_paragraph, findings)
 
 A = "'cqi:110688118 | organism=Chenopodium quinoa'"
 B = "'cqi:110684354 | organism=Chenopodium quinoa'"
@@ -128,3 +128,24 @@ def test_malformed_newick_raises_clear_errors():
     for bad in ("", "(a:1,b:1", "(a:1,b:1))x;"):
         with pytest.raises(ValueError):
             parse_newick(bad)
+
+
+def test_embedding_cosine_tree_is_labeled_as_phenetic_not_phylogenetic():
+    meta = {"distance_method": "embedding_cosine_distance"}
+    matrix = [[0.0, 0.8, 0.7, 0.9], [0.8, 0.0, 0.8, 0.7],
+              [0.7, 0.8, 0.0, 0.8], [0.9, 0.7, 0.8, 0.0]]
+    insights = tree_insights(
+        UPGMA,
+        dist_names=NAMES,
+        dist_matrix=matrix,
+        method="upgma",
+        distance_kind="embedding_cosine_distance",
+    )
+
+    assert any("phenetic clustering" in warning for warning in insights["warnings"])
+    assert not any("saturated" in warning for warning in insights["warnings"])
+    assert "cosine distance" in " ".join(findings(insights, dist_label="ESM-2", distance_unit="cosine distance"))
+    assert "not an evolutionary phylogenetic inference" in methods_paragraph("nj", meta)
+
+    figure = make_tree_figure(UPGMA, axis_mode="height", distance_unit="cosine distance")
+    assert figure.layout.xaxis.title.text == "Node height (cosine distance)"

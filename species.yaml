@@ -27,6 +27,19 @@ species:
     reference_assembly: Zm-B73-REFERENCE-NAM-5.0
     reference_annotation: Zm00001eb.1
     refseq_accession: GCF_902167145.1        # confirme (listing NCBI du 2026-10-09)
+    source: RefSeq
+    download_date: null
+    checksums: {}
+    modules:
+      gene_id: true
+      coordinates: true
+      orthology: true
+      qtl: true
+    tool_versions:
+      pfam: null
+      diamond: null
+      swissprot: null
+      esm_model: "esm2_t33_650M_UR50D"
     native_id_regex: '^Zm00001eb\d{6}$'
     warnings:
       - "Les IDs Zm00001e (sans b) sont preliminaires : les convertir via le fichier xref MaizeGDB."
@@ -38,6 +51,19 @@ species:
     roles: [donor, target]
     reference_assembly: IRGSP-1.0
     refseq_accession: GCF_001433935.1        # confirme (listing NCBI du 2026-10-09)
+    source: RefSeq
+    download_date: null
+    checksums: {}
+    modules:
+      gene_id: true
+      coordinates: true
+      orthology: true
+      qtl: true
+    tool_versions:
+      pfam: null
+      diamond: null
+      swissprot: null
+      esm_model: "esm2_t33_650M_UR50D"
     id_systems:
       rap_regex: '^Os\d{2}g\d{7}$'
       msu_regex: '^LOC_Os\d{2}g\d{5}$'
@@ -52,11 +78,31 @@ species:
     roles: [target]
     assemblies:
       - name: Ntab-TN90
+        species: nicotiana_tabacum_tn90
+        assemblage: nicotiana_tabacum_tn90
         accession: GCF_000715135.1           # confirme (listing NCBI du 2026-10-09)
+        cultivar: TN90
         id_style: "GeneID:<n> / XP_ / XM_"
-      - name: Nitab4.5
+      - name: ASM71507v2
+        species: nicotiana_tabacum_k326
+        assemblage: nicotiana_tabacum_k326
+        accession: GCF_000715075.1
+        cultivar: K326
         origin: "SGN / Edwards et al. 2017"
         id_regex: '^Nitab4\.5_\d{7}g\d{4}$'
+    source: RefSeq + SGN
+    download_date: null
+    checksums: {}
+    modules:
+      gene_id: true
+      coordinates: true
+      orthology: false
+      qtl: false
+    tool_versions:
+      pfam: null
+      diamond: null
+      swissprot: null
+      esm_model: "esm2_t33_650M_UR50D"
     warnings:
       - "Deux assemblages distincts : relier par sequence (RBH), jamais par symbole."
       - "Allotetraploide : prevoir des relations 1:n (homeologues)."

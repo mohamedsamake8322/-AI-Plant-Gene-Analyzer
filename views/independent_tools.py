@@ -25,6 +25,14 @@ from slider_utils import _alignment_window_slider_bounds
 
 STAR_MSA_ENGINE = "Star MSA (fast / approximate)"
 MSA_ENGINES = ["MAFFT", "MUSCLE", "ClustalW", STAR_MSA_ENGINE]
+DISTANCE_METHODS = ["hamming", "jukes_cantor", "kimura", "pam", "embedding_cosine_distance"]
+
+
+def _esm2_scope_note() -> str:
+    return translate(
+        "ui.esm2_scope_note",
+        default="ESM-2 reference coverage is limited to rice, maize, and tobacco K326. Cosine similarity is an embedding-based signal, not sequence identity or proof of function.",
+    )
 
 
 def _hydrate_uploaded_fasta(uploaded_file, target_key: str, label: str = "Uploaded FASTA") -> None:
@@ -435,8 +443,14 @@ with tool_tabs[0]:
             st.warning(translate('ui.pairwise_missing', default="Provide two sequences for pairwise alignment."))
         else:
             from core_engines.alignment_engine import needleman_wunsch, smith_waterman
-            seq1 = bio.clean_sequence(pairwise_seq1, sequence_type="protein" if pairwise_type == "Protein" else "dna")
-            seq2 = bio.clean_sequence(pairwise_seq2, sequence_type="protein" if pairwise_type == "Protein" else "dna")
+            _, raw_seq1 = bio.parse_fasta_input(pairwise_seq1)
+            _, raw_seq2 = bio.parse_fasta_input(pairwise_seq2)
+            seq_type = bio.detect_sequence_type(raw_seq1) if pairwise_type == "Auto" else pairwise_type.lower()
+            if pairwise_type == "Auto" and bio.detect_sequence_type(raw_seq2) != seq_type:
+                st.error(translate('ui.pairwise_type_mismatch', default="The two sequences must have the same detected type."))
+                st.stop()
+            seq1 = bio.clean_sequence(raw_seq1, sequence_type=seq_type)
+            seq2 = bio.clean_sequence(raw_seq2, sequence_type=seq_type)
             if not seq1 or not seq2:
                 st.error(translate('ui.invalid_pairwise_characters', default="Both sequences must contain valid characters for the selected type."))
                 st.stop()
@@ -444,10 +458,6 @@ with tool_tabs[0]:
                 st.warning(
                     translate('ui.identical_pairwise_input', default="The two cleaned inputs are identical ({count:,} characters). This is a self-comparison control, so 100% identity is expected.").format(count=len(seq1))
                 )
-            seq_type = bio.detect_sequence_type(seq1) if pairwise_type == "Auto" else pairwise_type.lower()
-            if pairwise_type == "Auto" and bio.detect_sequence_type(seq2) != seq_type:
-                st.error(translate('ui.pairwise_type_mismatch', default="The two sequences must have the same detected type."))
-                st.stop()
             if max(len(seq1), len(seq2)) > config.MAX_ALIGNMENT_SEQUENCE_LENGTH:
                 st.error(translate('ui.pairwise_length_limit', default="Pairwise alignment exceeds the configured sequence-length limit."))
                 st.stop()
@@ -457,15 +467,32 @@ with tool_tabs[0]:
             matrix_name = pairwise_matrix if seq_type == "protein" else "default"
             global_result = needleman_wunsch(seq1, seq2, seq_type=seq_type, gap_open=pairwise_gap_open, gap_extend=pairwise_gap_extend, matrix_name=matrix_name)
             local_result = smith_waterman(seq1, seq2, seq_type=seq_type, gap_open=pairwise_gap_open, gap_extend=pairwise_gap_extend, matrix_name=matrix_name)
+            esm2_similarity_value = None
+            if seq_type == "protein":
+                try:
+                    import numpy as np
+                    from core_engines.esm2_similarity import embed_sequence
+
+                    with st.spinner(translate("ui.esm2_pairwise_spinner", default="Computing complementary ESM-2 cosine similarity...")):
+                        first_embedding = embed_sequence(seq1)
+                        second_embedding = embed_sequence(seq2)
+                    denom = np.linalg.norm(first_embedding) * np.linalg.norm(second_embedding)
+                    if denom > 1e-12:
+                        esm2_similarity_value = float(np.dot(first_embedding, second_embedding) / denom)
+                except Exception as error:
+                    st.warning(translate("ui.esm2_pairwise_error", default="ESM-2 pairwise similarity unavailable: {error}").format(error=error))
             st.markdown(f"**{translate('ui.global_alignment', default='Needleman-Wunsch (global)')}**")
             st.code(global_result["seq1_aligned"] + "\n" + global_result["seq2_aligned"])
             global_stats = aln.alignment_statistics(global_result["seq1_aligned"], global_result["seq2_aligned"])
-            metrics = st.columns(5)
+            metrics = st.columns(6 if esm2_similarity_value is not None else 5)
             metrics[0].metric(translate('ui.identity', default='Identity'), f"{global_stats['identity_percent']:.2f}%")
             metrics[1].metric(translate('ui.matches', default='Matches'), global_stats["matches"])
             metrics[2].metric(translate('ui.mismatches', default='Mismatches'), global_stats["mismatches"])
             metrics[3].metric(translate('ui.gaps', default='Gaps'), global_stats["gaps"])
             metrics[4].metric(translate('ui.score', default='Score'), global_result["alignment_score"])
+            if esm2_similarity_value is not None:
+                metrics[5].metric(translate("ui.esm2_similarity_metric", default="ESM-2 cosine similarity"), f"{esm2_similarity_value:.4f}")
+                st.caption(translate("ui.esm2_pairwise_caption", default="Complementary embedding signal; it is not an identity percentage."))
             st.caption(
                 translate('ui.pairwise_coverage_summary', default="Coverage sequence 1: {first:.1f}% | Coverage sequence 2: {second:.1f}% | Identity without gaps: {identity:.2f}%").format(
                     first=global_stats['aligned_columns_without_gaps'] / len(seq1) * 100,
@@ -498,7 +525,7 @@ with tool_tabs[1]:
     distance_input = st.text_area(translate('ui.distance_input_hint', default="Paste FASTA or one sequence per line:"), height=160, key="independent_distance_input")
     distance_method = st.selectbox(
         translate('ui.method', default="Method"),
-        ["hamming", "jukes_cantor", "kimura", "pam"],
+        DISTANCE_METHODS,
         index=2,
         key="independent_distance_method",
         format_func=lambda value: {
@@ -506,14 +533,19 @@ with tool_tabs[1]:
             "jukes_cantor": translate('ui.distance_method_jukes_cantor', default="Jukes-Cantor"),
             "kimura": translate('ui.distance_method_kimura', default="Kimura"),
             "pam": translate('ui.distance_method_pam', default="PAM"),
+            "embedding_cosine_distance": translate("ui.distance_method_embedding_cosine", default="ESM-2 cosine distance"),
         }[value],
     )
+    distance_seq_type = "protein" if distance_method in {"pam", "embedding_cosine_distance"} else "dna"
     st.info({
         "hamming": translate('ui.distance_method_hamming_help', default="Raw fraction of observed differences."),
         "jukes_cantor": translate('ui.distance_method_jukes_cantor_help', default="Corrects nucleotide distances for repeated substitutions."),
         "kimura": translate('ui.distance_method_kimura_help', default="Separates transitions and transversions in a nucleotide model."),
         "pam": translate('ui.distance_method_pam_help', default="Protein distance; use amino-acid sequences, not DNA."),
+        "embedding_cosine_distance": translate("ui.distance_method_embedding_cosine_help", default="Protein sequences only. Computes 1 - cosine similarity between ESM-2 embeddings; no alignment or evolutionary model is used."),
     }[distance_method])
+    if distance_method == "embedding_cosine_distance":
+        st.caption(_esm2_scope_note())
     if st.button(translate('ui.compute_distance_matrix', default="Compute Distance Matrix"), key="independent_dm_compute"):
         from sequence_loader import parse_fasta
         from core_engines.distance_engine import distance_matrix
@@ -523,7 +555,11 @@ with tool_tabs[1]:
         if len(sequences) < 2:
             st.warning(translate('ui.pairwise_missing', default="Provide at least 2 sequences to build distance matrix."))
         else:
-            result = distance_matrix(sequences, method=distance_method)
+            try:
+                result = distance_matrix(sequences, method=distance_method, seq_type=distance_seq_type)
+            except Exception as error:
+                st.error(translate("ui.distance_matrix_compute_error", default="Distance matrix could not be computed: {error}").format(error=error))
+                st.stop()
             names = result["sequence_names"]
             frame = pd.DataFrame(result["distance_matrix"], index=names, columns=names)
             st.session_state["independent_distance_result"] = result
@@ -539,7 +575,10 @@ with tool_tabs[1]:
                 farthest = max(pairs)
                 st.success(translate('ui.closest_pair', default="Closest pair: {first} and {second} (distance {distance:.6f}).").format(first=closest[1], second=closest[2], distance=closest[0]))
                 st.warning(translate('ui.farthest_pair', default="Most distant pair: {first} and {second} (distance {distance:.6f}).").format(first=farthest[1], second=farthest[2], distance=farthest[0]))
-            st.caption(translate('ui.distance_reference_note', default="Distances use one shared star alignment. The first sequence is the alignment reference."))
+            if distance_method == "embedding_cosine_distance":
+                st.caption(translate("ui.esm2_distance_note", default="This matrix measures embedding proximity, not evolutionary distance; a tree from it is a phenetic clustering, not a phylogenetic inference."))
+            else:
+                st.caption(translate('ui.distance_reference_note', default="Distances use one shared star alignment. The first sequence is the alignment reference."))
             if st.button(translate('ui.use_matrix_for_tree', default="Use this matrix to build the tree"), key="independent_use_matrix_for_tree"):
                 st.session_state["independent_phylogeny_matrix_ready"] = True
                 st.success(translate('ui.matrix_linked_to_phylogeny', default="Matrix linked to Phylogeny. Open the Phylogeny tab and build the tree."))
@@ -589,6 +628,17 @@ with tool_tabs[2]:
                 "neighbor_joining": translate('ui.neighbor_joining_method', default="Neighbor-Joining"),
             }[value],
         )
+        phylogeny_distance_method = st.selectbox(
+            translate("ui.phylogeny_distance_method", default="Distance method for pasted sequences"),
+            DISTANCE_METHODS,
+            index=2,
+            key="independent_phylogeny_distance_method",
+            format_func=lambda value: translate("ui.distance_method_embedding_cosine", default="ESM-2 cosine distance") if value == "embedding_cosine_distance" else value.replace("_", " ").title(),
+        )
+        if phylogeny_distance_method == "embedding_cosine_distance":
+            st.caption(_esm2_scope_note())
+    else:
+        phylogeny_distance_method = "kimura"
     bootstrap_replicates = 1000
     if phylogeny_engine == "IQ-TREE (ModelFinder + bootstrap)":
         bootstrap_replicates = st.select_slider(
@@ -718,7 +768,12 @@ with tool_tabs[2]:
                 st.warning(translate("ui.phylogeny_missing", default="Provide at least 2 sequences to build a phylogenetic tree."))
                 distances = None
             else:
-                distances = distance_matrix(sequences, method="kimura")
+                seq_type = "protein" if phylogeny_distance_method in {"pam", "embedding_cosine_distance"} else "dna"
+                try:
+                    distances = distance_matrix(sequences, method=phylogeny_distance_method, seq_type=seq_type)
+                except Exception as error:
+                    st.error(f"Tree distance matrix could not be computed: {error}")
+                    distances = None
             names = distances["sequence_names"] if distances else []
         if distances:
             builder = upgma if phylogeny_method == "upgma" else neighbor_joining
@@ -731,7 +786,8 @@ with tool_tabs[2]:
                 method="upgma" if phylogeny_method == "upgma" else "nj",
                 meta={
                     "distance_method": distances.get("method", "kimura"),
-                    "n_sites": len(aligned_sequences[0]) if aligned_sequences else None,
+                    "distance_unit": "cosine distance" if distances.get("method") == "embedding_cosine_distance" else "substitutions / site",
+                    "n_sites": len(aligned_sequences[0]) if aligned_sequences and distances.get("method") != "embedding_cosine_distance" else None,
                     "aligner": distances.get("alignment_method"),
                     "engine": tree.get("algorithm"),
                 },
@@ -740,6 +796,8 @@ with tool_tabs[2]:
                 dist_matrix=distances["distance_matrix"],
                 key=f"independent_{phylogeny_method}",
             )
+            if distances.get("method") == "embedding_cosine_distance":
+                st.warning(translate("ui.esm2_tree_warning", default="This is a phenetic tree from ESM-2 embedding distances, not a phylogenetic tree based on evolutionary substitutions."))
             if tree.get("newick"):
                 st.code(tree["newick"])
                 st.download_button(translate('ui.download_newick', default="Download Newick"), tree["newick"], file_name="phylogeny_tree.nwk", mime="text/plain", key="independent_newick_download")
@@ -902,6 +960,34 @@ with tool_tabs[3]:
                 st.markdown(f"- {line}")
             st.caption(translate("ui.interp_disclaimer", default="These are sequence-based estimates, not experimental measurements."))
 
+            st.markdown(f"##### {translate('ui.esm2_protein_heading', default='Functional neighbors (ESM-2)')}")
+            st.caption(_esm2_scope_note())
+            try:
+                from core_engines.esm2_similarity import find_similar_by_embedding
+
+                with st.spinner(translate("ui.esm2_index_spinner", default="Searching the ESM-2 protein reference index...")):
+                    esm2_hits = find_similar_by_embedding(cleaned, top_n=12)
+                if esm2_hits:
+                    esm2_rows = []
+                    for hit in esm2_hits:
+                        annotation_parts = []
+                        for source, terms in hit.get("annotation", {}).items():
+                            for term in terms:
+                                label = term.get("term_desc") or term.get("term_id")
+                                if label:
+                                    annotation_parts.append(f"{source}: {label}")
+                        esm2_rows.append({
+                            translate("ui.esm2_accession_column", default="Accession"): hit["accession"],
+                            translate("ui.esm2_organism_column", default="Organism"): hit["organism"],
+                            translate("ui.esm2_similarity_column", default="ESM-2 cosine similarity"): hit["esm2_cosine_similarity"],
+                            translate("ui.esm2_annotation_column", default="Annotation"): " | ".join(annotation_parts[:5]) or translate("ui.esm2_not_available", default="Not available"),
+                        })
+                    st.dataframe(esm2_rows, width="stretch", hide_index=True)
+                else:
+                    st.info(translate("ui.esm2_no_neighbors", default="No ESM-2 neighbors were returned for this sequence."))
+            except Exception as error:
+                st.error(translate("ui.esm2_search_error", default="ESM-2 search is unavailable: {error}").format(error=error))
+
             st.plotly_chart(viz.plot_amino_acid_bar(result["amino_acid_distribution"]), width="stretch")
             import json
             import pandas as pd
@@ -935,5 +1021,22 @@ with tool_tabs[3]:
                     key="independent_protein_export_csv",
                 )
 
+    # LIVE_ANNOTATION_PANEL (DIAMOND + Pfam en direct ; hors du bloc 'Analyze protein')
+    try:
+        import logging as _logging_live
+        import pandas as _pd_live
+        from core_engines.live_annotation import render_live_annotation_panel
+        _live_header, _live_seq = bio.parse_fasta_input((protein_input or "").strip())
+        _live_clean = bio.clean_sequence(_live_seq, sequence_type="protein")
+        _live_ok, _live_msg = bio.validate_sequence(_live_clean, sequence_type="protein")
+        if _live_clean and _live_ok:
+            render_live_annotation_panel(
+                st, translate, _pd_live, _live_clean, "protein",
+                ("independent_tools", len(_live_clean), _live_clean[:40]),
+                _logging_live.getLogger(__name__), bio,
+            )
+    except Exception as _live_error:
+        st.warning(f"Live annotation unavailable: {_live_error}")
+
 with tool_tabs[4]:
-    tr.render_trait_research_tab("Data/clean/species/test_output")
+    tr.render_trait_research_tab()

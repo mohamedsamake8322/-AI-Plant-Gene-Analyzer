@@ -15,5 +15,11 @@ python-dotenv>=1.0.0
 psycopg[binary]>=3.1.0
 psycopg_pool>=1.0.0
 
+# Optional ESM-2 protein embedding search and its dedicated PostgreSQL reader.
+torch>=2.0.0
+transformers>=4.40.0
+psycopg2-binary>=2.9.9
+python-docx>=1.1.0
+
 # External bioinformatics engines are installed as Ubuntu/WSL2 binaries,
 # not through pip: mafft, muscle, clustalw, and iqtree2.

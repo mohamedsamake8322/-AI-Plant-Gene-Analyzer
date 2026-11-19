@@ -1,0 +1,109 @@
+.venv) PS C:\Downloads\IA> python scripts\diagnose_plaza_view.py --species oryza_sativa
+registre : {'assemblage': 'oryza_sativa', 'assembly': 'GCF_001433935.1', 'status': 'published', 'enabled': True}
+A. filtre 'plaza_concordant_proteins' présent dans la vue en base : True
+   dernière actualisation (vue) : voir publish_species / audit ; vue peuplée : True
+liens PLAZA : protéines 38605 | sans aucun lien concordant 5013
+B. colonnes remplies dans v_gene_text :
+   {'a_lien_concordant': False, 'proteines': 5013, 'go_text': 0, 'interpro_text': 0, 'trait_text': 0, 'plaza_gene_id': 0}
+   {'a_lien_concordant': True, 'proteines': 33592, 'go_text': 29301, 'interpro_text': 29723, 'trait_text': 32295, 'plaza_gene_id': 33592}
+   sources d'annotation des protéines discordantes seules :
+     {'source': 'go_plaza', 'lignes': 305185, 'proteines': 3734}
+     {'source': 'interpro', 'lignes': 14188, 'proteines': 3408}
+     {'source': 'description', 'lignes': 6071, 'proteines': 5010}
+     {'source': 'mapman', 'lignes': 5933, 'proteines': 4910}
+     {'source': 'refseq_product', 'lignes': 5335, 'proteines': 5013}
+C. termes PLAZA testés : 2267 | colonne où le texte se retrouve : {'go_text': 0, 'interpro_text': 0, 'pfam_text': 14, 'description': 14, 'trait_text': 0, 'gene_symbol': 0, 'aucune_colonne': 2248}
+    {'protein': 'XP_015626607.1', 'source': 'interpro', 'term': 'JmjC domain IPR003347', 'trouvé_dans': ['pfam_text']}
+    {'protein': 'XP_015617713.1', 'source': 'interpro', 'term': 'Integrator complex subunit 7 IPR033060', 'trouvé_dans': ['pfam_text']}
+    {'protein': 'XP_025882120.1', 'source': 'interpro', 'term': 'Armadillo-like helical IPR011989', 'trouvé_dans': ['description']}
+    {'protein': 'XP_015648215.1', 'source': 'interpro', 'term': 'Protein kinase domain IPR000719', 'trouvé_dans': ['pfam_text']}
+    {'protein': 'XP_015648215.1', 'source': 'interpro', 'term': 'Protein kinase domain IPR000719', 'trouvé_dans': ['pfam_text']}
+    {'protein': 'XP_015648593.1', 'source': 'interpro', 'term': 'Myb/SANT-like domain IPR024752', 'trouvé_dans': ['description']}
+    {'protein': 'XP_015634845.1', 'source': 'interpro', 'term': 'F-box domain IPR001810', 'trouvé_dans': ['pfam_text', 'description']}
+    {'protein': 'XP_025877789.1', 'source': 'interpro', 'term': 'NB-ARC IPR002182', 'trouvé_dans': ['pfam_text', 'description']}
+    {'protein': 'XP_015631141.1', 'source': 'interpro', 'term': 'Cytochrome P450 IPR001128', 'trouvé_dans': ['pfam_text', 'description']}
+    {'protein': 'XP_015620052.1', 'source': 'interpro', 'term': 'Cation/H+ exchanger IPR006153', 'trouvé_dans': ['description']}
+    {'protein': 'XP_015651030.1', 'source': 'interpro', 'term': 'Domain of unknown function DUF547 IPR006869', 'trouvé_dans': ['description']}
+    {'protein': 'XP_015639139.1', 'source': 'interpro', 'term': 'DnaJ domain IPR001623', 'trouvé_dans': ['pfam_text', 'description']}
+écrit : C:\Downloads\IA\results\diagnose_plaza_view_oryza_sativa.json
+(.venv) PS C:\Downloads\IA> python scripts\diagnose_plaza_view.py --species zea_mays
+registre : {'assemblage': 'zea_mays', 'assembly': 'GCF_902167145.1', 'status': 'published', 'enabled': True}
+A. filtre 'plaza_concordant_proteins' présent dans la vue en base : True
+   dernière actualisation (vue) : voir publish_species / audit ; vue peuplée : True
+liens PLAZA : protéines 22975 | sans aucun lien concordant 5686
+B. colonnes remplies dans v_gene_text :
+   {'a_lien_concordant': False, 'proteines': 60, 'go_text': 0, 'interpro_text': 0, 'trait_text': 0, 'plaza_gene_id': 0}
+   {'a_lien_concordant': True, 'proteines': 17289, 'go_text': 15835, 'interpro_text': 15738, 'trait_text': 0, 'plaza_gene_id': 17289}
+   sources d'annotation des protéines discordantes seules :
+     {'source': 'go_plaza', 'lignes': 18091, 'proteines': 54}
+     {'source': 'interpro', 'lignes': 830, 'proteines': 47}
+     {'source': 'mapman', 'lignes': 143, 'proteines': 60}
+     {'source': 'maizegdb_locus_id', 'lignes': 140, 'proteines': 60}
+     {'source': 'refseq_product', 'lignes': 60, 'proteines': 60}
+C. termes PLAZA testés : 9528 | colonne où le texte se retrouve : {'go_text': 0, 'interpro_text': 0, 'pfam_text': 52, 'description': 0, 'trait_text': 0, 'gene_symbol': 0, 'aucune_colonne': 9476}
+    {'protein': 'NP_001310850.1', 'source': 'interpro', 'term': 'UBX domain IPR001012', 'trouvé_dans': ['pfam_text']}
+    {'protein': 'NP_001147283.1', 'source': 'interpro', 'term': 'Ribosomal protein S28e IPR000289', 'trouvé_dans': ['pfam_text']}
+    {'protein': 'NP_001147283.1', 'source': 'interpro', 'term': 'Ribosomal protein S28e IPR000289', 'trouvé_dans': ['pfam_text']}
+    {'protein': 'NP_001147283.1', 'source': 'interpro', 'term': 'Ribosomal protein S28e IPR000289', 'trouvé_dans': ['pfam_text']}
+    {'protein': 'NP_001148439.1', 'source': 'interpro', 'term': 'Chlorophyll A-B binding protein IPR022796', 'trouvé_dans': ['pfam_text']}
+    {'protein': 'XP_008677980.1', 'source': 'interpro', 'term': 'Saposin-like type B, region 1 IPR007856', 'trouvé_dans': ['pfam_text']}
+    {'protein': 'XP_008677980.1', 'source': 'interpro', 'term': 'Saposin-like type B, region 1 IPR007856', 'trouvé_dans': ['pfam_text']}
+    {'protein': 'XP_008677980.1', 'source': 'interpro', 'term': 'Saposin-like IPR011001', 'trouvé_dans': ['pfam_text']}
+    {'protein': 'XP_008660204.1', 'source': 'interpro', 'term': 'EF-hand domain IPR002048', 'trouvé_dans': ['pfam_text']}
+    {'protein': 'XP_008660204.1', 'source': 'interpro', 'term': 'EF-hand domain IPR002048', 'trouvé_dans': ['pfam_text']}
+    {'protein': 'XP_008660204.1', 'source': 'interpro', 'term': 'EF-hand domain IPR002048', 'trouvé_dans': ['pfam_text']}
+    {'protein': 'XP_008660204.1', 'source': 'interpro', 'term': 'EF-hand domain pair IPR011992', 'trouvé_dans': ['pfam_text']}
+écrit : C:\Downloads\IA\results\diagnose_plaza_view_zea_mays.json
+(.venv) PS C:\Downloads\IA> python scripts\check_plaza_rule_in_search.py --species oryza_sativa
+dim_gene_protein : ['assembly_name', 'gene_source', 'gene_id', 'protein_accession', 'chr', 'start_pos', 'stop_pos', 'strand', 'gene_symbol', 'locus_tag', 'coordinate_concordance']
+v_gene_text      : ['species', 'assembly_accession', 'protein_accession', 'plaza_gene_id', 'gene_symbol', 'description', 'go_text', 'pfam_text', 'interpro_text', 'trait_text', 'qtl_evidence', 'search_text', 'search_vector']
+
+Colonne de concordance utilisée : coordinate_concordance  (candidates : ['coordinate_concordance'])
+Répartition des liens (valeur, liens, protéines) : [('None', 42578, 42578), ('concordant', 33624, 33592), ('discordant', 7986, 6778)]
+Annotations actives par source : [('go_plaza', 3417934, 33035), ('interpro', 185529, 33131), ('refseq_product', 46239, 42580), ('mapman', 42213, 38230), ('description', 41588, 38586)]
+
+[None] protéines : 0 | échantillon : 0 | avec annotations PLAZA : 0 | avec termes PLAZA dans le texte de recherche : 0 (None)
+
+[concordant] protéines : 31827 | échantillon : 40 | avec annotations PLAZA : 40 | avec termes PLAZA dans le texte de recherche : 38 (0.95)
+   ex: {'protein': 'XP_015632428.1', 'plaza_sources_found_in_search_text': ['go_plaza', 'interpro']}
+   ex: {'protein': 'XP_025878439.1', 'plaza_sources_found_in_search_text': ['go_plaza', 'interpro']}
+   ex: {'protein': 'XP_025883302.1', 'plaza_sources_found_in_search_text': ['go_plaza', 'interpro']}
+
+[discordant] protéines : 5013 | échantillon : 40 | avec annotations PLAZA : 39 | avec termes PLAZA dans le texte de recherche : 8 (0.205)
+   ex: {'protein': 'XP_015643239.1', 'plaza_sources_found_in_search_text': ['interpro']}
+   ex: {'protein': 'XP_015637130.1', 'plaza_sources_found_in_search_text': ['interpro']}
+   ex: {'protein': 'XP_015635506.1', 'plaza_sources_found_in_search_text': ['interpro']}
+
+Lecture : si 'concordant' est élevé et 'discordant'/'non_verifiable' proche de 0 -> règle appliquée.
+          si les trois sont élevés -> règle NON appliquée (à corriger).
+          si tout est proche de 0 -> le texte de recherche ne contient pas de PLAZA du tout.
+
+Rapport : C:\Downloads\IA\results\plaza_rule_check_oryza_sativa.json
+(.venv) PS C:\Downloads\IA> python scripts\check_plaza_rule_in_search.py --species zea_mays
+dim_gene_protein : ['assembly_name', 'gene_source', 'gene_id', 'protein_accession', 'chr', 'start_pos', 'stop_pos', 'strand', 'gene_symbol', 'locus_tag', 'coordinate_concordance']
+v_gene_text      : ['species', 'assembly_accession', 'protein_accession', 'plaza_gene_id', 'gene_symbol', 'description', 'go_text', 'pfam_text', 'interpro_text', 'trait_text', 'qtl_evidence', 'search_text', 'search_vector']
+
+Colonne de concordance utilisée : coordinate_concordance  (candidates : ['coordinate_concordance'])
+Répartition des liens (valeur, liens, protéines) : [('None', 57345, 57345), ('concordant', 17289, 17289), ('non_verifiable', 5791, 5626), ('discordant', 514, 241)]
+Annotations actives par source : [('go_plaza', 1947640, 15889), ('interpro', 90514, 15785), ('refseq_product', 57345, 57345), ('mapman', 18638, 17349), ('maizegdb_locus_id', 17803, 17349)]
+
+[None] protéines : 0 | échantillon : 0 | avec annotations PLAZA : 0 | avec termes PLAZA dans le texte de recherche : 0 (None)
+
+[concordant] protéines : 17108 | échantillon : 40 | avec annotations PLAZA : 40 | avec termes PLAZA dans le texte de recherche : 35 (0.875)
+   ex: {'protein': 'XP_008668643.1', 'plaza_sources_found_in_search_text': ['go_plaza', 'interpro']}
+   ex: {'protein': 'NP_001288484.1', 'plaza_sources_found_in_search_text': ['go_plaza', 'interpro']}
+   ex: {'protein': 'NP_001147791.1', 'plaza_sources_found_in_search_text': ['go_plaza', 'interpro']}
+
+[non_verifiable] protéines : 5626 | échantillon : 40 | avec annotations PLAZA : 0 | avec termes PLAZA dans le texte de recherche : 0 (None)
+
+[discordant] protéines : 60 | échantillon : 40 | avec annotations PLAZA : 40 | avec termes PLAZA dans le texte de recherche : 10 (0.25)
+   ex: {'protein': 'NP_043027.1', 'plaza_sources_found_in_search_text': ['interpro']}
+   ex: {'protein': 'XP_008677980.1', 'plaza_sources_found_in_search_text': ['interpro']}
+   ex: {'protein': 'NP_001147474.1', 'plaza_sources_found_in_search_text': ['interpro']}
+
+Lecture : si 'concordant' est élevé et 'discordant'/'non_verifiable' proche de 0 -> règle appliquée.
+          si les trois sont élevés -> règle NON appliquée (à corriger).
+          si tout est proche de 0 -> le texte de recherche ne contient pas de PLAZA du tout.
+
+Rapport : C:\Downloads\IA\results\plaza_rule_check_zea_mays.json
+(.venv) PS C:\Downloads\IA>

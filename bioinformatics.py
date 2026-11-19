@@ -414,23 +414,13 @@ def hydrophobicity_profile(sequence: str, window: int = 19) -> dict[str, object]
 
 
 def calculate_net_charge(sequence: str, ph: float) -> float:
-    """Estimate net charge at one pH using the module's pKa model."""
-    sequence = sequence.upper()
-    counts = {aa: sequence.count(aa) for aa in RESIDUE_MONOISOTOPIC_MASS}
-    positive = (
-        1 / (1 + 10 ** (ph - PKA_TERMINI["N_term"]))
-        + counts.get("K", 0) * (1 / (1 + 10 ** (ph - PKA_TERMINI["K"])))
-        + counts.get("R", 0) * (1 / (1 + 10 ** (ph - PKA_TERMINI["R"])))
-        + counts.get("H", 0) * (1 / (1 + 10 ** (ph - PKA_TERMINI["H"])))
+    """Return ProtParam's estimated net charge for standard residues at pH."""
+    standard_sequence = "".join(
+        residue for residue in sequence.upper() if residue in STANDARD_AMINO_ACIDS
     )
-    negative = (
-        1 / (1 + 10 ** (PKA_TERMINI["C_term"] - ph))
-        + counts.get("D", 0) * (1 / (1 + 10 ** (PKA_TERMINI["D"] - ph)))
-        + counts.get("E", 0) * (1 / (1 + 10 ** (PKA_TERMINI["E"] - ph)))
-        + counts.get("C", 0) * (1 / (1 + 10 ** (PKA_TERMINI["C"] - ph)))
-        + counts.get("Y", 0) * (1 / (1 + 10 ** (PKA_TERMINI["Y"] - ph)))
-    )
-    return positive - negative
+    if not standard_sequence:
+        return 0.0
+    return float(ProteinAnalysis(standard_sequence).charge_at_pH(ph))
 
 
 def charge_profile(sequence: str, step: float = 0.5) -> dict[str, object]:
@@ -484,6 +474,8 @@ def generate_protein_statistics(sequence: str) -> dict:
         "length": len(sequence),
         "amino_acid_distribution": dist,
         "unique_residues": len([v for v in dist["counts"].values() if v > 0]),
+        "analyzed_residue_count": props["analyzed_residue_count"],
+        "excluded_nonstandard_residue_count": props["excluded_nonstandard_residue_count"],
         "molecular_weight": props["molecular_weight"],
         "isoelectric_point": props["isoelectric_point"],
         "hydrophobicity": props["hydrophobicity"],
@@ -537,14 +529,19 @@ PKA_TERMINI = {
 
 
 def protein_properties(sequence: str) -> dict[str, float]:
-    """Compute protein biochemical metrics."""
-    valid_sequence = "".join(residue for residue in sequence.upper() if residue in KYTE_DOOLITTLE_SCALE and residue != "X")
+    """Compute standard-residue properties using Biopython's ProtParam model."""
+    valid_sequence = "".join(
+        residue for residue in sequence.upper() if residue in STANDARD_AMINO_ACIDS
+    )
     length = len(sequence)
-    molecular_weight = calculate_molecular_weight(valid_sequence)
-    hydrophobicity = calculate_hydrophobicity(valid_sequence)
-    isoelectric_point = estimate_isoelectric_point(valid_sequence)
+    analysis = ProteinAnalysis(valid_sequence) if valid_sequence else None
+    molecular_weight = analysis.molecular_weight() if analysis else 0.0
+    hydrophobicity = analysis.gravy() if analysis else 0.0
+    isoelectric_point = analysis.isoelectric_point() if analysis else 0.0
     return {
         "length": length,
+        "analyzed_residue_count": len(valid_sequence),
+        "excluded_nonstandard_residue_count": length - len(valid_sequence),
         "molecular_weight": round(molecular_weight, 2),
         "hydrophobicity": round(hydrophobicity, 2),
         "isoelectric_point": round(isoelectric_point, 2),
@@ -578,9 +575,16 @@ def calculate_instability_proxy(sequence: str) -> float:
 
 def calculate_aliphatic_index(sequence: str) -> float:
     """Estimate aliphatic index from Ala, Val, Ile and Leu fractions."""
-    if not sequence:
+    standard_sequence = "".join(
+        residue for residue in sequence.upper() if residue in STANDARD_AMINO_ACIDS
+    )
+    if not standard_sequence:
         return 0.0
-    return 100 * (sequence.count("A") + 2.9 * sequence.count("V") + 3.9 * (sequence.count("I") + sequence.count("L"))) / len(sequence)
+    return 100 * (
+        standard_sequence.count("A")
+        + 2.9 * standard_sequence.count("V")
+        + 3.9 * (standard_sequence.count("I") + standard_sequence.count("L"))
+    ) / len(standard_sequence)
 
 
 # Mass of one water molecule (Da). NOTE: the values in RESIDUE_MONOISOTOPIC_MASS
@@ -594,53 +598,27 @@ WATER_MASS = 18.02
 
 
 def calculate_molecular_weight(sequence: str) -> float:
-    """Estimate the average molecular weight of a protein sequence (Da)."""
-    if not sequence:
-        return 0.0
-    total_free_mass = sum(RESIDUE_MONOISOTOPIC_MASS.get(res, 110.0) for res in sequence)
-    water_released = (len(sequence) - 1) * WATER_MASS
-    return total_free_mass - water_released
+    """Return ProtParam's average molecular weight for standard residues (Da)."""
+    standard_sequence = "".join(
+        residue for residue in sequence.upper() if residue in STANDARD_AMINO_ACIDS
+    )
+    return ProteinAnalysis(standard_sequence).molecular_weight() if standard_sequence else 0.0
 
 
 def calculate_hydrophobicity(sequence: str) -> float:
-    """Average Kyte-Doolittle hydrophobicity."""
-    if not sequence:
-        return 0.0
-    values = [KYTE_DOOLITTLE_SCALE.get(res, 0.0) for res in sequence]
-    return sum(values) / len(values)
+    """Return ProtParam's average Kyte-Doolittle hydropathy for standard residues."""
+    standard_sequence = "".join(
+        residue for residue in sequence.upper() if residue in STANDARD_AMINO_ACIDS
+    )
+    return ProteinAnalysis(standard_sequence).gravy() if standard_sequence else 0.0
 
 
 def estimate_isoelectric_point(sequence: str) -> float:
-    """Estimate protein isoelectric point using a simple pH scan."""
-    if not sequence:
-        return 0.0
-
-    counts = {aa: sequence.count(aa) for aa in RESIDUE_MONOISOTOPIC_MASS}
-
-    def charge_at_ph(ph: float) -> float:
-        positive = (
-            1 / (1 + 10 ** (ph - PKA_TERMINI["N_term"]))
-            + counts.get("K", 0) * (1 / (1 + 10 ** (ph - PKA_TERMINI["K"])))
-            + counts.get("R", 0) * (1 / (1 + 10 ** (ph - PKA_TERMINI["R"])))
-            + counts.get("H", 0) * (1 / (1 + 10 ** (ph - PKA_TERMINI["H"])))
-        )
-        negative = (
-            1 / (1 + 10 ** (PKA_TERMINI["C_term"] - ph))
-            + counts.get("D", 0) * (1 / (1 + 10 ** (PKA_TERMINI["D"] - ph)))
-            + counts.get("E", 0) * (1 / (1 + 10 ** (PKA_TERMINI["E"] - ph)))
-            + counts.get("C", 0) * (1 / (1 + 10 ** (PKA_TERMINI["C"] - ph)))
-            + counts.get("Y", 0) * (1 / (1 + 10 ** (PKA_TERMINI["Y"] - ph)))
-        )
-        return positive - negative
-
-    low, high = 0.0, 14.0
-    for _ in range(25):
-        mid = (low + high) / 2
-        if charge_at_ph(mid) > 0:
-            low = mid
-        else:
-            high = mid
-    return (low + high) / 2
+    """Return ProtParam's estimated isoelectric point for standard residues."""
+    standard_sequence = "".join(
+        residue for residue in sequence.upper() if residue in STANDARD_AMINO_ACIDS
+    )
+    return ProteinAnalysis(standard_sequence).isoelectric_point() if standard_sequence else 0.0
 
 
 STOP_CODONS = {"TAA", "TAG", "TGA"}

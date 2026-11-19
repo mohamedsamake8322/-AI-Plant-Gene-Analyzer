@@ -992,7 +992,7 @@ def find_kmer_candidates(
             return [(row[0], float(row[1])) for row in cur.fetchall() if row[0]]
 
 
-def get_gene_count() -> int:
+def _legacy_get_gene_count() -> int:
     """Cheap COUNT(*) for the sidebar header — never materializes rows."""
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -1000,7 +1000,7 @@ def get_gene_count() -> int:
             return cur.fetchone()[0]
 
 
-def get_gc_content_stats_for_organism(organism: str) -> dict[str, float | int]:
+def _legacy_get_gc_content_stats_for_organism(organism: str) -> dict[str, float | int]:
     """Return mean and standard deviation of GC% for sequence-backed genes."""
     if not organism:
         return {"mean_gc": 0.0, "stdev_gc": 0.0, "n_sequences": 0}
@@ -1028,7 +1028,7 @@ def get_gc_content_stats_for_organism(organism: str) -> dict[str, float | int]:
     }
 
 
-def get_codon_usage_for_organism(organism: str) -> dict[str, float]:
+def _legacy_get_codon_usage_for_organism(organism: str) -> dict[str, float]:
     """Return per-codon frequencies aggregated server-side for an organism."""
     if not organism:
         return {}
@@ -1054,7 +1054,7 @@ def get_codon_usage_for_organism(organism: str) -> dict[str, float]:
             return {codon: float(frequency) for codon, frequency in cur.fetchall()}
 
 
-def get_length_stats_for_organism(organism: str) -> dict[str, float | int]:
+def _legacy_get_length_stats_for_organism(organism: str) -> dict[str, float | int]:
     """Return mean and standard deviation of sequence lengths by organism."""
     if not organism:
         return {"mean_length": 0.0, "stdev_length": 0.0, "n_sequences": 0}
@@ -1076,7 +1076,7 @@ def get_length_stats_for_organism(organism: str) -> dict[str, float | int]:
     }
 
 
-def get_codon_reference_for_organism(organism: str) -> dict[str, object]:
+def _legacy_get_codon_reference_for_organism(organism: str) -> dict[str, object]:
     """Return codon frequencies plus the number of organism sequences."""
     if not organism:
         return {"value": {}, "n": 0}
@@ -1105,7 +1105,7 @@ def get_codon_reference_for_organism(organism: str) -> dict[str, object]:
     return {"value": {codon: float(frequency) for codon, frequency in (usage or {}).items()}, "n": int(n_sequences or 0)}
 
 
-def search_gene_metadata(query: str | None, limit: int = 20, offset: int = 0) -> list[dict]:
+def _legacy_search_gene_metadata(query: str | None, limit: int = 20, offset: int = 0) -> list[dict]:
     """Server-side metadata search: only `limit` rows are ever pulled into
     the app, regardless of how large the genes table is. Runs ILIKE across
     the indexed text columns (see the pg_trgm GIN indexes in create_tables)
@@ -1151,7 +1151,7 @@ def search_gene_metadata(query: str | None, limit: int = 20, offset: int = 0) ->
     return records
 
 
-def count_gene_metadata_matches(query: str | None) -> int:
+def _legacy_count_gene_metadata_matches(query: str | None) -> int:
     """Matching row count for the same filter search_gene_metadata applies —
     lets the UI show "showing 20 of N" without pulling all N rows."""
     q = (query or "").strip()
@@ -1497,6 +1497,58 @@ def load_json_records(path: Path) -> list[dict]:
         return [raw]
     raise ValueError("Unsupported JSON format for gene records")
 
+
+# BIOINFO_WIRING: enveloppes vers bioinfo_pipeline (USE_BIOINFO=1) ; anciens corps conserves (_legacy_<nom>)
+def _bioinfo_reader():
+    import sys as _sys
+    from pathlib import Path as _Path
+    root = str(_Path(__file__).resolve().parent.parent)
+    if root not in _sys.path:
+        _sys.path.insert(0, root)
+    from core_engines import bioinfo_reader
+    return bioinfo_reader if bioinfo_reader.is_enabled() else None
+
+def get_gene_count():
+    _br = _bioinfo_reader()
+    if _br is not None:
+        return _br.get_gene_count()
+    return _legacy_get_gene_count()
+
+def get_gc_content_stats_for_organism(organism: str):
+    _br = _bioinfo_reader()
+    if _br is not None:
+        return _br.get_gc_content_stats_for_organism(organism)
+    return _legacy_get_gc_content_stats_for_organism(organism)
+
+def get_codon_usage_for_organism(organism: str):
+    _br = _bioinfo_reader()
+    if _br is not None:
+        return _br.get_codon_usage_for_organism(organism)
+    return _legacy_get_codon_usage_for_organism(organism)
+
+def get_length_stats_for_organism(organism: str):
+    _br = _bioinfo_reader()
+    if _br is not None:
+        return _br.get_length_stats_for_organism(organism)
+    return _legacy_get_length_stats_for_organism(organism)
+
+def get_codon_reference_for_organism(organism: str):
+    _br = _bioinfo_reader()
+    if _br is not None:
+        return _br.get_codon_reference_for_organism(organism)
+    return _legacy_get_codon_reference_for_organism(organism)
+
+def search_gene_metadata(query: str | None, limit: int = 20, offset: int = 0):
+    _br = _bioinfo_reader()
+    if _br is not None:
+        return _br.search_gene_metadata(query, limit, offset)
+    return _legacy_search_gene_metadata(query, limit, offset)
+
+def count_gene_metadata_matches(query: str | None):
+    _br = _bioinfo_reader()
+    if _br is not None:
+        return _br.count_gene_metadata_matches(query)
+    return _legacy_count_gene_metadata_matches(query)
 
 if __name__ == "__main__":
     import argparse

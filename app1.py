@@ -687,7 +687,7 @@ def render_independent_tools() -> None:
                 st.plotly_chart(viz.plot_amino_acid_bar(result["amino_acid_distribution"]), width="stretch")
 
     with tool_tabs[4]:
-        tr.render_trait_research_tab("Data/clean/species")
+        tr.render_trait_research_tab()
 
 
 # ─── Analysis pipeline ─────────────────────────────────────────────────────────

@@ -13,6 +13,7 @@ import external_tools
 import numpy as np
 import phylogeny_engine as phylo
 from Bio import Phylo
+from Bio.SeqUtils.ProtParam import ProteinAnalysis
 from io import StringIO
 from unittest.mock import MagicMock, patch
 import phylo_view
@@ -425,6 +426,39 @@ class TestProteinProperties:
         assert proxy_index == pytest.approx(27.4705882353, abs=1e-10)
         assert reference_index != pytest.approx(proxy_index)
         assert bio.generate_protein_statistics(sequence)["instability_index"] == pytest.approx(17.57)
+
+    def test_protein_properties_match_protparam_for_rice_photosystem_d1(self):
+        sequence = (
+            "MTAILERRESTSLWGRFCNWITSTENRLYIGWFGVLMIPTLLTATSVFIIAFIAAPPVDIDGIREPVSGSLLYGNNIISG"
+            "AIIPTSAAIGLHFYPIWEAASVDEWLYNGGPYELIVLHFLLGVACYMGREWELSFRLGMRPWIAVAYSAPVAAATAVFLI"
+            "YPIGQGSFSDGMPLGISGTFNFMIVFQAEHNILMHPFHMLGVAGVFGGSLFSAMHGSLVTSSLIRETTENESANEGYRFG"
+            "QEEETYNIVAAHGYFGRLIFQYASFNNSRSLHFFLAAWPVVGIWFTALGISTMAFNLNGFNFNQSVVDSQGRVINTWADI"
+            "INRANLGMEVMHERNAHNFPLDLAALEVPSLNG"
+        )
+        reference = ProteinAnalysis(sequence)
+        properties = bio.protein_properties(sequence)
+        statistics = bio.generate_protein_statistics(sequence)
+
+        assert len(sequence) == 353
+        assert properties["molecular_weight"] == pytest.approx(reference.molecular_weight(), abs=0.01)
+        assert properties["isoelectric_point"] == pytest.approx(reference.isoelectric_point(), abs=0.01)
+        assert properties["gravy"] == pytest.approx(reference.gravy(), abs=0.01)
+        assert properties["instability_index"] == pytest.approx(reference.instability_index(), abs=0.01)
+        assert properties["aliphatic_index"] == pytest.approx(97.31, abs=0.01)
+        assert properties["analyzed_residue_count"] == 353
+        assert properties["excluded_nonstandard_residue_count"] == 0
+        assert statistics["amino_acid_distribution"]["counts"]["A"] == 34
+        assert statistics["amino_acid_distribution"]["counts"]["L"] == 33
+        assert statistics["cysteine_analysis"]["positions"] == [18, 125]
+        assert statistics["hydrophobicity_profile"]["points"]
+
+    def test_ambiguous_residues_are_excluded_from_protparam_metrics(self):
+        properties = bio.protein_properties("ACDXBZ*")
+
+        assert properties["length"] == 7
+        assert properties["analyzed_residue_count"] == 3
+        assert properties["excluded_nonstandard_residue_count"] == 4
+        assert properties["molecular_weight"] == pytest.approx(ProteinAnalysis("ACD").molecular_weight(), abs=0.01)
 
     def test_profiles_and_motifs_use_explicit_positions(self):
         sequence = "MNNSTACNPSYTC"

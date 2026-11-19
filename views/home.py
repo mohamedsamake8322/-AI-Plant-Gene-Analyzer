@@ -31,6 +31,7 @@ import config
 import pipeline
 import trait_research as tr
 from i18n import translate, language_selector, current_lang, translate_input_type
+from analysis_state import build_analysis_signature, should_reuse_cached_results
 
 SCRIPT_ROOT = Path(__file__).resolve().parent.parent  # project root (this file now lives in views/)
 sys.path.insert(0, str(SCRIPT_ROOT / "scripts"))
@@ -292,19 +293,6 @@ def load_gene_database_cached(db_path: str = str(config.DATABASE_PATH)) -> dict:
 
         db = sim.load_gene_database(str(fallback_path))
         logger.info(f"Loaded {len(db)} genes from database")
-        try:
-            # Build a k-mer index once per cached load to accelerate
-            # similarity prefilters. This mutates `db` in-place so the
-            # cached object contains the precomputed `_kmers` sets.
-            if isinstance(db, dict):
-                try:
-                    sim._ensure_kmer_index(db)
-                    logger.info("K-mer index built for database (cached)")
-                except Exception as e:
-                    logger.warning(f"K-mer index build failed: {e}")
-        except Exception:
-            # Keep original behavior if anything goes wrong here.
-            pass
         return db
 
     except json.JSONDecodeError as e:
@@ -497,24 +485,14 @@ with st.sidebar:
         st.markdown(f"### {translate('ui.database')}")
 
     db = None
-    metadata = None
     metadata_available = False
-
-    if config.USE_POSTGRES and get_gene_count is not None and search_gene_metadata is not None:
-        try:
-            # A cheap COUNT(*) rather than materializing all ~56k rows just
-            # to call len() on them. Cached for 5 minutes so a widget
-            # interaction elsewhere on the page doesn't re-issue it.
-            # Always computed regardless of admin_view -- metadata_available
-            # gates real app behavior elsewhere (e.g. line ~629), it's only
-            # the *display* of this diagnostic info that's admin-gated.
-            total_genes = get_gene_count_cached()
-            metadata_available = total_genes > 0
-
-            if admin_view:
+    if admin_view:
+        if (config.USE_POSTGRES or __import__('core_engines.bioinfo_reader', fromlist=['x']).is_enabled()) and get_gene_count is not None and search_gene_metadata is not None:
+            try:
+                total_genes = get_gene_count_cached()
+                metadata_available = total_genes > 0
                 st.success(f"✅ {total_genes} {translate('results.gene_records_available')}")
                 st.markdown(translate('ui.metadata_load_help'))
-
                 gene_search = st.text_input(
                     translate('ui.search_gene'),
                     value="",
@@ -522,10 +500,6 @@ with st.sidebar:
                 )
                 if gene_search:
                     query = gene_search.strip()
-                    # Server-side ILIKE search (see postgres_utils.search_gene_metadata)
-                    # -- only the ~20 rows actually shown ever leave Postgres,
-                    # instead of pulling all ~56k rows into Python on every
-                    # keystroke and filtering them in a list comprehension.
                     match_count = count_gene_metadata_matches_cached(query)
                     filtered = search_gene_metadata_cached(query, limit=20)
                     st.write(translate('ui.metadata_count_summary', count=len(filtered), match_count=match_count))
@@ -540,31 +514,11 @@ with st.sidebar:
                         trait = ", ".join(gene.get("traits", [])[:3]) or "No trait specified"
                         description = gene.get("description", "No description")
                         st.markdown(f"- **{symbol}** (`{gene_id}`) — {trait} — {description}")
-
-                st.info(translate('ui.full_db_load'))
-
-        except Exception:
-            logger.exception("Lightweight gene metadata load failed")
-            if admin_view:
+            except Exception:
+                logger.exception("Lightweight gene metadata load failed")
                 st.warning(translate('ui.metadata_load_error'))
-            db = load_gene_database_cached(str(config.DATABASE_PATH))
-    else:
-        db = load_gene_database_cached(str(config.DATABASE_PATH))
-
-    # Below: real failure states stay visible to everyone (a regular user
-    # deserves to know analysis may not work), but the happy-path "X genes
-    # loaded" confirmation is admin-only diagnostic noise for a working app.
-    if db is not None:
-        if not db:
-            st.error(f"❌ {translate('ui.no_genes_available')}")
-        elif isinstance(db, dict) and db and admin_view:
-            fallback_note = " (local fallback; PostgreSQL unavailable)" if not metadata_available else ""
-            st.success(f"✅ {len(db)} genes loaded{fallback_note}")
-    elif metadata_available:
-        if admin_view:
-            st.info(translate('ui.metadata_load_help'))
-    else:
-        st.error(f"❌ {translate('ui.no_genes_available')}")
+        else:
+            st.info(f"Local reference database: {config.DATABASE_PATH}")
 
 
 # ─── Top language control ─────────────────────────────────────────────────────
@@ -599,7 +553,7 @@ with col_input:
 
     uploaded_file = st.file_uploader(
         translate('ui.upload_file'),
-        type=["fasta", "fa", "txt"],
+        type=["fasta", "fa", "faa", "txt"],
         help=translate('ui.file_support_help'),
     )
 
@@ -712,9 +666,32 @@ st.markdown("---")
 
 st.info(translate('ui.independent_tools_notice'))
 
+# Compute a stable signature for the current sequence and settings so stale
+# results are discarded as soon as the user changes any meaningful input.
+current_analysis_signature = build_analysis_signature(
+    raw_sequence or "",
+    reference_sequence or "",
+    sequence_input_type,
+    reading_frame,
+    top_n_matches,
+    similarity_deep_search,
+)
+last_analysis_signature = st.session_state.get("last_analysis_signature")
+current_sequence_for_analysis = raw_sequence or ""
+if current_sequence_for_analysis and last_analysis_signature and last_analysis_signature != current_analysis_signature:
+    st.session_state.pop("last_results", None)
+    st.session_state.pop("last_result", None)
+    st.session_state.pop("last_analysis_signature", None)
+    last_analysis_signature = None
+
+should_render_cached_results = should_reuse_cached_results(
+    current_analysis_signature,
+    st.session_state.get("last_analysis_signature"),
+    current_sequence_for_analysis,
+)
 
 # ─── Analysis pipeline ─────────────────────────────────────────────────────────
-if analyze_btn or (raw_sequence and "last_result" in st.session_state):
+if analyze_btn or should_render_cached_results:
 
     if analyze_btn and not raw_sequence and not records:
         st.warning(f"⚠️ {translate('errors.no_sequence')}")
@@ -723,6 +700,21 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
     if analyze_btn and (raw_sequence or records):
 
         try:
+            db = None
+            metadata_available = False
+            if (config.USE_POSTGRES or __import__('core_engines.bioinfo_reader', fromlist=['x']).is_enabled()) and get_gene_count is not None:
+                try:
+                    metadata_available = get_gene_count_cached() > 0
+                except Exception:
+                    logger.exception("PostgreSQL gene count failed; falling back to the local reference database")
+
+            if not metadata_available:
+                with st.spinner("Loading local reference database..."):
+                    db = load_gene_database_cached(str(config.DATABASE_PATH))
+                if not db:
+                    st.error(f"❌ {translate('ui.no_genes_available')}")
+                    st.stop()
+
             analysis_targets: list[dict[str, str]] = []
             if records and len(records) > 1:
                 if analyze_all:
@@ -796,6 +788,7 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
 
             st.session_state["last_results"] = analyzed_results
             st.session_state["last_result"] = analyzed_results[0] if analyzed_results else None
+            st.session_state["last_analysis_signature"] = current_analysis_signature
             logger.info("Analysis session state saved")
 
         except Exception as e:
@@ -1110,21 +1103,123 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
                 st.markdown(f"**{translate('results.unique_residues')}:** {stats.get('unique_residues', 'N/A')}")
                 st.markdown(f"**{translate('results.residue_diversity')}:** {len([v for v in dist['counts'].values() if v > 0])} / {len(dist['counts'])}")
                 st.markdown(f"**{translate('results.most_abundant_residue')}:** {max(dist['counts'], key=dist['counts'].get)}")
+                st.markdown(f"**{translate('ui.molecular_weight')}:** {protein_stats['molecular_weight']:,.2f} Da")
+                st.markdown(f"**{translate('ui.isoelectric_point')}:** {protein_stats['isoelectric_point']:.2f}")
                 st.markdown(f"**GRAVY:** {protein_stats.get('gravy', 'N/A')}")
                 st.markdown(f"**Guruprasad instability index:** {protein_stats.get('instability_index', 'N/A')}")
                 st.caption(translate("ui.instability_index_help"))
-                st.markdown(f"**Aliphatic index:** {protein_stats.get('aliphatic_index', 'N/A')}")
+                st.markdown(
+                    f"**{translate('ui.protein_aliphatic_index')}:** "
+                    f"{protein_stats.get('aliphatic_index', 'N/A')}"
+                )
 
-            if motifs:
-                st.markdown(f"#### {translate('results.protein_motifs_found')}")
-                for motif in motifs:
-                    st.markdown(
-                        f"- **{motif['name']}** (`{motif['motif']}`) — "
-                        f"Position {motif['start']}–{motif['end']}  "
-                        f"Match: `{motif['match']}`"
-                    )
+            if protein_stats.get("excluded_nonstandard_residue_count"):
+                st.caption(translate(
+                    "ui.protein_standard_residues_note",
+                    count=protein_stats["excluded_nonstandard_residue_count"],
+                ))
+            st.caption(translate("ui.protein_analysis_caveat"))
+
+            st.markdown(f"#### {translate('ui.protein_profiles')}")
+            profile_col1, profile_col2 = st.columns(2)
+            with profile_col1:
+                hydrophobicity_profile = stats["hydrophobicity_profile"]
+                st.plotly_chart(
+                    viz.plot_hydrophobicity_profile(hydrophobicity_profile),
+                    width="stretch",
+                    key="protein_hydrophobicity_profile",
+                )
+                st.caption(hydrophobicity_profile["note"])
+            with profile_col2:
+                charge_profile = stats["charge_profile"]
+                st.plotly_chart(
+                    viz.plot_charge_profile(charge_profile),
+                    width="stretch",
+                    key="protein_charge_profile",
+                )
+                st.caption(charge_profile["note"])
+
+            hydrophobic_windows = sorted(
+                (
+                    point for point in hydrophobicity_profile["points"]
+                    if point["score"] >= hydrophobicity_profile["threshold"]
+                ),
+                key=lambda point: point["score"],
+                reverse=True,
+            )[:5]
+            st.markdown(f"##### {translate('ui.protein_hydrophobic_windows')}")
+            st.caption(translate("ui.protein_hydrophobic_window_note"))
+            if hydrophobic_windows:
+                st.dataframe(
+                    [
+                        {
+                            "Start (aa)": point["start"],
+                            "End (aa)": point["end"],
+                            "Kyte-Doolittle": point["score"],
+                            "Sequence": point["sequence"],
+                        }
+                        for point in hydrophobic_windows
+                    ],
+                    hide_index=True,
+                    width="stretch",
+                )
             else:
-                st.info(translate("results.no_known_protein_motifs"))
+                st.caption(translate("ui.none_detected"))
+
+            cysteines = stats["cysteine_analysis"]
+            st.markdown(f"##### {translate('ui.cysteine_motifs')}")
+            if cysteines["positions"]:
+                st.dataframe(
+                    [
+                        {
+                            "Position (aa)": position,
+                            "Distance to next C (aa)": (
+                                cysteines["distances_between_consecutive"][index]
+                                if index < len(cysteines["distances_between_consecutive"])
+                                else "—"
+                            ),
+                        }
+                        for index, position in enumerate(cysteines["positions"])
+                    ],
+                    hide_index=True,
+                    width="stretch",
+                )
+            else:
+                st.caption(translate("ui.none_detected"))
+            st.caption(cysteines["note"])
+
+            signal_candidate = stats["n_terminal_signal_candidate"]
+            st.markdown(f"##### {translate('ui.protein_signal_candidate')}")
+            signal_message = (
+                f"{signal_candidate['note']} "
+                f"({signal_candidate['hydrophobic_fraction']:.1f}% hydrophobic in the "
+                f"first {len(signal_candidate['segment'])} aa.)"
+            )
+            if signal_candidate["candidate"]:
+                st.info(signal_message)
+            else:
+                st.caption(signal_message)
+
+            protein_motifs = stats["protein_motifs"]
+            st.markdown(f"##### {translate('ui.protein_modification_candidates')}")
+            st.caption(translate("ui.protein_motif_candidate_note"))
+            motif_col1, motif_col2 = st.columns(2)
+            with motif_col1:
+                st.markdown(f"**{translate('ui.glycosylation_candidates')}**")
+                glycosylation_rows = protein_motifs["n_glycosylation_candidates"]
+                st.dataframe(
+                    glycosylation_rows or [{"position": translate("ui.none_detected")}],
+                    hide_index=True,
+                    width="stretch",
+                )
+            with motif_col2:
+                st.markdown(f"**{translate('ui.phosphorylation_candidates')}**")
+                phosphorylation_rows = protein_motifs["phosphorylation_candidates"]
+                st.dataframe(
+                    phosphorylation_rows or [{"position": translate("ui.none_detected")}],
+                    hide_index=True,
+                    width="stretch",
+                )
 
         else:
             st.markdown(f"#### {translate('results.nucleotide_composition_gc')}")
@@ -1314,6 +1409,99 @@ if analyze_btn or (raw_sequence and "last_result" in st.session_state):
             st.warning(
                 translate("results.low_complexity_warning", coverage=f"{low_complexity['coverage_pct']:.1f}")
             )
+
+        # LIVE_ANNOTATION_PANEL (DIAMOND + Pfam en direct, preuve separee du score de similarite)
+        try:
+            from core_engines.live_annotation import render_live_annotation_panel
+            render_live_annotation_panel(
+                st, translate, pd, sequence, sequence_type, current_analysis_signature, logger, bio
+            )
+        except Exception:
+            logger.exception("Live annotation panel failed")
+
+        esm2_results = None
+        esm2_error = None
+        if sequence_type == "protein":
+            st.markdown(f"#### {translate('ui.esm2_title')}")
+            st.caption(translate("ui.esm2_description"))
+            if st.button(translate("ui.esm2_button"), key="esm2_protein_search"):
+                st.session_state["esm2_search_signature"] = current_analysis_signature
+                st.session_state.pop("esm2_search_results", None)
+                st.session_state.pop("esm2_search_error", None)
+                try:
+                    from core_engines.esm2_similarity import find_similar_by_embedding
+
+                    with st.spinner(translate("ui.esm2_searching")):
+                        st.session_state["esm2_search_results"] = find_similar_by_embedding(
+                            sequence,
+                            top_n=top_n_matches,
+                            logger=logger,
+                        )
+                except Exception as exc:
+                    logger.exception("ESM-2 protein similarity search failed")
+                    st.session_state["esm2_search_error"] = type(exc).__name__
+
+            if st.session_state.get("esm2_search_signature") == current_analysis_signature:
+                esm2_results = st.session_state.get("esm2_search_results")
+                esm2_error = st.session_state.get("esm2_search_error")
+
+            if esm2_error:
+                st.error(translate("ui.esm2_search_failed", error=esm2_error))
+            elif esm2_results is not None:
+                if esm2_results.query_length != esm2_results.query_length_used:
+                    st.warning(
+                        f"ESM-2 used the first {esm2_results.query_length_used:,} of "
+                        f"{esm2_results.query_length:,} residues."
+                    )
+                if not esm2_results:
+                    st.info(translate("ui.esm2_no_matches"))
+                else:
+                    esm2_rows = []
+                    for rank, hit in enumerate(esm2_results, start=1):
+                        annotation = hit.get("annotation") or {}
+                        annotation_summary = []
+                        for source, entries in annotation.items():
+                            descriptions = [
+                                item.get("term_desc") or item.get("term_id")
+                                for item in entries
+                                if item.get("term_desc") or item.get("term_id")
+                            ]
+                            if descriptions:
+                                annotation_summary.append(
+                                    f"{source}: {', '.join(descriptions[:3])}"
+                                )
+                        esm2_rows.append({
+                            translate("ui.esm2_rank"): rank,
+                            translate("glossary.gene").capitalize(): hit.get("gene_name", ""),
+                            translate("ui.esm2_accession"): hit.get("accession", ""),
+                            translate("ui.esm2_organism"): hit.get("organism", ""),
+                            translate("ui.esm2_cosine"): hit["esm2_cosine_similarity"],
+                            translate("ui.esm2_annotations"): "; ".join(annotation_summary) or "—",
+                        })
+                    st.dataframe(
+                        pd.DataFrame(esm2_rows),
+                        hide_index=True,
+                        width="stretch",
+                    )
+                    for rank, hit in enumerate(esm2_results[:5], start=1):
+                        with st.expander(
+                            f"{rank}. {hit.get('gene_name') or hit.get('accession')} "
+                            f"({hit.get('accession', '')})"
+                        ):
+                            st.markdown(
+                                f"**{translate('ui.esm2_organism')}:** "
+                                f"{hit.get('organism', '—')}  \n"
+                                f"**{translate('ui.esm2_cosine')}:** "
+                                f"{hit['esm2_cosine_similarity']:.4f}"
+                            )
+                            for source, entries in (hit.get("annotation") or {}).items():
+                                if entries:
+                                    st.markdown(f"**{source}**")
+                                    st.markdown("\n".join(
+                                        f"- {item.get('term_desc') or item.get('term_id')}"
+                                        for item in entries
+                                        if item.get("term_desc") or item.get("term_id")
+                                    ))
 
         if skipped_reason == "sequence_too_long":
             st.warning(translate("results.sequence_too_long_warning", length=f"{len(sequence):,}", limit=f"{config.MAX_ALIGNMENT_SEQUENCE_LENGTH:,}"))
@@ -2145,7 +2333,7 @@ else:
             """
             - **Raw DNA**: paste directly (e.g., `ATGCGTAGCTAG...`)
             - **FASTA**: with or without header lines starting with `>`
-            - **Upload**: `.fasta`, `.fa`, or `.txt` files
+            - **Upload**: `.fasta`, `.fa`, `.faa`, or `.txt` files
             - **Valid nucleotides**: A, T, G, C, N (case-insensitive)
             """
         )

@@ -8,3 +8,6 @@ else:
     for fichier in sorted(dossier.rglob("*")):
         if fichier.is_file():
             print(fichier.resolve())
+            
+            
+            .\.venv\Scripts\Activate.ps1

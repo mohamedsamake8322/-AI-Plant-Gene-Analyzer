@@ -1,3 +1,4 @@
 {
-    "chat.byokUtilityModelDefault": "mainAgent"
+    "chat.byokUtilityModelDefault": "mainAgent",
+    "python-envs.defaultEnvManager": "ms-python.python:system"
 }

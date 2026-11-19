@@ -12,6 +12,10 @@ from typing import Dict, List
 import numpy as np
 
 import alignment_engine as aln
+import bioinformatics as bio
+
+
+EMBEDDING_COSINE_DISTANCE = "embedding_cosine_distance"
 
 
 def _pairwise_aligned_sequences(seq1: str, seq2: str, seq_type: str = "dna") -> tuple[str, str]:
@@ -137,11 +141,51 @@ def pam_distance(seq1: str, seq2: str, seq_type: str = "protein", prealigned: bo
     }
 
 
+def embedding_cosine_distance_matrix(sequences: List[Dict]) -> Dict:
+    """Build a pairwise 1-cosine matrix from ESM-2 protein embeddings."""
+    if len(sequences) < 2:
+        raise ValueError("At least two protein sequences are required.")
+
+    names = [sequence["name"] for sequence in sequences]
+    raw_sequences = ["".join(sequence["sequence"].split()).upper() for sequence in sequences]
+    if any(not sequence for sequence in raw_sequences):
+        raise ValueError("Protein sequences cannot be empty.")
+    if any(bio.detect_sequence_type(sequence) != "protein" for sequence in raw_sequences):
+        raise ValueError("ESM-2 cosine distance requires amino-acid sequences, not DNA/RNA.")
+
+    from core_engines.esm2_similarity import embed_sequence
+
+    embeddings = np.stack([embed_sequence(sequence) for sequence in raw_sequences])
+    if embeddings.ndim != 2 or not np.isfinite(embeddings).all():
+        raise ValueError("ESM-2 returned invalid embedding vectors.")
+
+    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+    if np.any(norms <= 1e-12):
+        raise ValueError("ESM-2 returned a zero-length embedding vector.")
+
+    normalized = embeddings / norms
+    matrix = np.clip(1.0 - normalized @ normalized.T, 0.0, 2.0)
+    np.fill_diagonal(matrix, 0.0)
+    return {
+        "method": EMBEDDING_COSINE_DISTANCE,
+        "sequence_names": names,
+        "distance_matrix": matrix.tolist(),
+        "matrix_object": matrix,
+        "alignment_method": "ESM-2 embeddings (no sequence alignment)",
+        "aligned_sequences": raw_sequences,
+    }
+
+
 def distance_matrix(sequences: List[Dict], method: str = "kimura", seq_type: str = "dna") -> Dict:
     """
     Build a pairwise distance matrix.
     Sequences are star-aligned first so columns are comparable.
     """
+    if method.lower() == EMBEDDING_COSINE_DISTANCE:
+        if seq_type.lower() != "protein":
+            raise ValueError("ESM-2 cosine distance requires protein sequences.")
+        return embedding_cosine_distance_matrix(sequences)
+
     names = [seq["name"] for seq in sequences]
     raw_seqs = [seq["sequence"].upper().replace(" ", "") for seq in sequences]
     msa = aln.star_alignment(raw_seqs, seq_type=seq_type)

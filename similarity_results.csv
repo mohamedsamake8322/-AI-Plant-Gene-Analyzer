@@ -1,0 +1,16 @@
+protein_accession,species,cosine_similarity,assemblage,plaza_gene_id,chr,start_pos,stop_pos,strand,annotations
+XP_025876814.1,oryza_sativa,0.99999994,oryza_sativa,Os10g0463400,chr10,17076098.0,17081344.0,-,pfam:Response_reg | pfam:Myb_DNA-binding | interpro:IPR006447 | interpro:IPR001789 | interpro:IPR009057
+XP_008664903.2,zea_mays,0.99805546,,,,,,,
+XP_008669569.1,zea_mays,0.99261737,zea_mays,Zm00001eb086410,2,83162230.0,83165415.0,-,pfam:Response_reg | interpro:IPR009057 | interpro:IPR001789 | interpro:IPR001789 | interpro:IPR006447
+XP_008649062.1,zea_mays,0.9924364,,,,,,,
+XP_075103409.1,nicotiana_tabacum_k326,0.99016094,nicotiana_tabacum_k326,,,,,,pfam:Response_reg | pfam:Myb_DNA-binding
+XP_016513811.1,nicotiana_tabacum_k326,0.98946536,nicotiana_tabacum_tn90,,,,,,pfam:B3 | pfam:B3
+XP_016464700.1,nicotiana_tabacum_k326,0.9892964,nicotiana_tabacum_tn90,,,,,,pfam:B3 | pfam:PEARLI-4 | pfam:B3 | pfam:PEARLI-4
+XP_075097260.1,nicotiana_tabacum_k326,0.98918456,nicotiana_tabacum_k326,,,,,,pfam:Myb_DNA-binding
+XP_016501061.1,nicotiana_tabacum_k326,0.98913896,nicotiana_tabacum_tn90,,,,,,pfam:Myb_DNA-binding | pfam:Myb_DNA-binding | pfam:Myb_DNA-binding | pfam:Myb_DNA-binding
+XP_016459759.2,nicotiana_tabacum_k326,0.9891168,nicotiana_tabacum_k326,,,,,,pfam:B3
+XP_016513812.1,nicotiana_tabacum_k326,0.98910683,nicotiana_tabacum_tn90,,,,,,pfam:B3 | pfam:B3
+XP_016495393.1,nicotiana_tabacum_k326,0.9890178,nicotiana_tabacum_tn90,,,,,,pfam:PB1 | pfam:RWP-RK | pfam:PB1 | pfam:RWP-RK
+XP_016459758.2,nicotiana_tabacum_k326,0.9888822,nicotiana_tabacum_k326,,,,,,pfam:B3
+XP_075084248.1,nicotiana_tabacum_k326,0.9888673,nicotiana_tabacum_k326,,,,,,pfam:B3
+XP_075087425.1,nicotiana_tabacum_k326,0.9887082,nicotiana_tabacum_k326,,,,,,pfam:Response_reg | pfam:Myb_DNA-binding

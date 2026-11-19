@@ -17,4 +17,21 @@ README
 AgroNt
 import_to_bioinfo_pipeline_v2.py
 pipeline_data/
-Data/pipeline_data/
+Data/pipeline_data/backups/
+
+core_engines/
+results/
+.venv/
+
+# Dossiers et fichiers lourds / generes
+core_engines/
+results/
+.venv/
+backups/
+logs/
+__pycache__/
+*.pyc
+*.nbc
+*.sqlite3
+*.log
+*.bak*
